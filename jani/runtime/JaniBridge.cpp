@@ -51,3 +51,23 @@ bool Jani::Bridge::IsValid() const
 
     return true;
 }
+
+bool Jani::Bridge::AcceptLoadBalanceStrategy(LayerLoadBalanceStrategyType _load_balance_strategy) const
+{
+    return m_active_load_balance_strategy_bits & _load_balance_strategy;
+}
+
+uint32_t Jani::Bridge::GetTotalUserCount() const
+{
+    return m_client_connections.size();
+}
+
+uint32_t Jani::Bridge::GetDistanceToPosition(WorldPosition _position) const
+{
+    if (m_active_load_balance_strategy_bits & m_active_load_balance_strategy_bits)
+    {
+        return 0;
+    }
+
+    return std::numeric_limits<uint32_t>::max();
+}

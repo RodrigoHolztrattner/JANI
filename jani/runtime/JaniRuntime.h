@@ -15,8 +15,10 @@
 // Jani
 JaniNamespaceBegin(Jani)
 
-class Bridge;
 class Database;
+class Bridge;
+class LayerCollection;
+class WorkerSpawnerCollection;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: Runtime
@@ -33,6 +35,13 @@ public: // CONSTRUCTORS //
 //////////////////////////
 public: // MAIN METHODS //
 //////////////////////////
+
+    /*
+    
+    */
+    bool Initialize(
+        std::unique_ptr<LayerCollection>         layer_collection, 
+        std::unique_ptr<WorkerSpawnerCollection> worker_spawner_collection);
 
     /*
     *
@@ -57,7 +66,10 @@ private: // VARIABLES //
 
     Database& m_database;
 
-    std::vector<std::unique_ptr<Bridge>> m_bridges;
+    std::unique_ptr<LayerCollection>         m_layer_collection;
+    std::unique_ptr<WorkerSpawnerCollection> m_worker_spawner_collection;
+
+    std::map<Hash, std::unique_ptr<LayerBridgeSet>> m_layer_bridge_sets;
 };
 
 // Jani

@@ -66,11 +66,33 @@ public: // MAIN METHODS //
     */
     bool IsValid() const;
 
+    /*
+    * Returns if the underlying worker for this bridge accepts the given load balance
+    * strategy
+    */
+    bool AcceptLoadBalanceStrategy(LayerLoadBalanceStrategyType _load_balance_strategy) const;
+
+    /*
+    * Return the total number of users connected through this bridge
+    */
+    uint32_t GetTotalUserCount() const;
+
+    /*
+    * Returns the Manhattan distance from the underlying worker influence location to the
+    * given position
+    * Calling this function is only valid if this bridge layer support spatial location
+    * as one of its load balance strategies
+    * Zero means that the given position is inside the area of influence
+    */
+    uint32_t GetDistanceToPosition(WorldPosition _position) const;
+
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
     Runtime& m_runtime;
+
+    LayerLoadBalanceStrategyTypeBits m_active_load_balance_strategy_bits;
 
     uint32_t m_layer_id = std::numeric_limits<uint32_t>::max();
 

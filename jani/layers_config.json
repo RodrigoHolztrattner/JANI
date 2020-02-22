@@ -1,0 +1,21 @@
+{
+    "layers": [
+        {
+            "name": "physics",
+            "minimum_area": [5, 5]
+        }, 
+        {
+            "name": "chat",
+            "maximum_workers": 1
+        },      
+        {
+            "name": "npc_ai",
+            "maximum_workers": 4, 
+            "minimum_area": [10, 10]
+        },       
+        {
+            "name": "background_simulation",
+            "maximum_workers": 10
+        }                 
+    ]
+}

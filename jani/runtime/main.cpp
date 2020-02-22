@@ -2,50 +2,39 @@
 // Filename: main.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniConfig.h"
+#include "JaniDatabase.h"
+#include "JaniRuntime.h"
+#include "JaniLayerCollection.h"
+#include "JaniWorkerSpawnerCollection.h"
 
 int main(int _argc, char* _argv[])
 {
-    int from;
-    int to;
-    bool is_server = _argc == 4;
-    if (is_server)
-    {
-        from = 8080;
-        to   = 8081;   
-    }
-    else
-    {
-        from = 8081;
-        to   = 8080;
-    }
+    std::unique_ptr<Jani::Database> database = std::make_unique<Jani::Database>();
+    std::unique_ptr<Jani::Runtime>  runtime  = std::make_unique<Jani::Runtime>(*database);
 
-    Jani::Connection connection(5, from, to, "127.0.0.1");
-
-    while (true)
     {
-        if (is_server)
+        std::unique_ptr<Jani::LayerCollection>         layer_collection = std::make_unique<Jani::LayerCollection>();
+        std::unique_ptr<Jani::WorkerSpawnerCollection> worker_spawner_collection = std::make_unique<Jani::WorkerSpawnerCollection>();
+
+        if (!layer_collection->Initialize("layers_config.json"))
         {
-            std::string send_value;
-            std::cout << "Send: ";
-            std::cin >> send_value;
-            std::cout << std::endl;
+            std::cout << "LayerCollection -> Failed to initialize" << std::endl;
 
-            if (send_value == "exit")
-            {
-                break;
-            }
-
-            connection.Send(send_value.data(), send_value.size());
-            std::cout << "Sent: " << send_value << " {" << send_value.size() << "}" << std::endl;
+            return false;
         }
-        else
+
+        if (!worker_spawner_collection->Initialize("worker_spawners_config.json"))
         {
-            char buffer[1024];
-            auto total = connection.Receive(buffer, 1024);
-            if (total)
-            {
-                std::cout << "Received: " << std::string(buffer, total.value()) << " {" << total.value() << "}" << std::endl;
-            }
+            std::cout << "WorkerSpawnerCollection -> Failed to initialize" << std::endl;
+
+            return false;
+        }
+
+        if (runtime->Initialize(std::move(layer_collection), std::move(worker_spawner_collection)))
+        {
+            std::cout << "Runtime -> Problem initializing runtime, verify if your config file is valid" << std::endl;
+
+            return false;
         }
     }
 
