@@ -23,6 +23,7 @@
 #include <mutex>
 #include <string>
 #include <variant>
+#include <bitset>
 #include <boost/pfr.hpp>
 #include <magic_enum.hpp>
 #include <ctti/type_id.hpp>
@@ -70,14 +71,123 @@
 
 JaniNamespaceBegin(Jani)
 
-using WorldPosition = std::pair<int32_t, int32_t>;
-using WorldArea     = std::pair<uint32_t, uint32_t>;
+struct WorldPosition
+{
+    float x, y;
+};
+
+struct WorldArea
+{
+    float width, height;
+};
+
+struct WorldRect
+{
+    uint32_t ManhattanDistanceFromPosition(WorldPosition _position) const
+    {
+        uint32_t center_x = width - x;
+        uint32_t center_y = height - y;
+        uint32_t distance = std::abs(center_x - _position.x) + std::abs(center_y - _position.y);
+        uint32_t max_side = std::max(width, height);
+
+        return static_cast<int32_t>(distance) - static_cast<int32_t>(max_side / 2) < 0 ? 0 : distance - max_side / 2;
+    }
+
+    int32_t AreaDifference(const WorldRect& _other_rect) const
+    {
+        return width * height - _other_rect.width * _other_rect.height;
+    }
+
+    float x, y;
+    float width, height;
+};
 
 class Bridge;
 
 class User
 {
+public:
+
+    /*
+    
+    */
+    WorldPosition GetRepresentativeWorldPosition() const;
+
+private:
+
     WorldPosition user_world_position;
+};
+
+using WorkerId = uint64_t;
+
+using ComponentId = uint64_t;
+
+using EntityId = uint64_t;
+
+enum class WorkerLogLevel
+{
+    Trace,
+    Info,
+    Warning,
+    Error,
+    Critical
+};
+
+struct WorkerRequestResult
+{
+    explicit WorkerRequestResult(bool _succeed);
+    WorkerRequestResult(bool _succeed, std::vector<int8_t> _payload);
+    WorkerRequestResult(bool _succeed, int8_t* _payload_data, uint32_t _payload_size);
+
+    bool                succeed = false;
+    std::vector<int8_t> payload;
+};
+
+
+
+/*
+* 1. Entity who owns the component
+* 2. The component id
+* 3. The worker who has the interest in receiving component updates
+*/
+using ComponentUpdateReadInterest = std::tuple<EntityId, ComponentId, WorkerId>;
+
+class EntityPayload
+{
+
+};
+
+class ComponentPayload
+{
+
+};
+
+static const uint32_t MaximumEntityComponents = 64;
+
+class Entity
+{
+public:
+
+    /*
+
+    */
+    WorldPosition GetRepresentativeWorldPosition() const;
+
+    /*
+    
+    */
+    EntityId GetUniqueId() const;
+
+    /*
+    
+    */
+    bool HasComponent(ComponentId _component_id) const;
+
+private:
+
+    EntityId                             entity_id = std::numeric_limits<EntityId>::max();
+    WorldPosition                        world_position;
+    std::bitset<MaximumEntityComponents> component_mask;
 };
 
 template <typename EnumType, typename EnumBitsType = uint32_t>
@@ -146,19 +256,20 @@ private:
     EnumBitsType m_bitset = 0;
 };
 
-enum class LayerLoadBalanceStrategyType
+enum class LayerLoadBalanceStrategyBits
 {
     None           = 0,
     MaximumWorkers = 1 << 0, 
     SpatialArea    = 1 << 1
 };
 
-using LayerLoadBalanceStrategyTypeBits = enum_bitset<LayerLoadBalanceStrategyType>;
+using LayerLoadBalanceStrategyTypeFlags = enum_bitset<LayerLoadBalanceStrategyBits>;
 
 struct LayerLoadBalanceStrategy
 {
     std::optional<uint32_t>  maximum_workers;
     std::optional<WorldArea> minimum_area;
+    std::optional<WorldArea> maximum_area;
 };
 
 enum class InstanceId
@@ -680,16 +791,6 @@ private:
 private:
 
 	Hash h = default_value();
-};
-
-struct LayerBridgeSet
-{
-    std::string              layer_name;
-    Hash                     layer_hash;
-    uint32_t                 layer_unique_id = std::numeric_limits<uint32_t>::max();
-    LayerLoadBalanceStrategy layer_load_balance_strategy;
-
-    std::vector<std::unique_ptr<Bridge>> bridges;
 };
 
 JaniNamespaceEnd(Jani)
