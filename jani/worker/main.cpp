@@ -5,6 +5,44 @@
 
 int main(int _argc, char* _argv[])
 {
+    const char* runtime_ip = _argv[1];
+    uint32_t    runtime_listen_port = std::stoi(std::string(_argv[2]));
+    const char* layer_name = _argv[3];
+
+    std::cout << "Worker -> Worker spawned for runtime_ip{" << runtime_ip << "}, runtime_listen_port{" << runtime_listen_port << "}, layer_name{" << layer_name << "}" << std::endl;
+
+    auto actual_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    srand(actual_time);
+    int random_port = rand() % 10000 + 5000;
+    
+    std::cout << "Worker -> Selected random port: port{" << random_port << "}" << std::endl << std::endl;
+
+    Jani::ConnectionRequest connection_request(runtime_listen_port, runtime_ip);
+
+    Jani::Connection runtime_connection(0, random_port, runtime_listen_port, runtime_ip);
+
+    Jani::Message::WorkerConnectionRequest worker_connection_request;
+    std::strcpy(worker_connection_request.ip, "127.0.0.1");
+    worker_connection_request.port = random_port;
+    std::strcpy(worker_connection_request.layer_name, layer_name);
+    worker_connection_request.access_token = -1;
+    worker_connection_request.worker_authentication = -1;
+
+    std::cout << "Sending request!" << std::endl;
+    if (!connection_request.Send(&worker_connection_request, sizeof(Jani::Message::WorkerConnectionRequest)))
+    {
+        std::cout << "Problem sending worker connection request!" << std::endl;
+        int a;
+        std::cin >> a;
+        return 1;
+    }
+
+    while (true)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+#if 0
     int from;
     int to;
     bool is_server = _argc == 4;
@@ -98,6 +136,8 @@ int main(int _argc, char* _argv[])
             }
                                           });
     }
+
+#endif
 
     return 0;
 }

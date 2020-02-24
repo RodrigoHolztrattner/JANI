@@ -5,6 +5,9 @@
 
 Jani::DatagramSocket::DatagramSocket(int _receive_port, int _dst_port, const char* _dst_address, bool _broadcast, bool _reuse_socket)
 {
+    receive_port = _receive_port;
+    dst_port     = _dst_port;
+
 #ifdef _WIN32
     retval = WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
@@ -21,8 +24,13 @@ Jani::DatagramSocket::DatagramSocket(int _receive_port, int _dst_port, const cha
     //set up address to use for sending
     memset(&outaddr, 0, sizeof(outaddr));
     outaddr.sin_family = AF_INET;
-    outaddr.sin_addr.s_addr = inet_addr(_dst_address);
+    outaddr.sin_addr.s_addr = _dst_address == nullptr ? INADDR_ANY : inet_addr(_dst_address);
     outaddr.sin_port = htons(_dst_port);
+
+    if(_receive_port == 0)
+    {
+        return;
+    }
 
 #ifdef _WIN32
     bool bOptVal = 1;
@@ -86,6 +94,16 @@ const char* Jani::DatagramSocket::GetAddress(const char* name)
     return ip;
 }
 
+uint32_t Jani::DatagramSocket::GetReceivePort() const
+{
+    return receive_port;
+}
+
+uint32_t Jani::DatagramSocket::GetDstPort() const
+{
+    return dst_port;
+}
+
 bool Jani::DatagramSocket::CanReceive()
 {
     fd_set          sready;
@@ -117,7 +135,7 @@ char* Jani::DatagramSocket::ReceivedFrom()
     return received;
 }
 
-long Jani::DatagramSocket::Send(const char* msg, int msgsize)
+long Jani::DatagramSocket::Send(const char* msg, int msgsize) const
 {
     return sendto(sock, msg, msgsize, 0, (struct sockaddr*) & outaddr, sizeof(outaddr));
 }
@@ -173,8 +191,8 @@ Jani::Connection::Connection(uint32_t _instance_id, int _receive_port, int _dst_
 
                 if (m_datagram_socket->CanReceive())
                 {
-                    char buffer[1024];
-                    long total = m_datagram_socket->Receive(buffer, 1024);
+                    char buffer[MaximumDatagramSize];
+                    long total = m_datagram_socket->Receive(buffer, MaximumDatagramSize);
                     if (total > 0)
                     {
                         std::lock_guard l(m_safety_mtx);
@@ -200,30 +218,23 @@ bool Jani::Connection::IsAlive() const
     return true;
 }
 
-std::optional<size_t> Jani::Connection::Receive(char* _msg, int _buffer_size)
+uint32_t Jani::Connection::GetReceiverPort() const
 {
-    std::lock_guard l(m_safety_mtx);
-
-    long total = ikcp_recv(m_internal_connection, _msg, _buffer_size);
-    if (total > 0)
-    {
-        return static_cast<size_t>(total);
-    }
-
-    return std::nullopt;
+    return m_datagram_socket->GetReceivePort();
 }
 
-std::optional<size_t> Jani::Connection::Send(const char* _msg, int _msg_size) const
+uint32_t Jani::Connection::GetDestinationPort() const
 {
-    std::lock_guard l(m_safety_mtx);
+    return m_datagram_socket->GetDstPort();
+}
 
-    long total = ikcp_send(m_internal_connection, _msg, _msg_size);
-    if (total > 0)
-    {
-        return static_cast<size_t>(total);
-    }
+Jani::ConnectionListener::ConnectionListener(int _listen_port)
+{
+    m_datagram_socket = std::make_unique<DatagramSocket>(_listen_port, 0, nullptr, false, true);
+}
 
-    return std::nullopt;
+Jani::ConnectionListener::~ConnectionListener()
+{
 }
 
 //

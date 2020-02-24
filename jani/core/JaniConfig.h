@@ -24,6 +24,7 @@
 #include <string>
 #include <variant>
 #include <bitset>
+#include <entityx/entityx.h>
 #include <boost/pfr.hpp>
 #include <magic_enum.hpp>
 #include <ctti/type_id.hpp>
@@ -71,22 +72,26 @@
 
 JaniNamespaceBegin(Jani)
 
+class Bridge;
+class Runtime;
+class Database;
+
 struct WorldPosition
 {
-    float x, y;
+    int32_t x, y;
 };
 
 struct WorldArea
 {
-    float width, height;
+    uint32_t width, height;
 };
 
 struct WorldRect
 {
     uint32_t ManhattanDistanceFromPosition(WorldPosition _position) const
     {
-        uint32_t center_x = width - x;
-        uint32_t center_y = height - y;
+        int32_t center_x  = width - x;
+        int32_t center_y  = height - y;
         uint32_t distance = std::abs(center_x - _position.x) + std::abs(center_y - _position.y);
         uint32_t max_side = std::max(width, height);
 
@@ -98,11 +103,58 @@ struct WorldRect
         return width * height - _other_rect.width * _other_rect.height;
     }
 
-    float x, y;
-    float width, height;
+    int32_t x, y;
+    uint32_t width, height;
 };
 
-class Bridge;
+static void to_json(nlohmann::json& j, const Jani::WorldPosition& _object)
+{
+    j = nlohmann::json
+    {
+        {"x", _object.x},
+        {"y", _object.y}
+    };
+}
+
+static void from_json(const nlohmann::json& j, Jani::WorldPosition& _object)
+{
+    j.at("x").get_to(_object.x);
+    j.at("y").get_to(_object.y);
+}
+
+static void to_json(nlohmann::json& j, const Jani::WorldArea& _object)
+{
+    j = nlohmann::json
+    {
+        {"width", _object.width},
+        {"height", _object.height}
+    };
+}
+
+static void from_json(const nlohmann::json& j, Jani::WorldArea& _object)
+{
+    j.at("width").get_to(_object.width);
+    j.at("height").get_to(_object.height);
+}
+
+static void to_json(nlohmann::json& j, const Jani::WorldRect& _object)
+{
+    j = nlohmann::json
+    {
+        {"x", _object.x},
+        {"y", _object.y},
+        {"width", _object.width},
+        {"height", _object.height}
+    };
+}
+
+static void from_json(const nlohmann::json& j, Jani::WorldRect& _object)
+{
+    j.at("x").get_to(_object.x);
+    j.at("y").get_to(_object.y);
+    j.at("width").get_to(_object.width);
+    j.at("height").get_to(_object.height);
+}
 
 class User
 {
@@ -135,9 +187,9 @@ enum class WorkerLogLevel
 
 struct WorkerRequestResult
 {
-    explicit WorkerRequestResult(bool _succeed);
-    WorkerRequestResult(bool _succeed, std::vector<int8_t> _payload);
-    WorkerRequestResult(bool _succeed, int8_t* _payload_data, uint32_t _payload_size);
+    explicit WorkerRequestResult(bool _succeed) : succeed(_succeed) {}
+    WorkerRequestResult(bool _succeed, std::vector<int8_t> _payload) : succeed(_succeed), payload(std::move(_payload)) {}
+    WorkerRequestResult(bool _succeed, int8_t* _payload_data, uint32_t _payload_size) : succeed(_succeed), payload(std::vector<int8_t>(_payload_data, _payload_data + _payload_size)) {}
 
     bool                succeed = false;
     std::vector<int8_t> payload;
@@ -152,42 +204,85 @@ struct WorkerRequestResult
 */
 using ComponentUpdateReadInterest = std::tuple<EntityId, ComponentId, WorkerId>;
 
-class EntityPayload
+struct ComponentPayload
 {
-
+    ComponentId         component_id;
+    std::vector<int8_t> component_data;
 };
 
-class ComponentPayload
+struct EntityPayload
 {
-
+    std::vector<ComponentPayload> component_payloads;
 };
 
 static const uint32_t MaximumEntityComponents = 64;
+using ComponentMask = std::bitset<MaximumEntityComponents>;
 
 class Entity
 {
 public:
 
+    Entity(EntityId _unique_id) : entity_id(_unique_id) {};
+
     /*
 
     */
-    WorldPosition GetRepresentativeWorldPosition() const;
+    WorldPosition GetRepresentativeWorldPosition() const
+    {
+        return world_position;
+    }
 
     /*
     
     */
-    EntityId GetUniqueId() const;
+    void SetRepresentativeWorldPosition(WorldPosition _position)
+    {
+        world_position = _position;
+    }
 
     /*
     
     */
-    bool HasComponent(ComponentId _component_id) const;
+    EntityId GetUniqueId() const
+    {
+        return entity_id;
+    }
+
+    /*
+    
+    */
+    bool HasComponent(ComponentId _component_id) const
+    {
+        return component_mask.test(_component_id);
+    }
+    bool HasComponents(ComponentMask _component_mask) const
+    {
+        for (int i = 0; i < MaximumEntityComponents; i++)
+        {
+            if (component_mask[i] && !_component_mask[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    void AddComponent(ComponentId _component_id)
+    {
+        component_mask[_component_id] = true;
+    }
+
+    void RemoveComponent(ComponentId _component_id)
+    {
+        component_mask[_component_id] = false;
+    }
 
 private:
 
-    EntityId                             entity_id = std::numeric_limits<EntityId>::max();
-    WorldPosition                        world_position;
-    std::bitset<MaximumEntityComponents> component_mask;
+    EntityId      entity_id      = std::numeric_limits<EntityId>::max();
+    WorldPosition world_position = { 0, 0 };
+    ComponentMask component_mask;
 };
 
 template <typename EnumType, typename EnumBitsType = uint32_t>
@@ -297,6 +392,8 @@ private:
     char ip[30];
     char received[30];
 
+    uint32_t receive_port;
+    uint32_t dst_port;
 
 public:
     DatagramSocket(int _receive_port, int _dst_port, const char* _dst_address, bool _broadcast, bool _reuse_socket);
@@ -305,11 +402,13 @@ public:
     bool CanReceive();
     long Receive(char* msg, int msgsize);
     char* ReceivedFrom();
-    long Send(const char* msg, int msgsize);
+    long Send(const char* msg, int msgsize) const;
     long SendTo(const char* msg, int msgsize, const char* name);
     int GetAddress(const char* name, char* addr);
     const char* GetAddress(const char* name);
 
+    uint32_t GetReceivePort() const;
+    uint32_t GetDstPort() const;
 };
 
 //
@@ -320,8 +419,6 @@ public:
 typedef int socklen_t;
 #endif
 
-
-
 //
 //
 //
@@ -330,15 +427,48 @@ class Connection
 {
 public:
 
+    static const uint32_t MaximumDatagramSize = 2048;
+
     Connection(uint32_t _instance_id, int _receive_port, int _dst_port, const char* _dst_address, std::optional<uint32_t> _ping_delay_ms = std::nullopt);
     ~Connection();
 
-    void Update();
+    void Update()
+    {
+
+    }
 
     bool IsAlive() const;
 
-    std::optional<size_t> Receive(char* _msg, int _buffer_size);
-    std::optional<size_t> Send(const char* _msg, int _msg_size) const;
+    template <typename ByteType>
+    std::optional<size_t> Receive(ByteType* _msg, int _buffer_size)
+    {
+        std::lock_guard l(m_safety_mtx);
+
+        long total = ikcp_recv(m_internal_connection, reinterpret_cast<char*>(_msg), _buffer_size);
+        if (total >= 0)
+        {
+            return static_cast<size_t>(total);
+        }
+
+        return std::nullopt;
+    }
+
+    template <typename ByteType>
+    std::optional<size_t> Send(const ByteType* _msg, int _msg_size) const
+    {
+        std::lock_guard l(m_safety_mtx);
+
+        long total = ikcp_send(m_internal_connection, reinterpret_cast<const char*>(_msg), _msg_size);
+        if (total == 0)
+        {
+            return static_cast<size_t>(_msg_size);
+        }
+
+        return std::nullopt;
+    }
+
+    uint32_t GetReceiverPort()    const;
+    uint32_t GetDestinationPort() const;
 
 private:
 
@@ -351,8 +481,63 @@ private:
     mutable std::mutex                                 m_safety_mtx;
 };
 
+class ConnectionListener
+{
+public:
+    static const uint32_t MaximumDatagramSize = 2048;
 
+    ConnectionListener(int _listen_port);
+    ~ConnectionListener();
 
+    template <typename ByteType>
+    std::optional<size_t> Receive(ByteType* _msg, int _buffer_size)
+    {
+        if (m_datagram_socket->CanReceive())
+        {
+            long total = m_datagram_socket->Receive(reinterpret_cast<char*>(_msg), _buffer_size);
+            if (total > 0)
+            {
+                return static_cast<size_t>(total);
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    uint32_t GetReceiverPort() const
+    {
+        return m_datagram_socket->GetReceivePort();
+    }
+
+private:
+
+    std::unique_ptr<DatagramSocket> m_datagram_socket;
+};
+
+class ConnectionRequest
+{
+public:
+
+    ConnectionRequest(int _dst_port, const char* _dst_address) :
+        m_socket(0, _dst_port, _dst_address, false, false)
+    {}
+
+    template <typename ByteType>
+    std::optional<size_t> Send(const ByteType* _msg, int _msg_size) const
+    {
+        long total_sent = m_socket.Send(reinterpret_cast<const char*>(_msg), _msg_size);
+        if (total_sent <= 0)
+        {
+            return std::nullopt;
+        }
+
+        return total_sent;
+    }
+
+private:
+
+    DatagramSocket m_socket;
+};
 
 class RuntimeInterface
 {
@@ -792,6 +977,165 @@ private:
 
 	Hash h = default_value();
 };
+
+struct ComponentQueryInstruction
+{   
+    std::vector<ComponentId> component_constraints;
+    ComponentMask            component_constraints_mask = 0;
+
+    std::optional<WorldArea> area_constraint;
+    std::optional<uint32_t>  radius_constraint;
+
+    // Only one is allowed
+    bool and_constraint = false;
+    bool or_constraint  = false;
+
+    // If linked with multiple instructions, the frequency from the last one will be
+    // used instead
+    uint32_t frequency = 1;
+};
+
+struct ComponentQuery
+{
+    friend Runtime;
+
+    ComponentQuery(ComponentId _query_owner_component, std::optional<WorldPosition> _query_position) : 
+        query_owner_component(_query_owner_component), 
+        query_position(_query_position)
+    {}
+
+    ComponentQuery& QueryComponent(ComponentId _component_id)
+    {
+        query_component_ids.push_back(_component_id);
+        return *this;
+    }
+
+    ComponentQuery& QueryComponents(std::vector<ComponentId> _component_ids)
+    {
+        query_component_ids.insert(query_component_ids.end(), _component_ids.begin(), _component_ids.end());
+        return *this;
+    }
+
+    ComponentQuery& WhereEntityOwnerHasComponent(ComponentId _component_id)
+    { 
+        auto& current_query = AddOrGetQuery();
+
+        assert(query_position);
+        current_query.component_constraints.push_back(_component_id);
+        return *this;
+    }
+
+    ComponentQuery& WhereEntityOwnerHasComponents(std::vector<ComponentId> _component_ids)
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(query_position);
+        current_query.component_constraints.insert(current_query.component_constraints.end(), _component_ids.begin(), _component_ids.end());
+        return *this;
+    }
+
+    ComponentQuery& InArea(WorldArea _area)
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(query_position);
+        assert(!current_query.radius_constraint);
+        current_query.area_constraint = _area;
+        return *this;
+    }
+
+    ComponentQuery& InRadius(uint32_t _radius)
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(query_position);
+        assert(!current_query.area_constraint);
+        current_query.radius_constraint = _radius;
+        return *this;
+    }
+
+    ComponentQuery& WithFrequency(uint32_t _frequency)
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(query_position);
+        current_query.frequency = _frequency;
+        return *this;
+    }
+
+    ComponentQuery& And()
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(!current_query.or_constraint);
+
+        current_query.and_constraint = true;
+        AddOrGetQuery(true);
+        return *this;
+    }
+
+    ComponentQuery& Or()
+    {
+        auto& current_query = AddOrGetQuery();
+
+        assert(!current_query.and_constraint);
+
+        current_query.or_constraint = true;
+        AddOrGetQuery(true);
+        return *this;
+    }
+
+protected:
+
+    ComponentQueryInstruction& AddOrGetQuery(bool _force_add = false)
+    {
+        if (queries.size() == 0 || _force_add)
+        {
+            queries.push_back(ComponentQueryInstruction());
+        }
+        else
+        {
+            return queries.back();
+        }
+    }
+
+    ComponentId                            query_owner_component;
+    std::optional<WorldPosition>           query_position;
+    std::vector<ComponentId>               query_component_ids;
+    ComponentMask                          component_mask = 0;
+    std::vector<ComponentQueryInstruction> queries;
+
+};
+
+JaniNamespaceBegin(Message)
+
+struct UserConnectionRequest
+{
+    char     ip[16];
+    uint32_t port;
+    char     layer_name[128];
+    uint64_t user_unique_id       = 0;
+    uint32_t access_token         = 0;
+    uint32_t authentication_token = 0;
+};
+
+struct WorkerConnectionRequest
+{
+    char     ip[16];
+    uint32_t port;
+    char     layer_name[128];
+    uint32_t access_token          = 0;
+    uint32_t worker_authentication = 0;
+};
+
+struct WorkerSpawnRequest
+{
+    char     runtime_ip[16];
+    uint32_t runtime_listen_port = 0;
+    char     layer_name[128];
+};
+
+JaniNamespaceEnd(Message)
 
 JaniNamespaceEnd(Jani)
 

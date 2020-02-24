@@ -24,7 +24,8 @@ class LayerCollection
     {
         std::string              name;
         Hash                     layer_hash;
-        uint32_t                 unique_id = std::numeric_limits<uint32_t>::max();
+        bool                     is_user_layer = false;
+        uint32_t                 unique_id     = std::numeric_limits<uint32_t>::max();
         LayerLoadBalanceStrategy load_balance_strategy;
     };
 
@@ -49,6 +50,11 @@ public: // MAIN METHODS //
     * one returned by the Initialize() function
     */
     bool IsValid() const;
+
+    /*
+    * Return a map with all registered layers and their infos
+    */
+    const std::map<Hash, LayerInfo>& GetLayers() const;
 
     /*
     * Return if the given layer info exist

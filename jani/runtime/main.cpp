@@ -30,12 +30,17 @@ int main(int _argc, char* _argv[])
             return false;
         }
 
-        if (runtime->Initialize(std::move(layer_collection), std::move(worker_spawner_collection)))
+        if (!runtime->Initialize(std::move(layer_collection), std::move(worker_spawner_collection)))
         {
             std::cout << "Runtime -> Problem initializing runtime, verify if your config file is valid" << std::endl;
 
             return false;
         }
+    }
+
+    while (true)
+    {
+        runtime->Update();
     }
 
     return 0;

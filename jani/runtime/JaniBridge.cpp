@@ -3,22 +3,28 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniBridge.h"
 #include "JaniRuntime.h"
+#include "JaniWorkerInstance.h"
 
 Jani::Bridge::Bridge(
-    Runtime&                    _runtime,
-    uint32_t                    _layer_id, 
-    std::unique_ptr<Connection> _worker_connection) :
+    Runtime& _runtime,
+    uint32_t _layer_id) :
     m_runtime(_runtime), 
-    m_layer_id(_layer_id), 
-    m_worker_connection(std::move(_worker_connection))
+    m_layer_id(_layer_id)
 {
-    assert(m_worker_connection);
-
-
 }
 
 Jani::Bridge::~Bridge()
 {
+}
+
+bool Jani::Bridge::RegisterNewWorkerInstance(std::unique_ptr<WorkerInstance> _worker_instance)
+{
+    assert(_worker_instance);
+    // assert(_worker_instance->GetLayerId() == GetLayerId());
+
+    m_worker_instances.push_back(std::move(_worker_instance));
+
+    return true;
 }
 
 const std::string& Jani::Bridge::GetLayerName() const
@@ -48,26 +54,16 @@ Jani::LayerLoadBalanceStrategyTypeFlags Jani::Bridge::GetLoadBalanceStrategyFlag
 
 void Jani::Bridge::Update()
 {
-    // Update the worker connections
-    m_worker_connections;
-    // m_client_connections; 
-
-    // Process runtime messages
-    // ...
-
-    // Process client messages
-    // ...
+    for (auto& worker_instance : m_worker_instances)
+    {
+        worker_instance->Update();
+    }
 
     // Process worker messages
     // ...
 
     // Request database updates
     // ...
-}
-
-uint32_t Jani::Bridge::GetLayerId() const
-{
-    return m_layer_id;
 }
 
 bool Jani::Bridge::IsValid() const
@@ -85,12 +81,7 @@ bool Jani::Bridge::AcceptLoadBalanceStrategy(LayerLoadBalanceStrategyBits _load_
 
 uint32_t Jani::Bridge::GetTotalWorkerCount() const
 {
-    return m_worker_connections.size();
-}
-
-bool Jani::Bridge::HasInterestOnComponent(ComponentId _component_id) const
-{
-    return m_component_interests[_component_id];
+    return m_worker_instances.size();
 }
 
 #if 0
@@ -180,4 +171,12 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerComponentUpdate(
     std::optional<WorldPosition> _entity_world_position)
 {
     return m_runtime.OnWorkerComponentUpdate(_worker_id, _entity_id, _component_id, _component_payload, _entity_world_position);
+}
+
+Jani::WorkerRequestResult Jani::Bridge::OnWorkerComponentQuery(
+    WorkerId              _worker_id,
+    EntityId              _entity_id,
+    const ComponentQuery& _component_query)
+{
+    return m_runtime.OnWorkerComponentQuery(_worker_id, _entity_id, _component_query);
 }

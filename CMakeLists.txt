@@ -93,6 +93,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/USCiLab/cereal
 )
 
+# EntityX (entity-component system)
+FetchContent_Declare(
+  entityx
+  GIT_REPOSITORY https://github.com/RodrigoHolztrattner/entityx
+)
+
 FetchContent_GetProperties(ctti)
 if(NOT ctti_POPULATED)
   PrintFetchMessage("CTTI")
@@ -150,6 +156,14 @@ if(NOT cereal_POPULATED)
   FetchContent_Populate(cereal)
 endif()
 
+FetchContent_GetProperties(entityx)
+if(NOT entityx_POPULATED)
+  PrintFetchMessage("EntityX")
+  FetchContent_Populate(entityx)
+  set(ENTITYX_BUILD_SHARED false CACHE BOOL "" FORCE)
+  add_subdirectory(${entityx_SOURCE_DIR} ${entityx_BINARY_DIR})
+endif()
+
 ###########
 # PROJECT #
 ###########
@@ -201,7 +215,8 @@ ${imgui_SOURCE_DIR}
 ${magic_enum_SOURCE_DIR}/include
 ${magic_get_SOURCE_DIR}/include
 ${range_v3_SOURCE_DIR}/include
-${cereal_SOURCE_DIR}/include)
+${cereal_SOURCE_DIR}/include
+${entityx_SOURCE_DIR})
 
 ###########
 # LIBRARY #
@@ -213,6 +228,7 @@ add_library(${LIB_PROJECT_NAME} STATIC ${JANI_CORE_FILES} ${JANI_LIB_FILES})
 
 target_include_directories(${LIB_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${LIB_PROJECT_NAME} kcp)
+target_link_libraries(${LIB_PROJECT_NAME} entityx)
 
 install(TARGETS ${LIB_PROJECT_NAME}
   ARCHIVE DESTINATION lib
@@ -237,6 +253,7 @@ add_executable(${WORKER_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_FILES})
 
 target_include_directories(${WORKER_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${WORKER_PROJECT_NAME} kcp)
+target_link_libraries(${WORKER_PROJECT_NAME} entityx)
 
 target_link_libraries(${WORKER_PROJECT_NAME} "Ws2_32.lib")
 target_link_libraries(${WORKER_PROJECT_NAME} "Ws2_32.dll")
@@ -261,6 +278,7 @@ add_executable(${RUNTIME_WORKER_SPAWNER_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_F
 
 target_include_directories(${RUNTIME_WORKER_SPAWNER_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} kcp)
+target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} entityx)
 
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} "Ws2_32.lib")
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} "Ws2_32.dll")
@@ -285,6 +303,7 @@ add_executable(${RUNTIME_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_RUNTIME_FILES})
 
 target_include_directories(${RUNTIME_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${RUNTIME_PROJECT_NAME} kcp)
+target_link_libraries(${RUNTIME_PROJECT_NAME} entityx)
 
 target_link_libraries(${RUNTIME_PROJECT_NAME} "Ws2_32.lib")
 target_link_libraries(${RUNTIME_PROJECT_NAME} "Ws2_32.dll")
