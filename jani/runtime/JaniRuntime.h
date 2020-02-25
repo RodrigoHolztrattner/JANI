@@ -143,16 +143,16 @@ private: // VARIABLES //
 
     Database& m_database;
 
-    std::unique_ptr<ConnectionListener> m_incomming_users_connection;
-    std::unique_ptr<ConnectionListener> m_incomming_worker_connection;
+    std::unique_ptr<Connection<Message::UserConnectionRequest>>   m_client_connections;
+    std::unique_ptr<Connection<Message::WorkerConnectionRequest>> m_worker_connections;
 
-    std::unique_ptr<LayerCollection>         m_layer_collection;
-    std::unique_ptr<WorkerSpawnerCollection> m_worker_spawner_collection;
+    std::unique_ptr<LayerCollection>           m_layer_collection;
+    std::unique_ptr<WorkerSpawnerCollection>   m_worker_spawner_collection;
 
-    std::vector<std::unique_ptr<Connection>> m_worker_spawner_connections;
+    std::vector<std::unique_ptr<Connection<>>> m_worker_spawner_connections;
 
-    std::map<EntityId, Entity>              m_active_entities;
-    std::map<Hash, std::unique_ptr<Bridge>> m_bridges;
+    std::map<EntityId, Entity>                 m_active_entities;
+    std::map<Hash, std::unique_ptr<Bridge>>    m_bridges;
 
     std::chrono::time_point<std::chrono::steady_clock> m_load_balance_previous_update_time = std::chrono::steady_clock::now();
 };

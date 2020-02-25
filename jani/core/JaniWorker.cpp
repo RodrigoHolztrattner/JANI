@@ -27,7 +27,7 @@ bool Jani::Worker::InitializeWorker(
     m_layer_id         = _layer;
     m_tick_interval_ms = _tick_interval_ms;
 
-    m_bridge_interface = std::make_unique<BridgeInterface>(_receive_port, _bridge_port, _bridge_address, _ping_delay_ms);
+    m_bridge_interface = std::make_unique<BridgeInterface>(_receive_port, _bridge_port, _bridge_address);
 
     m_update_thread = std::thread(
         [&]()
@@ -57,17 +57,14 @@ void Jani::Worker::InternalUpdate()
     auto initial_time = std::chrono::steady_clock::now();
     while (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - initial_time).count() < m_tick_interval_ms)
     {
-        auto result = m_bridge_interface->PoolIncommingData();
-        if (result)
-        {
-            const char* data_location = result.value().first;
-            size_t data_size          = result.value().second;
+        m_bridge_interface->PoolIncommingData(
+            [&](auto _client_hash, nonstd::span<char> _data)
+            {
+                std::stringstream sstream(_data.data(), _data.size());
 
-            std::stringstream sstream(data_location, data_size);
-
-            // Decrypt and apply this data
-            UnpackWorkerData(sstream);
-        }
+                // Decrypt and apply this data
+                UnpackWorkerData(sstream);      
+            });
     }
 
     auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - initial_time).count();

@@ -32,6 +32,7 @@
 #include <cereal/cereal.hpp>
 #include <cereal/archives/binary.hpp>
 #include <nlohmann/json.hpp>
+#include "span.hpp"
 
 #include <ikcp.h>
 
@@ -367,14 +368,9 @@ struct LayerLoadBalanceStrategy
     std::optional<WorldArea> maximum_area;
 };
 
-enum class InstanceId
-{
-    Worker = 0
-};
-
 static const uint32_t MaximumPacketSize = 4096;
 
-// 
+#if 0
 
 //Simple socket class for datagrams.  Platform independent between
 //unix and Windows.
@@ -415,9 +411,7 @@ public:
 //
 //
 
-#ifdef _WIN32
-typedef int socklen_t;
-#endif
+
 
 //
 //
@@ -429,25 +423,37 @@ public:
 
     static const uint32_t MaximumDatagramSize = 2048;
 
-    Connection(uint32_t _instance_id, int _receive_port, int _dst_port, const char* _dst_address, std::optional<uint32_t> _ping_delay_ms = std::nullopt);
+    Connection(uint32_t _instance_id, int _receive_port, int _dst_port, const char* _dst_address, std::optional<uint32_t> _heartbeat_ms = std::nullopt);
     ~Connection();
 
-    void Update()
-    {
+    void Update();
 
-    }
+    /*
+    * Set the minimum time required to detect a timeout on this connection
+    * The value specified should be in ms
+    */
+    void SetTimeoutRequired(uint32_t _timeout_ms);
 
-    bool IsAlive() const;
+    /*
+    * Returns if this connection timed-out
+    */
+    bool DidTimeout() const;
 
     template <typename ByteType>
     std::optional<size_t> Receive(ByteType* _msg, int _buffer_size)
     {
         std::lock_guard l(m_safety_mtx);
 
-        long total = ikcp_recv(m_internal_connection, reinterpret_cast<char*>(_msg), _buffer_size);
-        if (total >= 0)
+        long total   = ikcp_recv(m_internal_connection, reinterpret_cast<char*>(_msg), _buffer_size);
+        bool is_ping = IsPingDatagram(reinterpret_cast<char*>(_msg), _buffer_size);
+        if (total >= 0 && !is_ping)
         {
             return static_cast<size_t>(total);
+        }
+
+        if (is_ping)
+        {
+            std::cout << "Received ping" << std::endl;
         }
 
         return std::nullopt;
@@ -472,12 +478,20 @@ public:
 
 private:
 
+
+
+private:
+
     std::unique_ptr<DatagramSocket>                    m_datagram_socket;
-    std::optional<uint32_t>                            m_ping_delay_ms;
-    std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp;
-    ikcpcb*                                            m_internal_connection = nullptr;
+    std::optional<uint32_t>                            m_heartbeat_ms;
+    std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp      = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp  = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> m_last_receive_timestamp = std::chrono::steady_clock::now();
+    ikcpcb*                                            m_internal_connection    = nullptr;
     std::thread                                        m_update_thread;
-    bool                                               m_exit_update_thread  = false;
+    bool                                               m_exit_update_thread     = false;
+    bool                                               m_is_waiting_for_ping    = false;
+    uint32_t                                           m_timeout_amount_ms      = 500;
     mutable std::mutex                                 m_safety_mtx;
 };
 
@@ -539,6 +553,148 @@ private:
     DatagramSocket m_socket;
 };
 
+#endif
+
+template <typename AuthenticationStructType = void*, typename ClientHashType = uint64_t, uint32_t MaximumDatagramSize = 2048>
+class Connection
+{
+public:
+
+    using ClientHash               = ClientHashType;
+    using ReceiveCallback          = std::function<void(std::optional<ClientHash>, nonstd::span<char> _data)>;
+    using TimeoutCallback          = std::function<void(std::optional<ClientHash>)>;
+    using AuthenticationCallback   = std::function<bool(ClientHash, const AuthenticationStructType&)>;
+
+#ifdef _WIN32
+    using socklen_t = int;
+#endif
+
+private:
+
+    struct ClientInfo
+    {
+        ClientHash                                         hash                   = std::numeric_limits<ClientHash>::max();
+        ikcpcb*                                            kcp_instance           = nullptr;
+        std::chrono::time_point<std::chrono::steady_clock> last_receive_timestamp = std::chrono::steady_clock::now();
+        std::string                                        address;
+        uint16_t                                           port                   = std::numeric_limits<uint16_t>::max();
+        mutable bool                                       authenticated          = false;
+        mutable bool                                       timed_out              = false;
+    };
+
+public:
+
+    /*
+    * Setup a client connection type
+    * This connection will only be allowed to send data to the dst address/port
+    * This connection will only be allowed to receive data from the dst address/port
+    */
+    Connection(int _local_port, int _dst_port, const char* _dst_address);
+
+    /*
+    * Setup a server connection type
+    * This connection will be allowed to send data to any registered and authenticated
+    * client
+    * This connection will be able to receive data from any client that knows its
+    * address/port
+    */
+    Connection(int _local_port, std::optional<AuthenticationCallback> _authentication_callback = std::nullopt);
+
+    /*
+    * This function will attempt to grab any received datagram from the UDP layer and
+    * pass it to the corresponding kcp instance
+    * If this is a client, it will also check if a ping is required to keep the 
+    * connection alive
+    */
+    void Update();
+
+    /*
+    * Check if the server or any client timed-out
+    * If this is a server the callback function will have the timed-out client hash, else
+    * if this is a client it will not have any value (but just by calling the callback it
+    * means that the server timed-out)
+    */
+    void DidTimeout(const TimeoutCallback& _timeout_callback) const;
+
+    /*
+    * Send a message to:
+    *   1. Connected server if no client hash is specified (left at 0)
+    *   2. At the specified client by the given hash (if registered)
+    * Returns if the operation succeeded
+    */
+    bool Send(const void* _msg, int _msg_size, ClientHash _client_hash = 0) const;
+
+    /*
+    * Receive data from:
+    *   1. The connected server, where the callback function will not have valid a client hash parameter
+    *   2. From each client that had sent data, where the callback function will have the respective client hash
+    * If this is a server and client authentication is enabled, this function has the potential of triggering the
+    * authentication callback whenever a client successfully send its first message
+    */
+    void Receive(const ReceiveCallback& _receive_callback) const;
+
+private:
+
+    /*
+    * Check if the underlying socket has some data to be received
+    */
+    bool CanReceiveDatagram() const;
+
+    /*
+    * Receive datagrams from the UDP layer and pass them to the kcp
+    */
+    void TryReceiveDatagrams();
+
+    /*
+    * Create and configure the listen part of this connection socket
+    */
+    bool SetupListenSocket();
+
+    /*
+    * Hash a client addr (address and port)
+    */
+    ClientHash HashClientAddr(const struct sockaddr_in& _client_addr) const;
+
+    /*
+    * Check if a given message has a ping encoded
+    */
+    bool IsPingDatagram(const char* _message, uint32_t _message_size) const;
+
+    /*
+    * Encode a ping datagram that can be sent over network
+    */
+    const char* GetPingDatagram(uint32_t& _size) const;
+
+private:
+
+#ifdef _WIN32
+    WSAData     m_wsa_data;
+    SOCKET      m_socket              = {};
+#else
+    int         m_socket              = 0;
+#endif
+    sockaddr_in m_server_addr         = {};
+    uint32_t    m_local_port          = 0;
+    uint32_t    m_dst_port            = 0;
+    std::string m_dst_address;
+    ikcpcb*     m_single_kcp_instance = nullptr;
+
+    bool        m_is_server           = false;
+    bool        m_is_valid            = false;
+    bool        m_is_waiting_for_ping = false;
+
+    uint32_t    m_timeout_ms          = 500;
+    uint32_t    m_ping_window_ms      = 100;
+
+    AuthenticationCallback m_client_authentication_callback;
+
+    std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp             = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp         = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> m_last_server_receive_timestamp = std::chrono::steady_clock::now();
+
+    std::map<ClientHash, ClientInfo> m_server_clients;
+};
+
 class RuntimeInterface
 {
 
@@ -551,34 +707,25 @@ class BridgeInterface
 {
 public:
 
-    BridgeInterface(int _receive_port, int _bridge_port, const char* _bridge_address, uint32_t _ping_delay_ms) :
-        m_bridge_connection(magic_enum::enum_integer(InstanceId::Worker), _receive_port, _bridge_port, _bridge_address, _ping_delay_ms),
+    BridgeInterface(int _local_port, int _bridge_port, const char* _bridge_address) :
+        m_bridge_connection(_local_port, _bridge_port, _bridge_address),
         m_temporary_data_buffer(std::array<char, MaximumPacketSize>())
     {
-
     }
 
-    std::optional<std::pair<const char*, size_t>> PoolIncommingData()
+    void PoolIncommingData(Connection<>::ReceiveCallback _receive_callback) const
     {
-        auto total = m_bridge_connection.Receive(m_temporary_data_buffer.data(), m_temporary_data_buffer.size());
-        if (total)
-        {
-            return std::make_pair(m_temporary_data_buffer.data(), total.value());
-        }
-
-        return std::nullopt;
+        m_bridge_connection.Receive(_receive_callback);
     }
 
-    bool PushData(const char* _data, size_t _data_size)
+    bool PushData(const char* _data, size_t _data_size) const
     {
-        auto result = m_bridge_connection.Send(_data, _data_size);
-
-        return result != std::nullopt;
+        return m_bridge_connection.Send(_data, _data_size);
     }
 
 private:
 
-    Connection                          m_bridge_connection;
+    Connection<>                        m_bridge_connection;
     std::array<char, MaximumPacketSize> m_temporary_data_buffer;
 };
 

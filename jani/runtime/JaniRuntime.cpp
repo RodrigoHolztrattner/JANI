@@ -35,15 +35,25 @@ bool Jani::Runtime::Initialize(
     m_layer_collection          = std::move(layer_collection);
     m_worker_spawner_collection = std::move(worker_spawner_collection);
 
-    m_incomming_users_connection  = std::make_unique<ConnectionListener>(8080);
-    m_incomming_worker_connection = std::make_unique<ConnectionListener>(13051);
+    m_client_connections = std::make_unique<Connection<Message::UserConnectionRequest>>(
+        8080, 
+        [](const Message::UserConnectionRequest& _connection_request)
+        {
+            return true;
+        });
+
+    m_worker_connections = std::make_unique<Connection<Message::WorkerConnectionRequest>>(
+        13051,
+        [](const Message::WorkerConnectionRequest& _connection_request)
+        {
+            return true;
+        });
 
     auto& worker_spawners = m_worker_spawner_collection->GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
         static uint32_t spawner_port = 13000;
-        auto spawner_connection = std::make_unique<Connection>(
-            0,
+        auto spawner_connection = std::make_unique<Connection<>>(
             spawner_port++, 
             worker_spawner_info.port, 
             worker_spawner_info.ip.c_str());
@@ -309,7 +319,12 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(
 
 void Jani::Runtime::ReceiveIncommingUserConnections()
 {
-    std::array<int8_t, Connection::MaximumDatagramSize> data;
+    m_incomming_users_connection->Receive(
+        [](auto _client_hash, nonstd::span<char> _data)
+        {
+
+        });
+
     while (auto message_size = m_incomming_users_connection->Receive(data.data(), data.size()))
     {
         if (message_size.value() != sizeof(Message::UserConnectionRequest))
