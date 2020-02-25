@@ -862,8 +862,14 @@ public:
             // For each registered client
             for (auto& [client_hash, client_info] : m_server_clients)
             {
-                while (long total_received = ikcp_recv(client_info.kcp_instance, buffer, buffer_size) > 0)
+                while (true)
                 {
+                    long total_received = ikcp_recv(m_single_kcp_instance, buffer, buffer_size);
+                    if (total_received <= 0)
+                    {
+                        break;
+                    }
+
                     // [[likely]]
                     if (!IsPingDatagram(buffer, total_received))
                     {
@@ -890,10 +896,16 @@ public:
         }
         else
         {
-            while (long total_received = ikcp_recv(m_single_kcp_instance, buffer, buffer_size) > 0)
+            while (true)
             {
+                long total_received = ikcp_recv(m_single_kcp_instance, buffer, buffer_size);
+                if (total_received <= 0)
+                {
+                    break;
+                }
+
                 // [[likely]]
-                if (!IsPingDatagram(buffer, buffer_size))
+                if (!IsPingDatagram(buffer, total_received))
                 {
                     _receive_callback(std::nullopt, nonstd::span<char>(buffer, buffer + total_received));
                 }
