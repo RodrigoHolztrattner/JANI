@@ -125,16 +125,6 @@ private:
     /*
     *
     */
-    void ReceiveIncommingUserConnections();
-
-    /*
-    *
-    */
-    void ReceiveIncommingWorkerConnections();
-
-    /*
-    *
-    */
     void ApplyLoadBalanceUpdate();
 
 ////////////////////////

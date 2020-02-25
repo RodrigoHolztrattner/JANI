@@ -17,9 +17,7 @@ int main(int _argc, char* _argv[])
     
     std::cout << "Worker -> Selected random port: port{" << random_port << "}" << std::endl << std::endl;
 
-    Jani::ConnectionRequest connection_request(runtime_listen_port, runtime_ip);
-
-    Jani::Connection runtime_connection(0, random_port, runtime_listen_port, runtime_ip);
+    Jani::Connection<> runtime_connection(random_port, runtime_listen_port, runtime_ip);
 
     Jani::Message::WorkerConnectionRequest worker_connection_request;
     std::strcpy(worker_connection_request.ip, "127.0.0.1");
@@ -29,7 +27,8 @@ int main(int _argc, char* _argv[])
     worker_connection_request.worker_authentication = -1;
 
     std::cout << "Sending request!" << std::endl;
-    if (!connection_request.Send(&worker_connection_request, sizeof(Jani::Message::WorkerConnectionRequest)))
+
+    if (!runtime_connection.Send(&worker_connection_request, sizeof(Jani::Message::WorkerConnectionRequest)))
     {
         std::cout << "Problem sending worker connection request!" << std::endl;
         int a;
@@ -40,6 +39,8 @@ int main(int _argc, char* _argv[])
     while (true)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        runtime_connection.Update();
     }
 
 #if 0

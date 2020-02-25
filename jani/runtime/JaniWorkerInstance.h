@@ -40,7 +40,7 @@ public: // MAIN METHODS //
 private: // VARIABLES //
 ////////////////////////
 
-    std::unique_ptr<Connection> m_worker_connection;
+    std::unique_ptr<Connection<>> m_worker_connection;
 };
 
 // Jani

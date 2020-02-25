@@ -37,15 +37,74 @@ bool Jani::Runtime::Initialize(
 
     m_client_connections = std::make_unique<Connection<Message::UserConnectionRequest>>(
         8080, 
-        [](const Message::UserConnectionRequest& _connection_request)
+        [&](auto _client_hash, const Message::UserConnectionRequest& _connection_request)
         {
+            auto layer_id = Hasher(_connection_request.layer_name);
+
+            auto bridge_iter = m_bridges.find(layer_id);
+            if (bridge_iter == m_bridges.end())
+            {
+                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
+                m_bridges.insert({ layer_id , std::move(new_bridge) });
+                bridge_iter = m_bridges.find(layer_id);
+            }
+
+            auto& bridge = bridge_iter->second;
+
+            // Determine if this bridge can accept another layer (if the balance strategy allows it
+            // TODO: ...
+
+            static uint32_t local_port = 9090; // TODO: Use a decent port-select function
+
+            auto user_worker_instance = std::make_unique<WorkerInstance>(
+                _connection_request.ip, 
+                _connection_request.port, 
+                local_port++, 
+                layer_id,
+                true);
+
+            if (!bridge->RegisterNewWorkerInstance(std::move(user_worker_instance)))
+            {
+                return false;
+            }
+
             return true;
         });
 
     m_worker_connections = std::make_unique<Connection<Message::WorkerConnectionRequest>>(
         13051,
-        [](const Message::WorkerConnectionRequest& _connection_request)
+        [&](auto _client_hash, const Message::WorkerConnectionRequest& _connection_request)
         {
+            auto layer_id = Hasher(_connection_request.layer_name);
+
+            auto bridge_iter = m_bridges.find(layer_id);
+            if (bridge_iter == m_bridges.end())
+            {
+                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
+                m_bridges.insert({ layer_id , std::move(new_bridge) });
+                bridge_iter = m_bridges.find(layer_id);
+            }
+
+            auto& bridge = bridge_iter->second;
+
+            // Determine if this bridge can accept another layer (if the balance strategy allows it
+            // TODO: ...
+
+            static uint32_t local_port = 11090; // TODO: Use a decent port-select function
+
+            auto worker_instance = std::make_unique<WorkerInstance>(
+                _connection_request.ip,
+                _connection_request.port,
+                local_port++, 
+                layer_id,
+                false);
+
+            if (!bridge->RegisterNewWorkerInstance(std::move(worker_instance)))
+            {
+                // Big problem!
+                // ...
+            }
+
             return true;
         });
 
@@ -66,8 +125,13 @@ bool Jani::Runtime::Initialize(
 
 void Jani::Runtime::Update()
 {
-    ReceiveIncommingUserConnections();
-    ReceiveIncommingWorkerConnections();
+    m_client_connections->Update();
+    m_worker_connections->Update();
+    
+    for (auto& worker_spawner_connection : m_worker_spawner_connections)
+    {
+        worker_spawner_connection->Update();
+    }
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 1000)
     {
@@ -313,103 +377,6 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(
     return WorkerRequestResult(false);
 }
 
-//
-//
-//
-
-void Jani::Runtime::ReceiveIncommingUserConnections()
-{
-    m_incomming_users_connection->Receive(
-        [](auto _client_hash, nonstd::span<char> _data)
-        {
-
-        });
-
-    while (auto message_size = m_incomming_users_connection->Receive(data.data(), data.size()))
-    {
-        if (message_size.value() != sizeof(Message::UserConnectionRequest))
-        {
-            continue;
-        }
-
-        Message::UserConnectionRequest& user_connection_request = *reinterpret_cast<Message::UserConnectionRequest*>(data.data());
-
-        auto layer_id = Hasher(user_connection_request.layer_name);
-
-        auto bridge_iter = m_bridges.find(layer_id);
-        if (bridge_iter == m_bridges.end())
-        {
-            auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-            m_bridges.insert({ layer_id , std::move(new_bridge) });
-            bridge_iter = m_bridges.find(layer_id);
-        }
-
-        auto& bridge = bridge_iter->second;
-
-        // Determine if this bridge can accept another layer (if the balance strategy allows it
-        // TODO: ...
-
-        static uint32_t local_port = 9090; // TODO: Use a decent port-select function
-
-        auto user_worker_instance = std::make_unique<WorkerInstance>(
-            user_connection_request.ip, 
-            user_connection_request.port, 
-            local_port++, 
-            layer_id,
-            true);
-
-        if (!bridge->RegisterNewWorkerInstance(std::move(user_worker_instance)))
-        {
-            // Big problem!
-            // ...
-        }
-    }
-}
-
-void Jani::Runtime::ReceiveIncommingWorkerConnections()
-{
-    std::array<int8_t, Connection::MaximumDatagramSize> data;
-    while (auto message_size = m_incomming_worker_connection->Receive(data.data(), data.size()))
-    {
-        if (message_size.value() != sizeof(Message::WorkerConnectionRequest))
-        {
-            continue;
-        }
-
-        Message::WorkerConnectionRequest& worker_connection_request = *reinterpret_cast<Message::WorkerConnectionRequest*>(data.data());
-
-        auto layer_id = Hasher(worker_connection_request.layer_name);
-
-        auto bridge_iter = m_bridges.find(layer_id);
-        if (bridge_iter == m_bridges.end())
-        {
-            auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-            m_bridges.insert({ layer_id , std::move(new_bridge) });
-            bridge_iter = m_bridges.find(layer_id);
-        }
-
-        auto& bridge = bridge_iter->second;
-
-        // Determine if this bridge can accept another layer (if the balance strategy allows it
-        // TODO: ...
-
-        static uint32_t local_port = 11090; // TODO: Use a decent port-select function
-
-        auto worker_instance = std::make_unique<WorkerInstance>(
-            worker_connection_request.ip,
-            worker_connection_request.port,
-            local_port++, 
-            layer_id,
-            false);
-
-        if (!bridge->RegisterNewWorkerInstance(std::move(worker_instance)))
-        {
-            // Big problem!
-            // ...
-        }
-    }
-}
-
 void Jani::Runtime::ApplyLoadBalanceUpdate()
 {
     auto& worker_spawners   = m_worker_spawner_collection->GetWorkerSpawnersInfos();
@@ -444,7 +411,7 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
 
                 std::strcpy(spawn_request.runtime_ip, LocalIp);
                 std::strcpy(spawn_request.layer_name, layer_info.name.data());
-                spawn_request.runtime_listen_port = m_incomming_worker_connection->GetReceiverPort();
+                spawn_request.runtime_listen_port = 13051;
 
                 if (!m_worker_spawner_connections.back()->Send(&spawn_request, sizeof(Message::WorkerSpawnRequest)))
                 {
