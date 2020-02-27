@@ -17,14 +17,29 @@ Jani::Bridge::~Bridge()
 {
 }
 
-bool Jani::Bridge::RegisterNewWorkerInstance(std::unique_ptr<WorkerInstance> _worker_instance)
+std::optional<Jani::WorkerInstance*> Jani::Bridge::TryAllocateNewWorker(
+    LayerHash                _layer_hash,
+    Connection<>::ClientHash _client_hash,
+    bool                     _is_user)
 {
-    assert(_worker_instance);
-    // assert(_worker_instance->GetLayerId() == GetLayerId());
+    // Check if there is space for more workers on this layer
+    if (m_load_balance_strategy.maximum_workers && m_worker_instances.size() >= m_load_balance_strategy.maximum_workers.value())
+    {
+        return std::nullopt;
+    }
+    
+    // Check other layer requirements, as necessary
+    // ...
 
-    m_worker_instances.push_back(std::move(_worker_instance));
+    auto worker_instance = std::make_unique<WorkerInstance>(
+        *this, 
+        _layer_hash, 
+        _client_hash,
+        _is_user);
 
-    return true;
+    m_worker_instances.push_back(std::move(worker_instance));
+
+    return m_worker_instances.back().get();
 }
 
 const std::string& Jani::Bridge::GetLayerName() const
@@ -54,11 +69,6 @@ Jani::LayerLoadBalanceStrategyTypeFlags Jani::Bridge::GetLoadBalanceStrategyFlag
 
 void Jani::Bridge::Update()
 {
-    for (auto& worker_instance : m_worker_instances)
-    {
-        worker_instance->Update();
-    }
-
     // Process worker messages
     // ...
 
@@ -115,7 +125,7 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerConnect(WorkerId _worker_id)
     return WorkerRequestResult(true);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerLogMessage(
+bool Jani::Bridge::OnWorkerLogMessage(
     WorkerId       _worker_id, 
     WorkerLogLevel _log_level, 
     std::string    _log_title, 
@@ -124,14 +134,14 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerLogMessage(
     return m_runtime.OnWorkerLogMessage(_worker_id, _log_level, _log_title, _log_message);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerReserveEntityIdRange(
+std::optional<Jani::EntityId> Jani::Bridge::OnWorkerReserveEntityIdRange(
     WorkerId _worker_id, 
     uint32_t _total_ids)
 {
     return m_runtime.OnWorkerReserveEntityIdRange(_worker_id, _total_ids);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerAddEntity(
+bool Jani::Bridge::OnWorkerAddEntity(
     WorkerId             _worker_id, 
     EntityId             _entity_id, 
     const EntityPayload& _entity_payload)
@@ -139,14 +149,14 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerAddEntity(
     return m_runtime.OnWorkerAddEntity(_worker_id, _entity_id, _entity_payload);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerRemoveEntity(
+bool Jani::Bridge::OnWorkerRemoveEntity(
     WorkerId _worker_id, 
     EntityId _entity_id)
 {
     return m_runtime.OnWorkerRemoveEntity(_worker_id, _entity_id);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerAddComponent(
+bool Jani::Bridge::OnWorkerAddComponent(
     WorkerId                _worker_id, 
     EntityId                _entity_id, 
     ComponentId             _component_id, 
@@ -155,7 +165,7 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerAddComponent(
     return m_runtime.OnWorkerAddComponent(_worker_id, _entity_id, _component_id, _component_payload);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerRemoveComponent(
+bool Jani::Bridge::OnWorkerRemoveComponent(
     WorkerId _worker_id,
     EntityId _entity_id, 
     ComponentId _component_id)
@@ -163,7 +173,7 @@ Jani::WorkerRequestResult Jani::Bridge::OnWorkerRemoveComponent(
     return m_runtime.OnWorkerRemoveComponent(_worker_id, _entity_id, _component_id);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerComponentUpdate(
+bool Jani::Bridge::OnWorkerComponentUpdate(
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,

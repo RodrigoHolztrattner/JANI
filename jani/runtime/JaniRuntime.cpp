@@ -9,7 +9,9 @@
 #include "JaniWorkerInstance.h"
 #include "JaniWorkerSpawnerInstance.h"
 
-const char* s_local_ip = "127.0.0.1";
+const char* s_local_ip                  = "127.0.0.1";
+uint32_t    s_client_worker_listen_port = 8080;
+uint32_t    s_worker_listen_port        = 13051;
 
 Jani::Runtime::Runtime(Database& _database) :
     m_database(_database)
@@ -36,8 +38,8 @@ bool Jani::Runtime::Initialize(
     m_layer_collection          = std::move(layer_collection);
     m_worker_spawner_collection = std::move(worker_spawner_collection);
 
-    m_client_connections = std::make_unique<Connection<>>(8080);
-    m_worker_connections = std::make_unique<Connection<>>(13051);
+    m_client_connections = std::make_unique<Connection<>>(s_client_worker_listen_port);
+    m_worker_connections = std::make_unique<Connection<>>(s_worker_listen_port);
     m_request_manager    = std::make_unique<RequestManager>();
 
     auto& worker_spawners = m_worker_spawner_collection->GetWorkerSpawnersInfos();
@@ -51,7 +53,7 @@ bool Jani::Runtime::Initialize(
             spawner_port++,
             worker_spawner_info.port,
             worker_spawner_info.ip.c_str(),
-            13051,
+            s_worker_listen_port,
             s_local_ip))
         {
             return false;
@@ -68,92 +70,92 @@ void Jani::Runtime::Update()
     m_client_connections->Update();
     m_worker_connections->Update();
 
-    m_request_manager->CheckResponses(
+    auto ProcessWorkerRequest = [&](
+        auto                         _client_hash, 
+        bool                         _is_user, 
+        const Request&               _request, 
+        cereal::BinaryInputArchive&  _request_payload, 
+        cereal::BinaryOutputArchive& _response_payload)
+    {
+        // If this is an authentication request, process it, else delegate the request to the worker itself
+        // [[unlikely]]
+        if (_request.type == RequestType::ClientWorkerAuthentication)
+        {
+            Message::ClientWorkerAuthenticationRequest authentication_request;
+            {
+                _request_payload(authentication_request);
+            }
+
+            // Authenticate this worker
+            // ...
+
+            bool worker_allocation_result = TryAllocateNewWorker(
+                Hasher(authentication_request.layer_name),
+                _client_hash,
+                true);
+
+            Message::ClientWorkerAuthenticationResponse authentication_response = { worker_allocation_result };
+            {
+                _response_payload(authentication_response);
+            }
+        }
+        // [[unlikely]]
+        else if (_request.type == RequestType::WorkerAuthentication)
+        {
+            Message::WorkerAuthenticationRequest authentication_request;
+            {
+                _request_payload(authentication_request);
+            }
+
+            // Authenticate this worker
+            // ...
+            
+            bool worker_allocation_result = TryAllocateNewWorker(
+                authentication_request.layer_hash,
+                _client_hash,
+                false);
+
+            Message::WorkerAuthenticationResponse authentication_response = { worker_allocation_result };
+            {
+                _response_payload(authentication_response);
+            }
+        }
+        else
+        {
+            auto worker_instance_iter = m_worker_instance_mapping.find(_client_hash);
+            // [[likely]]
+            if (worker_instance_iter != m_worker_instance_mapping.end())
+            {
+                worker_instance_iter->second->ProcessRequest(
+                    _request,
+                    _request_payload,
+                    _response_payload);
+            }
+        }
+    };
+
+    m_request_manager->CheckRequests(
         *m_client_connections, 
         [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
         {
-            switch (_request.type)
-            {
-                case RequestType::ClientWorkerAuthentication:
-                {
-                    Message::ClientWorkerAuthenticationRequest authentication_request;
-                    {
-                        _request_payload(authentication_request);
-                    }
-
-                    auto layer_id = Hasher(authentication_request.layer_name);
-
-                    auto bridge_iter = m_bridges.find(layer_id);
-                    if (bridge_iter == m_bridges.end())
-                    {
-                        auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                        m_bridges.insert({ layer_id , std::move(new_bridge) });
-                        bridge_iter = m_bridges.find(layer_id);
-                    }
-
-                    auto& bridge = bridge_iter->second;
-
-                    // Determine if this bridge can accept another layer (if the balance strategy allows it
-                    // TODO: ...
-
-                    auto user_worker_instance = std::make_unique<WorkerInstance>(true);
-
-                    bool result = true;
-                    if (!bridge->RegisterNewWorkerInstance(std::move(user_worker_instance)))
-                    {
-                        result = false;
-                    }
-
-                    Message::ClientWorkerAuthenticationResponse authentication_response = { result };
-                    {
-                        _response_payload(authentication_response);
-                    }
-                }
-            }
+            ProcessWorkerRequest(
+                _client_hash,
+                true,
+                _request,
+                _request_payload,
+                _response_payload);
         });
 
-    m_request_manager->CheckResponses(
+    m_request_manager->CheckRequests(
         *m_worker_connections,
         [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
         {
-            switch (_request.type)
-            {
-                case RequestType::WorkerAuthentication:
-                {
-                    Message::WorkerAuthenticationRequest authentication_request;
-                    {
-                        _request_payload(authentication_request);
-                    }
-
-                    auto layer_id = authentication_request.layer_hash;
-
-                    auto bridge_iter = m_bridges.find(layer_id);
-                    if (bridge_iter == m_bridges.end())
-                    {
-                        auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                        m_bridges.insert({ layer_id , std::move(new_bridge) });
-                        bridge_iter = m_bridges.find(layer_id);
-                    }
-
-                    auto& bridge = bridge_iter->second;
-
-                    // Determine if this bridge can accept another layer (if the balance strategy allows it
-                    // TODO: ...
-
-                    auto worker_instance = std::make_unique<WorkerInstance>(false);
-
-                    bool result = true;
-                    if (!bridge->RegisterNewWorkerInstance(std::move(worker_instance)))
-                    {
-                        result = false;
-                    }
-
-                    Message::WorkerAuthenticationResponse authentication_response = { result };
-                    {
-                        _response_payload(authentication_response);
-                    }
-                }
-            }
+            ProcessWorkerRequest(
+                _client_hash,
+                false,
+                _request,
+                _request_payload,
+                _response_payload);
         });
 
     for (auto& worker_spawner_connection : m_worker_spawner_instances)
@@ -173,11 +175,61 @@ void Jani::Runtime::Update()
     }
 }
 
+bool Jani::Runtime::TryAllocateNewWorker(
+    LayerHash                _layer_hash,
+    Connection<>::ClientHash _client_hash,
+    bool                     _is_user)
+{
+    assert(m_worker_instance_mapping.find(_client_hash) == m_worker_instance_mapping.end());
+
+    if (!m_layer_collection->HasLayer(_layer_hash))
+    {
+        return false;
+    }
+
+    auto layer_info = m_layer_collection->GetLayerInfo(_layer_hash);
+
+    // Make sure the layer is an user layer if the requester is also an user, also vice-versa
+    if (layer_info.is_user_layer != _is_user)
+    {
+        return false;
+    }
+
+    // Make sure that this layer support at least one worker
+    if (layer_info.load_balance_strategy.maximum_workers && layer_info.load_balance_strategy.maximum_workers.value() == 0)
+    {
+        return false;
+    }
+
+    // Ok we are free to at least attempt to retrieve (or create) a bridge for this layer //
+    auto bridge_iter = m_bridges.find(_layer_hash);
+    if (bridge_iter == m_bridges.end())
+    {
+        auto new_bridge = std::make_unique<Bridge>(*this, _layer_hash);
+        m_bridges.insert({ _layer_hash , std::move(new_bridge) });
+        bridge_iter = m_bridges.find(_layer_hash);
+    }
+
+    auto& bridge = bridge_iter->second;
+
+    auto worker_allocation_result = bridge->TryAllocateNewWorker(_layer_hash, _client_hash, _is_user);
+    if (!worker_allocation_result)
+    {
+        return false;
+    }
+
+    // Add an entry into our worker instance mapping to provide future mapping between
+    // worker messages and the bridge callbacks
+    m_worker_instance_mapping.insert({ _client_hash, worker_allocation_result.value()});
+
+    return true;
+}
+
 //
 //
 //
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerLogMessage(
+bool Jani::Runtime::OnWorkerLogMessage(
     WorkerId       _worker_id,
     WorkerLogLevel _log_level,
     std::string    _log_title,
@@ -185,24 +237,17 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerLogMessage(
 {
     std::cout << "[" << magic_enum::enum_name(_log_level) << "] " << _log_title << ": " << _log_message << std::endl;
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerReserveEntityIdRange(
+std::optional<Jani::EntityId> Jani::Runtime::OnWorkerReserveEntityIdRange(
     WorkerId _worker_id,
     uint32_t _total_ids)
 {
-    // Try to reserve the ids from our database
-    auto reserve_entity_id_result = m_database.ReserveEntityIdRange(_total_ids);
-    if (!reserve_entity_id_result)
-    {
-        return WorkerRequestResult(false);
-    }
-
-    return WorkerRequestResult(true); // Setup the id range result from reserve_entity_id_result.value() to reserve_entity_id_result.value() + _total_ids
+    return m_database.ReserveEntityIdRange(_total_ids);
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddEntity(
+bool Jani::Runtime::OnWorkerAddEntity(
     WorkerId             _worker_id,
     EntityId             _entity_id,
     const EntityPayload& _entity_payload)
@@ -210,13 +255,13 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddEntity(
     // Make sure there is not active entity with the given id
     if (m_active_entities.find(_entity_id) != m_active_entities.end())
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Create the new entity on the database
     if (!m_database.AddEntity(_entity_id, _entity_payload))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Create the new entity
@@ -228,10 +273,10 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddEntity(
         entity.AddComponent(component_payload.component_id);
     }
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerRemoveEntity(
+bool Jani::Runtime::OnWorkerRemoveEntity(
     WorkerId _worker_id,
     EntityId _entity_id)
 {
@@ -239,20 +284,20 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerRemoveEntity(
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter == m_active_entities.end())
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     auto& entity = entity_iter->second;
 
     if (!m_database.RemoveEntity(_entity_id))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddComponent(
+bool Jani::Runtime::OnWorkerAddComponent(
     WorkerId                _worker_id,
     EntityId                _entity_id,
     ComponentId             _component_id,
@@ -262,7 +307,7 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddComponent(
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter == m_active_entities.end())
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     auto& entity = entity_iter->second;
@@ -270,22 +315,22 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerAddComponent(
     // Check if this entity already has the given component id
     if (entity.HasComponent(_component_id))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Register this component on the database for the given entity
     if (!m_database.AddComponent(_entity_id, _component_id, _component_payload))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Add the component to the entity
     entity.AddComponent(_component_id);
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerRemoveComponent(
+bool Jani::Runtime::OnWorkerRemoveComponent(
     WorkerId    _worker_id,
     EntityId    _entity_id,
     ComponentId _component_id)
@@ -294,7 +339,7 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerRemoveComponent(
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter == m_active_entities.end())
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     auto& entity = entity_iter->second;
@@ -302,22 +347,22 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerRemoveComponent(
     // Check if this entity has the given component id
     if (!entity.HasComponent(_component_id))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Unregister this component on the database for the given entity
     if (!m_database.RemoveComponent(_entity_id, _component_id))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Remove the component from the entity
     entity.RemoveComponent(_component_id);
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentUpdate(
+bool Jani::Runtime::OnWorkerComponentUpdate(
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,
@@ -328,7 +373,7 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentUpdate(
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter == m_active_entities.end())
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     auto& entity = entity_iter->second;
@@ -336,16 +381,16 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentUpdate(
     // Check if this entity already has the given component id
     if (entity.HasComponent(_component_id))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
     // Update this component on the database for the given entity
     if (!m_database.ComponentUpdate(_entity_id, _component_id, _component_payload, _entity_world_position))
     {
-        return WorkerRequestResult(false);
+        return false;
     }
 
-    return WorkerRequestResult(true);
+    return true;
 }
 
 Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(

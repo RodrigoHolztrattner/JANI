@@ -417,6 +417,14 @@ namespace Jani
             }
         }
 
+        /*
+        * Returns if this connection is operating as a server
+        */
+        bool IsServer() const
+        {
+            return m_is_server;
+        }
+
     private:
 
         /*
@@ -661,7 +669,15 @@ namespace Jani
     {
         /* Worker Requests */
         WorkerAuthentication,           /* pure worker type */
-        ClientWorkerAuthentication,   /* client worker type */
+        ClientWorkerAuthentication,     /* client worker type */
+        WorkerLogMessage, 
+        WorkerReserveEntityIdRange, 
+        WorkerAddEntity, 
+        WorkerRemoveEntity, 
+        WorkerAddComponent, 
+        WorkerRemoveComponent, 
+        WorkerComponentUpdate,
+        WorkerComponentQuery, 
 
         /* Worker Spawner Requests */
         SpawnWorkerForLayer,
@@ -768,6 +784,8 @@ namespace Jani
         template<typename RequestPayloadType>
         bool MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
         {
+            assert(!_connection.IsServer());
+
             m_temporary_request_buffer.clear();
             m_temporary_request_buffer.resize(sizeof(Request) + sizeof(RequestPayloadType));
 
@@ -790,6 +808,8 @@ namespace Jani
 
         void CheckResponses(const Connection<>& _connection, std::function<void(const Request&, const RequestResponse&)> _response)
         {
+            assert(!_connection.IsServer());
+
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {
@@ -855,8 +875,10 @@ namespace Jani
 
     public:
 
-        void CheckResponses(const Connection<>& _connection, std::function<void(Connection<>::ClientHash, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _response)
+        void CheckRequests(const Connection<>& _connection, std::function<void(Connection<>::ClientHash, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _response)
         {
+            assert(_connection.IsServer());
+
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {

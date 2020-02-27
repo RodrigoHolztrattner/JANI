@@ -54,7 +54,7 @@
 template <class Archive>                                                    \
 void serialize(Archive& ar)                                                 \
 {                                                                           \
-    boost::pfr::for_each_field(*this, [&ar](auto& field, std::size_t idx)      \
+    boost::pfr::for_each_field(*this, [&ar](auto& field, std::size_t idx)   \
     {                                                                       \
         ar(field);                                                          \
     });                                                                     \
@@ -69,16 +69,22 @@ class WorkerSpawnerInstance;
 
 struct WorldPosition
 {
+    Serializable();
+
     int32_t x, y;
 };
 
 struct WorldArea
 {
+    Serializable();
+
     uint32_t width, height;
 };
 
 struct WorldRect
 {
+    Serializable();
+
     uint32_t ManhattanDistanceFromPosition(WorldPosition _position) const
     {
         int32_t center_x  = width - x;
@@ -195,12 +201,16 @@ using ComponentUpdateReadInterest = std::tuple<EntityId, ComponentId, WorkerId>;
 
 struct ComponentPayload
 {
+    Serializable();
+
     ComponentId         component_id;
     std::vector<int8_t> component_data;
 };
 
 struct EntityPayload
 {
+    Serializable();
+
     std::vector<ComponentPayload> component_payloads;
 };
 
@@ -958,16 +968,6 @@ struct WorkerAuthenticationResponse
     bool succeed = false;
 };
 
-struct WorkerSpawnerConnectionRequest
-{
-    Serializable();
-
-    char     ip[16];
-    uint32_t port;
-    uint32_t access_token                  = 0;
-    uint32_t worker_spawner_authentication = 0;
-};
-
 struct WorkerSpawnRequest
 {
     Serializable();
@@ -978,6 +978,95 @@ struct WorkerSpawnRequest
 };
 
 struct WorkerSpawnResponse
+{
+    Serializable();
+
+    bool succeed = false;
+};
+
+// WorkerLogMessage
+struct WorkerLogMessageRequest
+{
+    Serializable();
+
+    WorkerLogLevel log_level;
+    std::string    log_title;
+    std::string    log_message;
+};
+
+// WorkerReserveEntityIdRange
+struct WorkerReserveEntityIdRangeRequest
+{
+    Serializable();
+
+    uint32_t total_ids;
+};
+
+struct WorkerReserveEntityIdRangeResponse
+{
+    Serializable();
+
+    bool succeed      = false;
+    EntityId id_begin = std::numeric_limits<EntityId>::max();
+    EntityId id_end   = std::numeric_limits<EntityId>::max();
+};
+
+// WorkerAddEntity
+struct WorkerAddEntityRequest
+{
+    Serializable();
+
+    EntityId      entity_id;
+    EntityPayload entity_payload;
+};
+
+// WorkerRemoveEntity
+struct WorkerRemoveEntityRequest
+{
+    Serializable();
+
+    EntityId entity_id;
+};
+
+// WorkerAddComponent
+struct WorkerAddComponentRequest
+{
+    Serializable();
+
+    EntityId         entity_id;
+    ComponentId      component_id;
+    ComponentPayload component_payload;
+};
+
+// WorkerRemoveComponent
+struct WorkerRemoveComponentRequest
+{
+    Serializable();
+
+    EntityId    entity_id;
+    ComponentId component_id;
+};
+
+// WorkerComponentUpdate
+struct WorkerComponentUpdateRequest
+{
+    Serializable();
+
+    EntityId                     entity_id;
+    ComponentId                  component_id;
+    ComponentPayload             component_payload;
+    std::optional<WorldPosition> entity_world_position;
+};
+
+// WorkerComponentQuery
+struct WorkerComponentQueryRequest
+{
+    Serializable();
+
+    bool temp = false;
+};
+
+struct WorkerDefaultResponse
 {
     Serializable();
 

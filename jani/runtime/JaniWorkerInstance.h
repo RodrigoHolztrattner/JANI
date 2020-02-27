@@ -24,7 +24,11 @@ class WorkerInstance
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    WorkerInstance(bool _is_user_instance);
+    WorkerInstance(
+        Bridge&                  _bridge,
+        LayerHash                _layer_hash,
+        Connection<>::ClientHash _client_hash,
+        bool                     _is_user);
     ~WorkerInstance();
 
 //////////////////////////
@@ -32,14 +36,19 @@ public: // MAIN METHODS //
 //////////////////////////
 
     /*
-    * The main update function
+    * This function will process a request from the counterpart worker and attempt to resolve it, returning
+    * a response whenever applicable
     */
-    void Update();
+    void ProcessRequest(const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload);
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
+    Bridge&                  m_bridge;
+    LayerHash                m_layer_hash;
+    Connection<>::ClientHash m_client_hash;
+    bool                     m_is_user;
 };
 
 // Jani
