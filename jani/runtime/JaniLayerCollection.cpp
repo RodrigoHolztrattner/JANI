@@ -55,7 +55,7 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
             // layer_info.load_balance_strategy.minimum_area = layer["minimum_area"].get<Jani::WorldArea>();
         }
 
-        Hash resulting_hash = layer_info.layer_hash;
+        LayerHash resulting_hash = layer_info.layer_hash;
         m_layers.insert({ resulting_hash, std::move(layer_info) });
     }
 
@@ -68,7 +68,7 @@ bool Jani::LayerCollection::IsValid() const
     return m_is_valid;
 }
 
-const std::map<Jani::Hash, Jani::LayerCollection::LayerInfo>& Jani::LayerCollection::GetLayers() const
+const std::map<Jani::LayerHash, Jani::LayerCollection::LayerInfo>& Jani::LayerCollection::GetLayers() const
 {
     return m_layers;
 }
@@ -78,9 +78,9 @@ bool Jani::LayerCollection::HasLayer(const std::string& _layer_name) const
     return m_layers.find(Hasher(_layer_name)) != m_layers.end();
 }
 
-bool Jani::LayerCollection::HasLayer(Hash _layer_name_hash) const
+bool Jani::LayerCollection::HasLayer(LayerHash _layer_hash) const
 {
-    return m_layers.find(_layer_name_hash) != m_layers.end();
+    return m_layers.find(_layer_hash) != m_layers.end();
 }
 
 const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(const std::string& _layer_name) const
@@ -89,10 +89,10 @@ const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(cons
     return m_layers.find(Hasher(_layer_name))->second;
 }
 
-const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(Hash _layer_name_hash) const
+const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(LayerHash _layer_hash) const
 {
-    assert(m_layers.find(_layer_name_hash) != m_layers.end());
-    return m_layers.find(_layer_name_hash)->second;
+    assert(m_layers.find(_layer_hash) != m_layers.end());
+    return m_layers.find(_layer_hash)->second;
 }
 
 const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const
@@ -101,8 +101,8 @@ const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalance
     return m_layers.find(Hasher(_layer_name))->second.load_balance_strategy;
 }
 
-const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(Hash _layer_name_hash) const
+const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(LayerHash _layer_hash) const
 {
-    assert(m_layers.find(_layer_name_hash) != m_layers.end());
-    return m_layers.find(_layer_name_hash)->second.load_balance_strategy;
+    assert(m_layers.find(_layer_hash) != m_layers.end());
+    return m_layers.find(_layer_hash)->second.load_balance_strategy;
 }

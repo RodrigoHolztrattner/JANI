@@ -133,13 +133,15 @@ private: // VARIABLES //
 
     Database& m_database;
 
-    std::unique_ptr<Connection<Message::UserConnectionRequest>>   m_client_connections;
-    std::unique_ptr<Connection<Message::WorkerConnectionRequest>> m_worker_connections;
+    std::unique_ptr<Connection<>>              m_client_connections;
+    std::unique_ptr<Connection<>>              m_worker_connections;
+
+    std::vector<std::unique_ptr<WorkerSpawnerInstance>> m_worker_spawner_instances;
+
+    std::unique_ptr<RequestManager> m_request_manager;
 
     std::unique_ptr<LayerCollection>           m_layer_collection;
     std::unique_ptr<WorkerSpawnerCollection>   m_worker_spawner_collection;
-
-    std::vector<std::unique_ptr<Connection<>>> m_worker_spawner_connections;
 
     std::map<EntityId, Entity>                 m_active_entities;
     std::map<Hash, std::unique_ptr<Bridge>>    m_bridges;

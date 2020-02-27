@@ -24,7 +24,7 @@ class WorkerInstance
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    WorkerInstance(std::string _worker_address, uint32_t _worker_port, uint32_t _local_port, uint32_t _layer, bool _is_user_instance);
+    WorkerInstance(bool _is_user_instance);
     ~WorkerInstance();
 
 //////////////////////////
@@ -40,7 +40,6 @@ public: // MAIN METHODS //
 private: // VARIABLES //
 ////////////////////////
 
-    std::unique_ptr<Connection<>> m_worker_connection;
 };
 
 // Jani

@@ -23,7 +23,7 @@ class LayerCollection
     struct LayerInfo
     {
         std::string              name;
-        Hash                     layer_hash;
+        LayerHash                layer_hash    = std::numeric_limits<LayerHash>::max();
         bool                     is_user_layer = false;
         uint32_t                 unique_id     = std::numeric_limits<uint32_t>::max();
         LayerLoadBalanceStrategy load_balance_strategy;
@@ -54,13 +54,13 @@ public: // MAIN METHODS //
     /*
     * Return a map with all registered layers and their infos
     */
-    const std::map<Hash, LayerInfo>& GetLayers() const;
+    const std::map<LayerHash, LayerInfo>& GetLayers() const;
 
     /*
     * Return if the given layer info exist
     */
     bool HasLayer(const std::string& _layer_name) const;
-    bool HasLayer(Hash _layer_name_hash)          const;
+    bool HasLayer(LayerHash _layer_hash)          const;
 
     /*
     * Return a layer info
@@ -68,7 +68,7 @@ public: // MAIN METHODS //
     * can throw if it fails
     */
     const LayerInfo& GetLayerInfo(const std::string& _layer_name) const;
-    const LayerInfo& GetLayerInfo(Hash _layer_name_hash)          const;
+    const LayerInfo& GetLayerInfo(LayerHash _layer_hash)          const;
 
     /*
     * Return a layer load balance strategy info
@@ -76,14 +76,14 @@ public: // MAIN METHODS //
     * can throw if it fails
     */
     const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const;
-    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(Hash _layer_name_hash)          const;
+    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(LayerHash _layer_hash)          const;
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    bool                      m_is_valid = false;
-    std::map<Hash, LayerInfo> m_layers;
+    bool                           m_is_valid = false;
+    std::map<LayerHash, LayerInfo> m_layers;
 };
 
 // Jani

@@ -7,8 +7,9 @@
 #include "JaniBridge.h"
 #include "JaniDatabase.h"
 #include "JaniWorkerInstance.h"
+#include "JaniWorkerSpawnerInstance.h"
 
-const char* LocalIp = "127.0.0.1";
+const char* s_local_ip = "127.0.0.1";
 
 Jani::Runtime::Runtime(Database& _database) :
     m_database(_database)
@@ -35,89 +36,28 @@ bool Jani::Runtime::Initialize(
     m_layer_collection          = std::move(layer_collection);
     m_worker_spawner_collection = std::move(worker_spawner_collection);
 
-    m_client_connections = std::make_unique<Connection<Message::UserConnectionRequest>>(
-        8080, 
-        [&](auto _client_hash, const Message::UserConnectionRequest& _connection_request)
-        {
-            auto layer_id = Hasher(_connection_request.layer_name);
-
-            auto bridge_iter = m_bridges.find(layer_id);
-            if (bridge_iter == m_bridges.end())
-            {
-                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                m_bridges.insert({ layer_id , std::move(new_bridge) });
-                bridge_iter = m_bridges.find(layer_id);
-            }
-
-            auto& bridge = bridge_iter->second;
-
-            // Determine if this bridge can accept another layer (if the balance strategy allows it
-            // TODO: ...
-
-            static uint32_t local_port = 9090; // TODO: Use a decent port-select function
-
-            auto user_worker_instance = std::make_unique<WorkerInstance>(
-                _connection_request.ip, 
-                _connection_request.port, 
-                local_port++, 
-                layer_id,
-                true);
-
-            if (!bridge->RegisterNewWorkerInstance(std::move(user_worker_instance)))
-            {
-                return false;
-            }
-
-            return true;
-        });
-
-    m_worker_connections = std::make_unique<Connection<Message::WorkerConnectionRequest>>(
-        13051,
-        [&](auto _client_hash, const Message::WorkerConnectionRequest& _connection_request)
-        {
-            auto layer_id = Hasher(_connection_request.layer_name);
-
-            auto bridge_iter = m_bridges.find(layer_id);
-            if (bridge_iter == m_bridges.end())
-            {
-                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                m_bridges.insert({ layer_id , std::move(new_bridge) });
-                bridge_iter = m_bridges.find(layer_id);
-            }
-
-            auto& bridge = bridge_iter->second;
-
-            // Determine if this bridge can accept another layer (if the balance strategy allows it
-            // TODO: ...
-
-            static uint32_t local_port = 11090; // TODO: Use a decent port-select function
-
-            auto worker_instance = std::make_unique<WorkerInstance>(
-                _connection_request.ip,
-                _connection_request.port,
-                local_port++, 
-                layer_id,
-                false);
-
-            if (!bridge->RegisterNewWorkerInstance(std::move(worker_instance)))
-            {
-                // Big problem!
-                // ...
-            }
-
-            return true;
-        });
+    m_client_connections = std::make_unique<Connection<>>(8080);
+    m_worker_connections = std::make_unique<Connection<>>(13051);
+    m_request_manager    = std::make_unique<RequestManager>();
 
     auto& worker_spawners = m_worker_spawner_collection->GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
         static uint32_t spawner_port = 13000;
-        auto spawner_connection = std::make_unique<Connection<>>(
-            spawner_port++, 
-            worker_spawner_info.port, 
-            worker_spawner_info.ip.c_str());
 
-        m_worker_spawner_connections.push_back(std::move(spawner_connection));
+        auto spawner_connection = std::make_unique<WorkerSpawnerInstance>();
+
+        if (!spawner_connection->Initialize(
+            spawner_port++,
+            worker_spawner_info.port,
+            worker_spawner_info.ip.c_str(),
+            13051,
+            s_local_ip))
+        {
+            return false;
+        }
+
+        m_worker_spawner_instances.push_back(std::move(spawner_connection));
     }
 
     return true;
@@ -127,8 +67,96 @@ void Jani::Runtime::Update()
 {
     m_client_connections->Update();
     m_worker_connections->Update();
-    
-    for (auto& worker_spawner_connection : m_worker_spawner_connections)
+
+    m_request_manager->CheckResponses(
+        *m_client_connections, 
+        [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+        {
+            switch (_request.type)
+            {
+                case RequestType::ClientWorkerAuthentication:
+                {
+                    Message::ClientWorkerAuthenticationRequest authentication_request;
+                    {
+                        _request_payload(authentication_request);
+                    }
+
+                    auto layer_id = Hasher(authentication_request.layer_name);
+
+                    auto bridge_iter = m_bridges.find(layer_id);
+                    if (bridge_iter == m_bridges.end())
+                    {
+                        auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
+                        m_bridges.insert({ layer_id , std::move(new_bridge) });
+                        bridge_iter = m_bridges.find(layer_id);
+                    }
+
+                    auto& bridge = bridge_iter->second;
+
+                    // Determine if this bridge can accept another layer (if the balance strategy allows it
+                    // TODO: ...
+
+                    auto user_worker_instance = std::make_unique<WorkerInstance>(true);
+
+                    bool result = true;
+                    if (!bridge->RegisterNewWorkerInstance(std::move(user_worker_instance)))
+                    {
+                        result = false;
+                    }
+
+                    Message::ClientWorkerAuthenticationResponse authentication_response = { result };
+                    {
+                        _response_payload(authentication_response);
+                    }
+                }
+            }
+        });
+
+    m_request_manager->CheckResponses(
+        *m_worker_connections,
+        [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+        {
+            switch (_request.type)
+            {
+                case RequestType::WorkerAuthentication:
+                {
+                    Message::WorkerAuthenticationRequest authentication_request;
+                    {
+                        _request_payload(authentication_request);
+                    }
+
+                    auto layer_id = authentication_request.layer_hash;
+
+                    auto bridge_iter = m_bridges.find(layer_id);
+                    if (bridge_iter == m_bridges.end())
+                    {
+                        auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
+                        m_bridges.insert({ layer_id , std::move(new_bridge) });
+                        bridge_iter = m_bridges.find(layer_id);
+                    }
+
+                    auto& bridge = bridge_iter->second;
+
+                    // Determine if this bridge can accept another layer (if the balance strategy allows it
+                    // TODO: ...
+
+                    auto worker_instance = std::make_unique<WorkerInstance>(false);
+
+                    bool result = true;
+                    if (!bridge->RegisterNewWorkerInstance(std::move(worker_instance)))
+                    {
+                        result = false;
+                    }
+
+                    Message::WorkerAuthenticationResponse authentication_response = { result };
+                    {
+                        _response_payload(authentication_response);
+                    }
+                }
+            }
+        });
+
+    for (auto& worker_spawner_connection : m_worker_spawner_instances)
     {
         worker_spawner_connection->Update();
     }
@@ -142,11 +170,6 @@ void Jani::Runtime::Update()
     for (auto& [layer_hash, bridge] : m_bridges)
     {
         bridge->Update();
-    }
-
-    for (auto& spawner_connection : m_worker_spawner_connections)
-    {
-        spawner_connection->Update();
     }
 }
 
@@ -384,7 +407,7 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
 
     static bool should_run = true;
 
-    for (auto& [layer_id, layer_info] : registered_layers)
+    for (auto& [layer_hash, layer_info] : registered_layers)
     {
         if (!should_run)
         {
@@ -394,28 +417,22 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
         if (!layer_info.is_user_layer)
         {
             // Make sure we have one bridge that owns managing this layer
-            auto bridge_iter = m_bridges.find(layer_id);
+            auto bridge_iter = m_bridges.find(layer_hash);
             if (bridge_iter == m_bridges.end())
             {
-                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                m_bridges.insert({ layer_id , std::move(new_bridge) });
-                bridge_iter = m_bridges.find(layer_id);
+                auto new_bridge = std::make_unique<Bridge>(*this, layer_hash);
+                m_bridges.insert({ layer_hash , std::move(new_bridge) });
+                bridge_iter = m_bridges.find(layer_hash);
             }
 
             auto& bridge = bridge_iter->second;
 
             // We must have at least one worker on this bridge
-            if (bridge->GetTotalWorkerCount() == 0 && m_worker_spawner_connections.size() > 0)
+            if (bridge->GetTotalWorkerCount() == 0 && m_worker_spawner_instances.size() > 0)
             {
-                Message::WorkerSpawnRequest spawn_request;
-
-                std::strcpy(spawn_request.runtime_ip, LocalIp);
-                std::strcpy(spawn_request.layer_name, layer_info.name.data());
-                spawn_request.runtime_listen_port = 13051;
-
-                if (!m_worker_spawner_connections.back()->Send(&spawn_request, sizeof(Message::WorkerSpawnRequest)))
+                if (!m_worker_spawner_instances.back()->RequestWorkerForLayer(layer_hash))
                 {
-                    // Error!
+                    std::cout << "Unable to request a new worker from worker spawner, layer{" << layer_info.name << "}" << std::endl;
                 }
             }
         }
