@@ -94,6 +94,8 @@ void Jani::Runtime::Update()
                 _client_hash,
                 true);
 
+            std::cout << "Runtime -> New client worker connected" << std::endl;
+
             Message::ClientWorkerAuthenticationResponse authentication_response = { worker_allocation_result };
             {
                 _response_payload(authentication_response);
@@ -114,6 +116,8 @@ void Jani::Runtime::Update()
                 authentication_request.layer_hash,
                 _client_hash,
                 false);
+
+            std::cout << "Runtime -> New worker connected" << std::endl;
 
             Message::WorkerAuthenticationResponse authentication_response = { worker_allocation_result };
             {
@@ -158,12 +162,58 @@ void Jani::Runtime::Update()
                 _response_payload);
         });
 
+    auto ProcessWorkerDisconnection = [&](auto _client_hash)
+    {
+        auto worker_instance_iter = m_worker_instance_mapping.find(_client_hash);
+        if (worker_instance_iter == m_worker_instance_mapping.end())
+        {
+            return;
+        }
+
+        auto* worker_instance  = worker_instance_iter->second;
+        auto worker_layer_hash = worker_instance->GetLayerHash();
+
+        m_worker_instance_mapping.erase(worker_instance_iter);
+        
+        auto bridge_iter = m_bridges.find(worker_layer_hash);
+        if (bridge_iter == m_bridges.end())
+        {
+            return;
+        }
+
+        auto* bridge = bridge_iter->second.get();
+
+        bool disconnect_result = bridge->DisconnectWorker(_client_hash);
+        if (!disconnect_result)
+        {
+            std::cout << "Runtime -> Error trying to disconnect worker, its not registered on the bridge" << std::endl;
+        }
+        else
+        {
+            std::cout << "Runtime -> Worker disconnected" << std::endl;
+        }
+    };
+
+    m_client_connections->DidTimeout(
+        [&](std::optional<Connection<>::ClientHash> _client_hash)
+        {
+            assert(_client_hash.has_value());
+            ProcessWorkerDisconnection(_client_hash.value());
+        });
+
+    m_worker_connections->DidTimeout(
+        [&](std::optional<Connection<>::ClientHash> _client_hash)
+        {
+            assert(_client_hash.has_value());
+            ProcessWorkerDisconnection(_client_hash.value());
+        });
+
     for (auto& worker_spawner_connection : m_worker_spawner_instances)
     {
         worker_spawner_connection->Update();
     }
 
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 1000)
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 10000)
     {
         ApplyLoadBalanceUpdate();
         m_load_balance_previous_update_time = std::chrono::steady_clock::now();
@@ -450,15 +500,8 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
     auto& worker_spawners   = m_worker_spawner_collection->GetWorkerSpawnersInfos();
     auto& registered_layers = m_layer_collection->GetLayers();
 
-    static bool should_run = true;
-
     for (auto& [layer_hash, layer_info] : registered_layers)
     {
-        if (!should_run)
-        {
-            break;
-        }
-
         if (!layer_info.is_user_layer)
         {
             // Make sure we have one bridge that owns managing this layer
@@ -483,7 +526,6 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
         }
     }
 
-    should_run = false;
     /*
         => O que essa funcao deve fazer:
 

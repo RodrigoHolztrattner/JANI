@@ -23,6 +23,21 @@ Jani::WorkerInstance::~WorkerInstance()
 
 }
 
+Jani::LayerHash Jani::WorkerInstance::GetLayerHash() const
+{
+    return m_layer_hash;
+}
+
+Jani::WorkerId Jani::WorkerInstance::GetId() const
+{
+    return m_client_hash;
+}
+
+bool Jani::WorkerInstance::IsUserInstance() const
+{
+    return m_is_user;
+}
+
 void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
 {
     switch (_request.type)

@@ -36,6 +36,21 @@ public: // MAIN METHODS //
 //////////////////////////
 
     /*
+    * Return the layer hash associated with this worker instance
+    */
+    LayerHash GetLayerHash() const;
+
+    /*
+    * Return the worker id associated with this instance
+    */
+    WorkerId GetId() const;
+
+    /*
+    * Return if this is a user worker instance
+    */
+    bool IsUserInstance() const;
+
+    /*
     * This function will process a request from the counterpart worker and attempt to resolve it, returning
     * a response whenever applicable
     */

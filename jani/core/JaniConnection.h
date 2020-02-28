@@ -55,7 +55,7 @@ namespace Jani
     class RequestMaker;
     class RequestManager;
 
-    template <typename ClientHashType = uint64_t, uint32_t MaximumDatagramSize = 2048>
+    template <typename ClientHashType = uint64_t, uint32_t IntervalUpdateTime = 20, uint32_t MaximumDatagramSize = 2048>
     class Connection
     {
     public:
@@ -81,12 +81,12 @@ namespace Jani
         struct ClientInfo
         {
             ClientHash                                         hash = std::numeric_limits<ClientHash>::max();
-            ikcpcb* kcp_instance = nullptr;
+            ikcpcb*                                            kcp_instance = nullptr;
             std::chrono::time_point<std::chrono::steady_clock> last_receive_timestamp = std::chrono::steady_clock::now();
             std::string                                        address;
             uint16_t                                           port = std::numeric_limits<uint16_t>::max();
             mutable bool                                       timed_out = false;
-            SocketType* socket = nullptr;
+            SocketType*                                        socket = nullptr;
             struct sockaddr_in                                 client_addr;
         };
 
@@ -144,6 +144,8 @@ namespace Jani
                 return;
             }
 
+            ikcp_nodelay(m_single_kcp_instance, 1, IntervalUpdateTime, 2, 1);
+
             {
                 struct sockaddr_in outaddr;
                 memset(&outaddr, 0, sizeof(outaddr));
@@ -199,44 +201,56 @@ namespace Jani
             m_is_valid = true;
         }
 
+        ~Connection()
+        {
+#if _WIN32
+            closesocket(m_socket);
+            WSACleanup();
+#else
+            close(m_socket);
+#endif
+
+            if (m_single_kcp_instance)
+            {
+                ikcp_release(m_single_kcp_instance);
+            }
+
+            for (auto& [client_hash, client_info] : m_server_clients)
+            {
+                ikcp_release(client_info.kcp_instance);
+            }
+        }
+
+        /*
+        * Set the minimum time (in ms) required to detect a timed out connection
+        */
+        void SetTimeoutTime(uint32_t _timeout_time)
+        {
+            m_timeout_ms = _timeout_time;
+        }
+
+        /*
+        * Set the minimum window time (in ms) that is required on a connection 
+        * without recent datagrams to generate a heartbeat/ping/keep-alive packet
+        */
+        void SetRequiredTimeForHeartbeat(uint32_t _heartbeat_time)
+        {
+            m_ping_window_ms = _heartbeat_time;
+        }
+
         /*
         * This function will attempt to grab any received datagram from the UDP layer and
         * pass it to the corresponding kcp instance
         * If this is a client, it will also check if a ping is required to keep the
         * connection alive
+        * This function returns the minimum time (in ms) that can be waited until a 
+        * connected client or the server requires an update
         */
-        void Update()
+        uint32_t Update()
         {
-            auto time_now = std::chrono::steady_clock::now();
-            auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_initial_timestamp).count();
-
-            TryReceiveDatagrams();
-
-            // Update the kcp instance(s)
-            if (m_is_server)
-            {
-                // For each registered client
-                for (auto& [client_hash, client_info] : m_server_clients)
-                {
-                    auto target_update_time = ikcp_check(client_info.kcp_instance, time_elapsed);
-                    auto time_remaining_for_update = target_update_time - time_elapsed;
-
-                    if (time_remaining_for_update <= 0)
-                    {
-                        ikcp_update(client_info.kcp_instance, time_elapsed);
-                    }
-                }
-            }
-            else
-            {
-                auto target_update_time = ikcp_check(m_single_kcp_instance, time_elapsed);
-                auto time_remaining_for_update = target_update_time - time_elapsed;
-
-                if (time_remaining_for_update <= 0)
-                {
-                    ikcp_update(m_single_kcp_instance, time_elapsed);
-                }
-            }
+            auto time_now              = std::chrono::steady_clock::now();
+            auto total_time_elapsed    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            uint32_t minimum_wait_time = IntervalUpdateTime;
 
             // It's client job to ping the server and not the opposite
             if (!m_is_server && !m_is_waiting_for_ping)
@@ -254,7 +268,41 @@ namespace Jani
                 }
             }
 
+            TryReceiveDatagrams();
+
+            // Update the kcp instance(s)
+            if (m_is_server)
+            {
+                // For each registered client
+                for (auto& [client_hash, client_info] : m_server_clients)
+                {
+                    auto target_update_time = ikcp_check(client_info.kcp_instance, total_time_elapsed);
+                    auto time_remaining_for_update = target_update_time - total_time_elapsed;
+
+                    minimum_wait_time = std::min(minimum_wait_time, static_cast<uint32_t>(time_remaining_for_update));
+
+                    if (time_remaining_for_update <= 0)
+                    {
+                        ikcp_update(client_info.kcp_instance, total_time_elapsed);
+                    }
+                }
+            }
+            else
+            {
+                auto target_update_time = ikcp_check(m_single_kcp_instance, total_time_elapsed);
+                auto time_remaining_for_update = target_update_time - total_time_elapsed;
+
+                minimum_wait_time = std::min(minimum_wait_time, static_cast<uint32_t>(time_remaining_for_update));
+
+                if (time_remaining_for_update <= 0)
+                {
+                    ikcp_update(m_single_kcp_instance, total_time_elapsed);
+                }
+            }
+
             m_last_update_timestamp = std::chrono::steady_clock::now();
+
+            return minimum_wait_time;
         }
 
         /*
@@ -269,11 +317,15 @@ namespace Jani
 
             if (m_is_server)
             {
+                uint64_t total_wait_time = 0;
+
                 for (auto& [client_hash, client_info] : m_server_clients)
                 {
                     auto time_from_last_receive_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - client_info.last_receive_timestamp).count();
                     auto time_from_last_update_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
                     auto time_elapsed_for_timeout_ms = time_from_last_receive_ms - time_from_last_update_ms;
+
+                    total_wait_time += time_elapsed_for_timeout_ms;
 
                     if (time_elapsed_for_timeout_ms > m_timeout_ms)
                     {
@@ -282,6 +334,9 @@ namespace Jani
                         _timeout_callback(client_info.hash);
                     }
                 }
+
+                if(m_server_clients.size() > 0 && total_wait_time / m_server_clients.size() > 50)
+                    std::cout << "Average: " << total_wait_time / m_server_clients.size() << std::endl;
             }
             else
             {
@@ -316,11 +371,11 @@ namespace Jani
                     {
                         if (IsPingDatagram(reinterpret_cast<const char*>(_msg), _msg_size))
                         {
-                            std::cout << "Connection -> Sent ping! {" << client_iter->second.address << ", " << client_iter->second.port << "}" << std::endl;
+                            // std::cout << "Connection -> Sent ping! {" << client_iter->second.address << ", " << client_iter->second.port << "}" << std::endl;
                         }
                         else
                         {
-                            std::cout << "Connection -> Sent datagram! {" << client_iter->second.address << ", " << client_iter->second.port << "}" << std::endl;
+                            // std::cout << "Connection -> Sent datagram! {" << client_iter->second.address << ", " << client_iter->second.port << "}" << std::endl;
                         }
                         return true;
                     }
@@ -338,11 +393,11 @@ namespace Jani
                 {
                     if (IsPingDatagram(reinterpret_cast<const char*>(_msg), _msg_size))
                     {
-                        std::cout << "Connection -> Sent ping! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
+                        // std::cout << "Connection -> Sent ping! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
                     }
                     else
                     {
-                        std::cout << "Connection -> Sent datagram! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
+                        // std::cout << "Connection -> Sent datagram! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
                     }
                     return true;
                 }
@@ -381,13 +436,13 @@ namespace Jani
                         // [[likely]]
                         if (!IsPingDatagram(buffer, total_received))
                         {
-                            std::cout << "Connection -> Received datagram! {" << client_info.address << ", " << client_info.port << "}" << std::endl;
+                            // std::cout << "Connection -> Received datagram! {" << client_info.address << ", " << client_info.port << "}" << std::endl;
 
                             _receive_callback(client_info.hash, nonstd::span<char>(buffer, buffer + total_received));
                         }
                         else
                         {
-                            std::cout << "Connection -> Received ping! {" << client_info.address << ", " << client_info.port << "}" << std::endl;
+                            // std::cout << "Connection -> Received ping! {" << client_info.address << ", " << client_info.port << "}" << std::endl;
                         }
                     }
                 }
@@ -405,13 +460,13 @@ namespace Jani
                     // [[likely]]
                     if (!IsPingDatagram(buffer, total_received))
                     {
-                        std::cout << "Connection -> Received datagram! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
+                        // std::cout << "Connection -> Received datagram! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
 
                         _receive_callback(std::nullopt, nonstd::span<char>(buffer, buffer + total_received));
                     }
                     else
                     {
-                        std::cout << "Connection -> Received ping! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
+                        // std::cout << "Connection -> Received ping! {" << m_dst_address << ", " << m_dst_port << "}" << std::endl;
                     }
                 }
             }
@@ -487,6 +542,8 @@ namespace Jani
                         {
                             continue;
                         }
+
+                        ikcp_nodelay(client_info.kcp_instance, 1, IntervalUpdateTime, 2, 1);
 
                         struct sockaddr_in outaddr;
                         memset(&outaddr, 0, sizeof(outaddr));
@@ -576,12 +633,12 @@ namespace Jani
                 struct timeval read_timeout;
                 read_timeout.tv_sec = 1;
                 read_timeout.tv_usec = 1;
-                retval = setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&read_timeout, sizeof(read_timeout));
+                // retval = setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&read_timeout, sizeof(read_timeout));
 #else
                 struct timeval read_timeout;
                 read_timeout.tv_sec = 0;
                 read_timeout.tv_usec = 1;
-                retval = setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
+                // retval = setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
 #endif
                 if (retval != 0)
                 {
@@ -639,27 +696,27 @@ namespace Jani
 
 #ifdef _WIN32
         WSAData     m_wsa_data;
-        SocketType  m_socket = {};
+        SocketType  m_socket          = {};
 #else
-        SocketType  m_socket = 0;
+        SocketType  m_socket          = 0;
 #endif
-        sockaddr_in m_server_addr = {};
-        uint32_t    m_local_port = 0;
-        uint32_t    m_dst_port = 0;
+        sockaddr_in m_server_addr     = {};
+        uint32_t    m_local_port      = 0;
+        uint32_t    m_dst_port        = 0;
         std::string m_dst_address;
         ikcpcb* m_single_kcp_instance = nullptr;
 
         std::optional<ServerInfo> m_server_info;
 
-        bool        m_is_server = false;
-        bool        m_is_valid = false;
+        bool        m_is_server           = false;
+        bool        m_is_valid            = false;
         bool        m_is_waiting_for_ping = false;
 
-        uint32_t    m_timeout_ms = 500;
+        uint32_t    m_timeout_ms     = 500;
         uint32_t    m_ping_window_ms = 100;
 
-        std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp = std::chrono::steady_clock::now();
-        std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp = std::chrono::steady_clock::now();
+        std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp             = std::chrono::steady_clock::now();
+        std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp         = std::chrono::steady_clock::now();
         std::chrono::time_point<std::chrono::steady_clock> m_last_server_receive_timestamp = std::chrono::steady_clock::now();
 
         std::map<ClientHash, ClientInfo> m_server_clients;

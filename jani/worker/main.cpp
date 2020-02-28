@@ -7,7 +7,7 @@ int main(int _argc, char* _argv[])
 {
     const char*     runtime_ip          = _argv[1];
     uint32_t        runtime_listen_port = std::stoi(std::string(_argv[2]));
-    Jani::LayerHash layer_hash          = std::stoi(std::string(_argv[3]));
+    Jani::LayerHash layer_hash          = std::stoull(std::string(_argv[3]));
 
     std::cout << "Worker -> Worker spawned for runtime_ip{" << runtime_ip << "}, runtime_listen_port{" << runtime_listen_port << "}, layer_hash{" << layer_hash << "}" << std::endl;
 
@@ -33,11 +33,18 @@ int main(int _argc, char* _argv[])
         return 1;
     }
 
-    while (true)
+    bool exit = false;
+    while (!exit)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
         runtime_connection.Update();
+
+        runtime_connection.DidTimeout(
+            [&](std::optional<Jani::Connection<>::ClientHash> _client_hash)
+            {
+                exit = true;
+            });
 
         request_maker.CheckResponses(
             runtime_connection,

@@ -41,6 +41,7 @@ int main(int _argc, char* _argv[])
     while (true)
     {
         runtime->Update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
     return 0;

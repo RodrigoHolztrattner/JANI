@@ -63,6 +63,11 @@ public: // MAIN METHODS //
         bool                     _is_user);
 
     /*
+    * Disconnect the given worker
+    */
+    bool DisconnectWorker(Connection<>::ClientHash _client_hash);
+
+    /*
     * Return the assigned layer name
     */
     const std::string& GetLayerName() const;
@@ -237,7 +242,7 @@ private: // VARIABLES //
     LayerLoadBalanceStrategy          m_load_balance_strategy;
     LayerLoadBalanceStrategyTypeFlags m_load_balance_strategy_flags;
 
-    std::vector<std::unique_ptr<WorkerInstance>> m_worker_instances;
+    std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>> m_worker_instances;
 };
 
 // Jani

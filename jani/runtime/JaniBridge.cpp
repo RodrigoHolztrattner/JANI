@@ -37,9 +37,22 @@ std::optional<Jani::WorkerInstance*> Jani::Bridge::TryAllocateNewWorker(
         _client_hash,
         _is_user);
 
-    m_worker_instances.push_back(std::move(worker_instance));
+    auto worker_instance_iter = m_worker_instances.insert({ _client_hash, std::move(worker_instance) });
 
-    return m_worker_instances.back().get();
+    return worker_instance_iter.first->second.get();
+}
+
+bool Jani::Bridge::DisconnectWorker(Connection<>::ClientHash _client_hash)
+{
+    auto worker_instance_iter = m_worker_instances.find(_client_hash);
+    if (worker_instance_iter != m_worker_instances.end())
+    {
+        m_worker_instances.erase(worker_instance_iter);
+
+        return true;
+    }
+
+    return false;
 }
 
 const std::string& Jani::Bridge::GetLayerName() const
