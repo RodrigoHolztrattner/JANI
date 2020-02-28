@@ -2,6 +2,7 @@
 // Filename: main.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniConfig.h"
+#include "JaniWorker.h"
 
 int main(int _argc, char* _argv[])
 {
@@ -11,62 +12,38 @@ int main(int _argc, char* _argv[])
 
     std::cout << "Worker -> Worker spawned for runtime_ip{" << runtime_ip << "}, runtime_listen_port{" << runtime_listen_port << "}, layer_hash{" << layer_hash << "}" << std::endl;
 
-    auto actual_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    srand(actual_time);
-    int random_port = rand() % 10000 + 5000;
-    
-    std::cout << "Worker -> Selected random port: port{" << random_port << "}" << std::endl << std::endl;
+    Jani::Worker worker(layer_hash);
 
-    Jani::Connection<> runtime_connection(random_port, runtime_listen_port, runtime_ip);
-    Jani::RequestMaker request_maker;
-
-    Jani::Message::WorkerAuthenticationRequest worker_connection_request;
-    std::strcpy(worker_connection_request.ip, "127.0.0.1");
-    worker_connection_request.port = random_port;
-    worker_connection_request.layer_hash = layer_hash;
-    worker_connection_request.access_token = -1;
-    worker_connection_request.worker_authentication = -1;
-
-    if (!request_maker.MakeRequest(runtime_connection, Jani::RequestType::WorkerAuthentication, worker_connection_request))
+    if (!worker.InitializeWorker(runtime_ip, runtime_listen_port))
     {
-        std::cout << "Problem sending worker connection request!" << std::endl;
-        return 1;
+        std::cout << "Worker -> Unable to initialize worker!" << std::endl;
     }
 
-    bool exit = false;
-    while (!exit)
+    worker.RequestAuthentication().OnResponse(
+        [](const Jani::Message::WorkerAuthenticationResponse& _response, bool _timeout)
+        {
+            if (!_response.succeed)
+            {
+                std::cout << "Worker -> Failed to authenticate!" << std::endl;
+            }
+            else
+            {
+                std::cout << "Worker -> Authentication succeeded!" << std::endl;
+            }
+        }).WaitResponse();
+
+    std::cout << "Worker -> Starting main loop!" << std::endl;
+
+    while (worker.IsConnected())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
-        runtime_connection.Update();
-
-        runtime_connection.DidTimeout(
-            [&](std::optional<Jani::Connection<>::ClientHash> _client_hash)
-            {
-                exit = true;
-            });
-
-        request_maker.CheckResponses(
-            runtime_connection,
-            [](const Jani::Request& _original_request, const Jani::RequestResponse& _response) -> void
-            {
-                switch (_original_request.type)
-                {
-                    case Jani::RequestType::WorkerAuthentication:
-                    {
-                        auto response = _response.GetResponse<Jani::Message::WorkerAuthenticationResponse>();
-                        if (!response.succeed)
-                        {
-                            std::cout << "Failed to authenticate!" << std::endl;
-                        }
-                        else
-                        {
-                            std::cout << "Authentication succeeded!" << std::endl;
-                        }
-                    }
-                }
-            });
+        worker.Update(20);
     }
+
+    std::cout << "Worker -> Disconnected from the server!" << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
     return 0;
 }

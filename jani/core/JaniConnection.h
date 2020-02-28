@@ -105,13 +105,12 @@ namespace Jani
         */
         Connection(int _local_port, int _dst_port, const char* _dst_address)
         {
-            m_is_server = false;
-            m_local_port = _local_port;
-            m_dst_port = _dst_port;
+            m_is_server   = false;
+            m_local_port  = _local_port;
+            m_dst_port    = _dst_port;
             m_dst_address = _dst_address;
 
-            if (m_local_port == 0
-                || m_dst_port == 0
+            if (m_dst_port == 0
                 || m_dst_address.length() == 0)
             {
                 return;
