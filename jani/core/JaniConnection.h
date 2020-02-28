@@ -317,15 +317,11 @@ namespace Jani
 
             if (m_is_server)
             {
-                uint64_t total_wait_time = 0;
-
                 for (auto& [client_hash, client_info] : m_server_clients)
                 {
                     auto time_from_last_receive_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - client_info.last_receive_timestamp).count();
                     auto time_from_last_update_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
                     auto time_elapsed_for_timeout_ms = time_from_last_receive_ms - time_from_last_update_ms;
-
-                    total_wait_time += time_elapsed_for_timeout_ms;
 
                     if (time_elapsed_for_timeout_ms > m_timeout_ms)
                     {
@@ -334,9 +330,6 @@ namespace Jani
                         _timeout_callback(client_info.hash);
                     }
                 }
-
-                if(m_server_clients.size() > 0 && total_wait_time / m_server_clients.size() > 50)
-                    std::cout << "Average: " << total_wait_time / m_server_clients.size() << std::endl;
             }
             else
             {
@@ -870,12 +863,6 @@ namespace Jani
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {
-                    if (_data.size() < sizeof(Request))
-                    {
-                        std::cout << "RequestMaker -> Received invalid data, ignoring!" << std::endl;
-                        return;
-                    }
-
                     vectorwrapbuf<char> data_buffer(_data);
                     std::istream        in_stream(&data_buffer);
                     cereal::BinaryInputArchive archive(in_stream);
@@ -939,12 +926,7 @@ namespace Jani
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {
-                    if (_data.size() < sizeof(Request) || !_client_hash)
-                    {
-                        // Problem!
-                        std::cout << "RequestManager -> Received invalid data, ignoring!" << std::endl;
-                        return;
-                    }
+                    assert(_client_hash);
 
                     m_temporary_request_buffer.clear();
                     m_temporary_request_buffer.resize(4096);
