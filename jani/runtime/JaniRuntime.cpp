@@ -77,6 +77,12 @@ void Jani::Runtime::Update()
         cereal::BinaryInputArchive&  _request_payload, 
         cereal::BinaryOutputArchive& _response_payload)
     {
+        // Since we are always the server, there is no option for the client hash to be invalid
+        if (!_client_hash)
+        {
+            return;
+        }
+
         // If this is an authentication request, process it, else delegate the request to the worker itself
         // [[unlikely]]
         if (_request.type == RequestType::ClientWorkerAuthentication)
@@ -91,7 +97,7 @@ void Jani::Runtime::Update()
 
             bool worker_allocation_result = TryAllocateNewWorker(
                 Hasher(authentication_request.layer_name),
-                _client_hash,
+                _client_hash.value(),
                 true);
 
             std::cout << "Runtime -> New client worker connected" << std::endl;
@@ -114,7 +120,7 @@ void Jani::Runtime::Update()
             
             bool worker_allocation_result = TryAllocateNewWorker(
                 authentication_request.layer_hash,
-                _client_hash,
+                _client_hash.value(),
                 false);
 
             std::cout << "Runtime -> New worker connected" << std::endl;
@@ -126,7 +132,7 @@ void Jani::Runtime::Update()
         }
         else
         {
-            auto worker_instance_iter = m_worker_instance_mapping.find(_client_hash);
+            auto worker_instance_iter = m_worker_instance_mapping.find(_client_hash.value());
             // [[likely]]
             if (worker_instance_iter != m_worker_instance_mapping.end())
             {
@@ -138,7 +144,7 @@ void Jani::Runtime::Update()
         }
     };
 
-    m_request_manager->CheckRequests(
+    m_request_manager->Update(
         *m_client_connections, 
         [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
         {
@@ -150,7 +156,7 @@ void Jani::Runtime::Update()
                 _response_payload);
         });
 
-    m_request_manager->CheckRequests(
+    m_request_manager->Update(
         *m_worker_connections,
         [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
         {

@@ -793,7 +793,7 @@ namespace Jani
         cereal::BinaryInputArchive& archive;
     };
 
-    class RequestMaker
+    class RequestManager
     {
         template<typename CharT, typename TraitsT = std::char_traits<CharT> >
         class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT>
@@ -833,8 +833,6 @@ namespace Jani
         template<typename RequestPayloadType>
         bool MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
         {
-            assert(!_connection.IsServer());
-
             m_temporary_request_buffer.clear();
             m_temporary_request_buffer.resize(sizeof(Request) + sizeof(RequestPayloadType));
 
@@ -842,10 +840,13 @@ namespace Jani
             std::ostream        out_stream(&data_buffer);
 
             Request new_request;
-            new_request.type = _request_type;
+            new_request.type          = _request_type;
             new_request.request_index = m_request_counter++;
 
             out_stream << new_request;
+
+            bool is_request = true;
+            out_stream << is_request;
 
             {
                 cereal::BinaryOutputArchive archive(out_stream);
@@ -855,23 +856,63 @@ namespace Jani
             return _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp());
         }
 
-        void CheckResponses(const Connection<>& _connection, std::function<void(const Request&, const RequestResponse&)> _response)
+        void Update(const Connection<>& _connection, std::function<void(std::optional<Connection<>::ClientHash>, const Request&, const RequestResponse&)> _response_callback)
         {
-            assert(!_connection.IsServer());
+            return Update(_connection, _response_callback, {});
+        }
 
+        void Update(const Connection<>& _connection, std::function<void(std::optional<Connection<>::ClientHash>, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _request_callback)
+        {
+            return Update(_connection, {}, _request_callback);
+        }
+
+        void Update(
+            const Connection<>&                                                                                                                     _connection, 
+            std::function<void(std::optional<Connection<>::ClientHash>, const Request&, const RequestResponse&)>                                    _response_callback,
+            std::function<void(std::optional<Connection<>::ClientHash>, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _request_callback)
+        {
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {
                     vectorwrapbuf<char> data_buffer(_data);
                     std::istream        in_stream(&data_buffer);
-                    cereal::BinaryInputArchive archive(in_stream);
+                    cereal::BinaryInputArchive in_archive(in_stream);
 
                     Request original_request;
                     in_stream >> original_request;
 
-                    RequestResponse request_response(archive, original_request);
+                    bool is_request = {};
+                    in_stream >> is_request;
 
-                    _response(original_request, request_response);
+                    if (is_request && _request_callback)
+                    {
+                        m_temporary_request_buffer.clear();
+                        m_temporary_request_buffer.resize(4096);
+
+                        vectorwrapbuf<char> out_data_buffer(m_temporary_request_buffer);
+                        std::ostream        out_stream(&out_data_buffer);
+                        cereal::BinaryOutputArchive out_archive(out_stream);
+
+                        out_stream << original_request;
+
+                        is_request = false;
+                        out_stream << is_request;
+
+                        _request_callback(_client_hash, original_request, in_archive, out_archive);
+
+                        _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash.has_value() ? _client_hash.value() : 0);
+                    }
+                    else if(_response_callback)
+                    {
+                        RequestResponse request_response(in_archive, original_request);
+
+                        _response_callback(_client_hash, original_request, request_response);
+                    }
+                    else
+                    {
+                        std::cout << "RequestManager -> Received message without callback set for the current type" << std::endl;
+                        assert(false);
+                    }
                 });
         }
 
@@ -879,77 +920,6 @@ namespace Jani
 
         Request::RequestIndex m_request_counter = 0;
         std::vector<char>     m_temporary_request_buffer;
-    };
-
-    class RequestManager
-    {
-        template<typename CharT, typename TraitsT = std::char_traits<CharT> >
-        class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT>
-        {
-            using Base = std::basic_streambuf<CharT, TraitsT>;
-
-        public:
-
-            vectorwrapbuf(std::vector<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-            vectorwrapbuf(nonstd::span<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-
-            Base::pos_type seekoff(
-                Base::off_type off,
-                std::ios_base::seekdir dir,
-                std::ios_base::openmode which = std::ios_base::in) override
-            {
-                if (dir == std::ios_base::cur)
-                    Base::gbump(off);
-                else if (dir == std::ios_base::end)
-                    Base::setg(Base::eback(), Base::egptr() + off, Base::egptr());
-                else if (dir == std::ios_base::beg)
-                    Base::setg(Base::eback(), Base::eback() + off, Base::egptr());
-                return (which == std::ios_base::in ? Base::gptr() : Base::pptr()) - Base::eback();
-            }
-        };
-
-    public:
-
-        void CheckRequests(const Connection<>& _connection, std::function<void(Connection<>::ClientHash, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _response)
-        {
-            assert(_connection.IsServer());
-
-            _connection.Receive(
-                [&](auto _client_hash, nonstd::span<char> _data)
-                {
-                    assert(_client_hash);
-
-                    m_temporary_request_buffer.clear();
-                    m_temporary_request_buffer.resize(4096);
-
-                    vectorwrapbuf<char> in_data_buffer(_data);
-                    std::istream        in_stream(&in_data_buffer);
-                    cereal::BinaryInputArchive in_archive(in_stream);
-
-                    vectorwrapbuf<char> out_data_buffer(m_temporary_request_buffer);
-                    std::ostream        out_stream(&out_data_buffer);
-                    cereal::BinaryOutputArchive out_archive(out_stream);
-
-                    Request original_request;
-                    in_stream >> original_request;
-
-                    out_stream << original_request;
-
-                    _response(_client_hash.value(), original_request, in_archive, out_archive);
-
-                    _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash.value());
-                });
-        }
-
-        std::vector<char> m_temporary_request_buffer;
     };
 
 } // namespace Jani

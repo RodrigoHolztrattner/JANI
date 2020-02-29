@@ -49,7 +49,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerAuthenticationResponse> Jani
     worker_connection_request.access_token          = -1;
     worker_connection_request.worker_authentication = -1;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAuthentication, worker_connection_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAuthentication, worker_connection_request))
     {
         return ResponseCallback<Message::WorkerAuthenticationResponse>(m_current_message_index++, this);
     }
@@ -69,7 +69,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     worker_log_request.log_title   = _title;
     worker_log_request.log_message = _message;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerLogMessage, worker_log_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerLogMessage, worker_log_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -84,7 +84,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerReserveEntityIdRangeResponse
     Message::WorkerReserveEntityIdRangeRequest reserver_entity_id_range_request;
     reserver_entity_id_range_request.total_ids = _total;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerReserveEntityIdRange, reserver_entity_id_range_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerReserveEntityIdRange, reserver_entity_id_range_request))
     {
         return ResponseCallback<Message::WorkerReserveEntityIdRangeResponse>(m_current_message_index++, this);
     }
@@ -102,7 +102,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     add_entity_request.entity_id      = _entity_id;
     add_entity_request.entity_payload = std::move(_entity_payload);
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAddEntity, add_entity_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAddEntity, add_entity_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -117,7 +117,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     Message::WorkerRemoveEntityRequest remove_entity_request;
     remove_entity_request.entity_id = _entity_id;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerRemoveEntity, remove_entity_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerRemoveEntity, remove_entity_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -137,7 +137,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     add_component_request.component_id      = _component_id;
     add_component_request.component_payload = std::move(_component_payload);
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAddComponent, add_component_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerAddComponent, add_component_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -155,7 +155,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     remove_component_request.entity_id    = _entity_id;
     remove_component_request.component_id = _component_id;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerRemoveComponent, remove_component_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerRemoveComponent, remove_component_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -177,7 +177,7 @@ Jani::Worker::ResponseCallback<Jani::Message::WorkerDefaultResponse> Jani::Worke
     component_update_request.component_payload     = std::move(_component_payload);
     component_update_request.entity_world_position = _entity_world_position;
 
-    if (m_request_maker.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerComponentUpdate, component_update_request))
+    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::WorkerComponentUpdate, component_update_request))
     {
         return ResponseCallback<Message::WorkerDefaultResponse>(m_current_message_index++, this);
     }
@@ -197,9 +197,9 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 m_did_server_timeout = true;
             });
 
-        m_request_maker.CheckResponses(
+        m_request_manager.Update(
             *m_bridge_connection,
-            [&](const Jani::Request& _original_request, const Jani::RequestResponse& _response) -> void
+            [&](auto _client_hash, const Jani::Request& _original_request, const Jani::RequestResponse& _response) -> void
             {
                 ResponseCallbackType* response_callback = nullptr;
                 uint32_t              message_index     = 0;

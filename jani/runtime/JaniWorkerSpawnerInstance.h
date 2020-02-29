@@ -71,7 +71,7 @@ private: // VARIABLES //
 ////////////////////////
 
     std::unique_ptr<Connection<>> m_connection;
-    RequestMaker                  m_request_maker;
+    RequestManager                m_request_manager;
     uint32_t                      m_local_port                        = std::numeric_limits<uint32_t>::max();
     uint32_t                      m_spawner_port                      = std::numeric_limits<uint32_t>::max();
     std::string                   m_spawner_address;

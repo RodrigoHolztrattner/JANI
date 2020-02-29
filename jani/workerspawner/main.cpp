@@ -57,7 +57,7 @@ int main(int _argc, char* _argv[])
 
         runtime_connection.Update();
 
-        request_manager.CheckRequests(
+        request_manager.Update(
             runtime_connection,
             [&](auto _client_hash, const Jani::Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
             {

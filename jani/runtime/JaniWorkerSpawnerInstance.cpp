@@ -38,7 +38,7 @@ bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerHash _layer_hash)
         worker_spawn_request.runtime_ip                     = m_runtime_address;
         worker_spawn_request.layer_hash                     = _layer_hash;
 
-        bool result = m_request_maker.MakeRequest(
+        bool result = m_request_manager.MakeRequest(
             *m_connection,
             RequestType::SpawnWorkerForLayer,
             worker_spawn_request);
@@ -61,9 +61,9 @@ void Jani::WorkerSpawnerInstance::Update()
     {
         m_connection->Update();
 
-        m_request_maker.CheckResponses(
+        m_request_manager.Update(
             *m_connection, 
-            [](const Request& _request, const RequestResponse& _response)
+            [](auto _client_hash, const Request& _request, const RequestResponse& _response)
             {
                 switch (_request.type)
                 {

@@ -39,6 +39,7 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <cereal/types/optional.hpp>
+#include <cereal/types/bitset.hpp>
 
 #include "JaniConnection.h"
 
@@ -203,6 +204,7 @@ struct ComponentPayload
 {
     Serializable();
 
+    EntityId            entity_owner;
     ComponentId         component_id;
     std::vector<int8_t> component_data;
 };
@@ -802,6 +804,8 @@ private:
 
 struct ComponentQueryInstruction
 {   
+    Serializable();
+
     std::vector<ComponentId> component_constraints;
     ComponentMask            component_constraints_mask = 0;
 
@@ -819,12 +823,17 @@ struct ComponentQueryInstruction
 
 struct ComponentQuery
 {
+    Serializable();
+
     friend Runtime;
 
-    ComponentQuery(ComponentId _query_owner_component, std::optional<WorldPosition> _query_position) : 
-        query_owner_component(_query_owner_component), 
-        query_position(_query_position)
-    {}
+    ComponentQuery& Begin(ComponentId _query_owner_component, std::optional<WorldPosition> _query_position)
+    {
+        query_owner_component =_query_owner_component;
+        query_position        = _query_position;
+
+        return *this;
+    }
 
     ComponentQuery& QueryComponent(ComponentId _component_id)
     {
@@ -921,6 +930,8 @@ protected:
         }
     }
 
+public:
+
     ComponentId                            query_owner_component;
     std::optional<WorldPosition>           query_position;
     std::vector<ComponentId>               query_component_ids;
@@ -1002,6 +1013,7 @@ struct WorkerReserveEntityIdRangeRequest
     uint32_t total_ids;
 };
 
+// WorkerReserveEntityIdRange
 struct WorkerReserveEntityIdRangeResponse
 {
     Serializable();
@@ -1063,7 +1075,15 @@ struct WorkerComponentQueryRequest
 {
     Serializable();
 
-    bool temp = false;
+    ComponentQuery query;
+};
+
+struct WorkerComponentQueryResponse
+{
+    Serializable();
+
+    bool                            succeed = false;
+    std::optional<ComponentPayload> component_payload;
 };
 
 struct WorkerDefaultResponse

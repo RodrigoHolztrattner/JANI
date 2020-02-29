@@ -230,7 +230,7 @@ private: // VARIABLES //
 ////////////////////////
 
     std::unique_ptr<Connection<>> m_bridge_connection;
-    RequestMaker                  m_request_maker;
+    RequestManager                m_request_manager;
 
     uint32_t  m_current_message_index    = 0;
     uint32_t  m_received_message_index   = 0; // From where we are reading on m_response_callbacks
