@@ -11,6 +11,22 @@ Jani::Database::~Database()
 {
 }
 
+std::optional<const Jani::Entity*> Jani::Database::GetEntityById(EntityId _entity_id) const
+{
+    auto entity_iter = m_active_entities.find(_entity_id);
+    if (entity_iter != m_active_entities.end())
+    {
+        return entity_iter->second.get();
+    }
+
+    return std::nullopt;
+}
+
+const std::map< Jani::EntityId, std::unique_ptr< Jani::Entity>>& Jani::Database::GetEntities() const
+{
+    return m_active_entities;
+}
+
 std::optional<Jani::EntityId> Jani::Database::ReserveEntityIdRange(uint32_t _total_ids)
 {
     static uint64_t current_entity_count = 0;
@@ -18,38 +34,134 @@ std::optional<Jani::EntityId> Jani::Database::ReserveEntityIdRange(uint32_t _tot
     return current_entity_count - _total_ids;
 }
 
-bool Jani::Database::AddEntity(
+std::optional<Jani::Entity*> Jani::Database::AddEntity(
+    WorkerId             _worker_id,
     EntityId             _entity_id,
     const EntityPayload& _entity_payload)
 {
-    return true;
+    // Make sure there is not active entity with the given id
+    if (m_active_entities.find(_entity_id) != m_active_entities.end())
+    {
+        return std::nullopt;
+    }
+
+    // Create the new entity
+    auto& entity = m_active_entities.insert({ _entity_id, std::make_unique<Entity>(_entity_id) }).first->second;
+
+    // Add each component contained on the payload
+    for (auto& component_payload : _entity_payload.component_payloads)
+    {
+        entity->AddComponent(component_payload.component_id);
+    }
+
+    return entity.get();
 }
 
-bool Jani::Database::RemoveEntity(EntityId _entity_id)
+bool Jani::Database::RemoveEntity(
+    WorkerId _worker_id,
+    EntityId _entity_id)
 {
+    // Check if this entity is active
+    auto entity_iter = m_active_entities.find(_entity_id);
+    if (entity_iter == m_active_entities.end())
+    {
+        return false;
+    }
+
+    auto& entity = entity_iter->second;
+
     return true;
 }
 
-bool Jani::Database::AddComponent(
+std::optional<Jani::Entity*> Jani::Database::AddComponent(
+    WorkerId                _worker_id,
     EntityId                _entity_id,
+    LayerId                 _layer_id,
     ComponentId             _component_id,
     const ComponentPayload& _component_payload)
 {
-    return true;
+    // Check if this entity is active
+    auto entity_iter = m_active_entities.find(_entity_id);
+    if (entity_iter == m_active_entities.end())
+    {
+        return std::nullopt;
+    }
+
+    auto& entity = entity_iter->second;
+
+    // Check if this entity already has the given component id
+    if (entity->HasComponent(_component_id))
+    {
+        return std::nullopt;
+    }
+
+    // Add the component to the entity
+    entity->AddComponent(_component_id);
+
+    return entity.get();
 }
 
-bool Jani::Database::RemoveComponent(
-    EntityId _entity_id,
+std::optional<Jani::Entity*> Jani::Database::RemoveComponent(
+    WorkerId    _worker_id,
+    EntityId    _entity_id,
+    LayerId     _layer_id,
     ComponentId _component_id)
 {
-    return true;
+    // Check if this entity is active
+    auto entity_iter = m_active_entities.find(_entity_id);
+    if (entity_iter == m_active_entities.end())
+    {
+        return std::nullopt;
+    }
+
+    auto& entity = entity_iter->second;
+
+    // Check if the worker has authority over the component
+    if (!entity->VerifyWorkerComponentAuthority(_layer_id, _component_id, _worker_id))
+    {
+        return std::nullopt;
+    }
+
+    // Check if this entity has the given component id
+    if (!entity->HasComponent(_component_id))
+    {
+        return std::nullopt;
+    }
+
+    // Remove the component from the entity
+    entity->RemoveComponent(_component_id);
+
+    return entity.get();
 }
 
-bool Jani::Database::ComponentUpdate(
+std::optional<Jani::Entity*> Jani::Database::ComponentUpdate(
+    WorkerId                     _worker_id,
     EntityId                     _entity_id,
+    LayerId                      _layer_id,
     ComponentId                  _component_id,
-    const ComponentPayload& _component_payload,
+    const ComponentPayload&      _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
-    return true;
+    // Check if this entity is active
+    auto entity_iter = m_active_entities.find(_entity_id);
+    if (entity_iter == m_active_entities.end())
+    {
+        return std::nullopt;
+    }
+
+    auto& entity = entity_iter->second;
+
+    // Check if the worker has authority over the component
+    if (!entity->VerifyWorkerComponentAuthority(_layer_id, _component_id, _worker_id))
+    {
+        return std::nullopt;
+    }
+
+    // Check if this entity already has the given component id
+    if (!entity->HasComponent(_component_id))
+    {
+        return std::nullopt;
+    }
+
+    return entity.get();
 }

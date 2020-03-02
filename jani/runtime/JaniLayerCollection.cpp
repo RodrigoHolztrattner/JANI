@@ -28,7 +28,12 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
         return false;
     }
 
-    uint32_t layer_id_counter = 0;
+    auto components = config_json.find("components");
+    if (components == config_json.end() || !components->is_array())
+    {
+        return false;
+    }
+
     for (auto& layer : *layers)
     {
         if (layer.find("name") == layer.end())
@@ -39,9 +44,8 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
         LayerInfo layer_info;
 
         layer_info.name          = layer["name"];
-        layer_info.layer_hash    = Hasher(layer_info.name);
+        layer_info.unique_id     = layer["id"];
         layer_info.is_user_layer = layer["user_layer"];
-        layer_info.unique_id     = layer_id_counter++;
 
         if (layer.find("maximum_workers") != layer.end())
         {
@@ -55,9 +59,47 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
             // layer_info.load_balance_strategy.minimum_area = layer["minimum_area"].get<Jani::WorldArea>();
         }
 
-        LayerHash resulting_hash = layer_info.layer_hash;
-        m_layers.insert({ resulting_hash, std::move(layer_info) });
+        LayerId layer_id = layer_info.unique_id;
+        m_layers.insert({ layer_id, std::move(layer_info) });
     }
+
+    for (auto& component : *components)
+    {
+        if (component.find("name") == component.end())
+        {
+            return false;
+        }
+
+        ComponentInfo component_info;
+
+        component_info.name       = component["name"];
+        component_info.unique_id  = component["id"];
+        component_info.layer_name = component["layer_name"];
+
+        for (auto& layer : m_layers)
+        {
+            if (layer.second.name == component_info.layer_name)
+            {
+                component_info.layer_unique_id = layer.second.unique_id;
+            }
+        }
+
+        if (component_info.layer_unique_id == std::numeric_limits<ComponentId>::max())
+        {
+            return false;
+        }
+
+        struct ComponentInfo
+        {
+            std::string name;
+            LayerId     layer_unique_id = std::numeric_limits<LayerId>::max();
+            ComponentId unique_id = std::numeric_limits<ComponentId>::max();
+        };
+
+        ComponentId component_id = component_info.unique_id;
+        m_components.insert({ component_id, std::move(component_info) });
+    }
+    
 
     m_is_valid = true;
     return m_is_valid;
@@ -68,9 +110,20 @@ bool Jani::LayerCollection::IsValid() const
     return m_is_valid;
 }
 
-const std::map<Jani::LayerHash, Jani::LayerCollection::LayerInfo>& Jani::LayerCollection::GetLayers() const
+const std::map<Jani::LayerId, Jani::LayerCollection::LayerInfo>& Jani::LayerCollection::GetLayers() const
 {
     return m_layers;
+}
+
+const std::map<Jani::ComponentId, Jani::LayerCollection::ComponentInfo> Jani::LayerCollection::GetComponents() const
+{
+    return m_components;
+}
+
+Jani::LayerId Jani::LayerCollection::GetLayerIdForComponent(ComponentId _component_id) const
+{
+    assert(m_components.find(_component_id) != m_components.end());
+    return m_components.find(_component_id)->second.layer_unique_id;
 }
 
 bool Jani::LayerCollection::HasLayer(const std::string& _layer_name) const
@@ -78,9 +131,9 @@ bool Jani::LayerCollection::HasLayer(const std::string& _layer_name) const
     return m_layers.find(Hasher(_layer_name)) != m_layers.end();
 }
 
-bool Jani::LayerCollection::HasLayer(LayerHash _layer_hash) const
+bool Jani::LayerCollection::HasLayer(LayerId _layer_id) const
 {
-    return m_layers.find(_layer_hash) != m_layers.end();
+    return m_layers.find(_layer_id) != m_layers.end();
 }
 
 const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(const std::string& _layer_name) const
@@ -89,10 +142,10 @@ const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(cons
     return m_layers.find(Hasher(_layer_name))->second;
 }
 
-const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(LayerHash _layer_hash) const
+const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(LayerId _layer_id) const
 {
-    assert(m_layers.find(_layer_hash) != m_layers.end());
-    return m_layers.find(_layer_hash)->second;
+    assert(m_layers.find(_layer_id) != m_layers.end());
+    return m_layers.find(_layer_id)->second;
 }
 
 const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const
@@ -101,8 +154,8 @@ const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalance
     return m_layers.find(Hasher(_layer_name))->second.load_balance_strategy;
 }
 
-const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(LayerHash _layer_hash) const
+const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(LayerId _layer_id) const
 {
-    assert(m_layers.find(_layer_hash) != m_layers.end());
-    return m_layers.find(_layer_hash)->second.load_balance_strategy;
+    assert(m_layers.find(_layer_id) != m_layers.end());
+    return m_layers.find(_layer_id)->second.load_balance_strategy;
 }

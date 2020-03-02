@@ -45,7 +45,7 @@ public: // CONSTRUCTORS //
 
     Bridge(
         Runtime& _runtime,
-        uint32_t _layer_id);
+        LayerId _layer_id);
     ~Bridge();
 
 //////////////////////////
@@ -58,7 +58,7 @@ public: // MAIN METHODS //
     * to the limits imposed by the layer itself
     */
     std::optional<WorkerInstance*> TryAllocateNewWorker(
-        LayerHash                _layer_hash,
+        LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash,
         bool                     _is_user);
 
@@ -134,6 +134,12 @@ public:
     */
     void Update();
 
+    /*
+    * Returns a reference to the underlying workers
+    */
+    const std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>>& GetWorkers() const;
+    std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>>& GetWorkersMutable();
+
 /////////////////////////////////////////////
 private: // WORKER -> BRIDGE COMMUNICATION //
 /////////////////////////////////////////////
@@ -147,22 +153,25 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker sends a log message
     */
     bool OnWorkerLogMessage(
-        WorkerId       _worker_id, 
-        WorkerLogLevel _log_level, 
-        std::string    _log_title, 
-        std::string    _log_message);
+        WorkerInstance& _worker_instance, 
+        WorkerId        _worker_id, 
+        WorkerLogLevel  _log_level, 
+        std::string     _log_title, 
+        std::string     _log_message);
 
     /*
     * Received when a worker sends a request to reserve a range of entity ids
     */
     std::optional<Jani::EntityId> OnWorkerReserveEntityIdRange(
-        WorkerId _worker_id, 
-        uint32_t _total_ids);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id, 
+        uint32_t        _total_ids);
 
     /*
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
+        WorkerInstance&      _worker_instance,
         WorkerId             _worker_id, 
         EntityId             _entity_id, 
         const EntityPayload& _entity_payload);
@@ -171,13 +180,15 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to remove an existing entity
     */
     bool OnWorkerRemoveEntity(
-        WorkerId _worker_id, 
-        EntityId _entity_id);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id, 
+        EntityId        _entity_id);
 
     /*
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
+        WorkerInstance&         _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
@@ -187,9 +198,10 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to remove an existing component for the given entity
     */
     bool OnWorkerRemoveComponent(
-        WorkerId _worker_id,
-        EntityId _entity_id, 
-        ComponentId _component_id);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id,
+        EntityId        _entity_id, 
+        ComponentId     _component_id);
 
     /*
     * Received when a worker updates a component
@@ -197,6 +209,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
+        WorkerInstance&              _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
@@ -207,6 +220,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker request a component query 
     */
     WorkerRequestResult OnWorkerComponentQuery(
+        WorkerInstance&       _worker_instance,
         WorkerId              _worker_id,
         EntityId              _entity_id,
         const ComponentQuery& _component_query);
@@ -237,7 +251,7 @@ private: // VARIABLES //
 
     std::string m_layer_name;
     Hash        m_layer_hash;
-    uint32_t    m_layer_id = std::numeric_limits<uint32_t>::max();
+    LayerId     m_layer_id = std::numeric_limits<LayerId>::max();
 
     LayerLoadBalanceStrategy          m_load_balance_strategy;
     LayerLoadBalanceStrategyTypeFlags m_load_balance_strategy_flags;

@@ -14,6 +14,11 @@ project(${RUNTIME_WORKER_SPAWNER_NAME} VERSION 1.0.0 DESCRIPTION "blob")
 set(RUNTIME_PROJECT_NAME "jani_runtime")
 project(${RUNTIME_PROJECT_NAME} VERSION 1.0.0 DESCRIPTION "blob")
 
+set(INSPECTOR_PROJECT_NAME "jani_inspector")
+project(${INSPECTOR_PROJECT_NAME} VERSION 1.0.0 DESCRIPTION "blob")
+
+add_definitions("-DCPP_SRC_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\"")
+
 ############
 # INCLUDES #
 ############
@@ -99,6 +104,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/RodrigoHolztrattner/entityx
 )
 
+# GLFW
+FetchContent_Declare(
+  glfw
+  GIT_REPOSITORY https://github.com/glfw/glfw
+)
+
 FetchContent_GetProperties(ctti)
 if(NOT ctti_POPULATED)
   PrintFetchMessage("CTTI")
@@ -164,6 +175,13 @@ if(NOT entityx_POPULATED)
   add_subdirectory(${entityx_SOURCE_DIR} ${entityx_BINARY_DIR})
 endif()
 
+FetchContent_GetProperties(glfw)
+if(NOT glfw_POPULATED)
+  PrintFetchMessage("GLFW")
+  FetchContent_Populate(glfw)
+  add_subdirectory(${glfw_SOURCE_DIR} ${glfw_BINARY_DIR})
+endif()
+
 ###########
 # PROJECT #
 ###########
@@ -216,7 +234,8 @@ ${magic_enum_SOURCE_DIR}/include
 ${magic_get_SOURCE_DIR}/include
 ${range_v3_SOURCE_DIR}/include
 ${cereal_SOURCE_DIR}/include
-${entityx_SOURCE_DIR})
+${entityx_SOURCE_DIR}
+${glfw_SOURCE_DIR}/include)
 
 ###########
 # LIBRARY #
@@ -312,5 +331,33 @@ target_include_directories(${RUNTIME_PROJECT_NAME} PUBLIC ${PROJECT_MAIN_PATH}/c
 
 # Request C++ 17
 set_target_properties(${RUNTIME_PROJECT_NAME} PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON)   
+
+#############
+# INSPECTOR #
+#############
+
+SET(CMAKE_CXX_FLAGS "/Zi /sdl /MP /Oi /Gy /permissive- /GR- /TP /EHsc")
+SET(CMAKE_CXX_FLAGS_DEBUG "/ZI /sdl /MP /JMC /permissive- /GR- /TP /EHsc /MDd /Od")
+
+retrieve_all_files_on_directory(JANI_WORKER_FILES "${PROJECT_MAIN_PATH}/inspector")
+
+add_executable(${INSPECTOR_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_FILES})
+
+target_include_directories(${INSPECTOR_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
+target_link_libraries(${INSPECTOR_PROJECT_NAME} kcp)
+target_link_libraries(${INSPECTOR_PROJECT_NAME} entityx)
+
+target_link_libraries(${INSPECTOR_PROJECT_NAME} "Ws2_32.lib")
+target_link_libraries(${INSPECTOR_PROJECT_NAME} "Ws2_32.dll")
+
+target_link_libraries(${INSPECTOR_PROJECT_NAME} glfw)
+target_link_libraries(${INSPECTOR_PROJECT_NAME} imgui)
+
+target_include_directories(${INSPECTOR_PROJECT_NAME} PUBLIC ${PROJECT_MAIN_PATH}/core)
+
+# Request C++ 17
+set_target_properties(${INSPECTOR_PROJECT_NAME} PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON)   

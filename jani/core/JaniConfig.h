@@ -40,8 +40,26 @@
 #include <cereal/types/vector.hpp>
 #include <cereal/types/optional.hpp>
 #include <cereal/types/bitset.hpp>
+#include <cereal/types/tuple.hpp>
+#include <cereal/types/utility.hpp>
 
 #include "JaniConnection.h"
+
+/*
+    TODO LIST:
+
+    - QBI
+    - Setup layer permissions on the config file
+    - Check for worker/layer permissions before doing any action
+    - Setup component authority when an entity or component is added
+    - Check when a component/layer should have its authority worker changed
+    - Setup messages for QBI updates
+    - Process the QBI (query) messages (instead of sending the query, pass only the id/component id/layer id)
+    - Implement authority messages
+    - Implement authority check/change
+    - Implement authority handling on the worker side
+    - Implement worker disconnection recovery
+*/
 
 /////////////
 // DEFINES //
@@ -60,6 +78,9 @@ void serialize(Archive& ar)                                                 \
         ar(field);                                                          \
     });                                                                     \
 }
+
+#define DISABLE_COPY(class_name) class_name(const class_name&) = delete;\
+                                 class_name& operator=(const class_name&) = delete
 
 JaniNamespaceBegin(Jani)
 
@@ -101,8 +122,10 @@ struct WorldRect
         return width * height - _other_rect.width * _other_rect.height;
     }
 
-    int32_t x, y;
-    uint32_t width, height;
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t width  = 0;
+    int32_t height = 0;
 };
 
 static void to_json(nlohmann::json& j, const Jani::WorldPosition& _object)
@@ -183,6 +206,18 @@ enum class WorkerLogLevel
     Critical
 };
 
+enum class LayerPermissions : uint64_t
+{
+    Log             = 1 << 0, 
+    ReserveEntityId = 1 << 1,
+    AddEntity       = 1 << 2, 
+    RemoveEntity    = 1 << 3,
+    AddComponent    = 1 << 4,
+    RemoveComponent = 1 << 5,
+    UpdateComponent = 1 << 6,
+    UpdateInterest  = 1 << 7
+};
+
 struct WorkerRequestResult
 {
     explicit WorkerRequestResult(bool _succeed) : succeed(_succeed) {}
@@ -204,6 +239,20 @@ struct ComponentPayload
 {
     Serializable();
 
+    template <typename PayloadType>
+    void SetPayload(const PayloadType& _payload)
+    {
+        component_data.resize(sizeof(PayloadType));
+        std::memcpy(component_data.data(), &_payload, sizeof(PayloadType));
+    }
+
+    template <typename PayloadType>
+    const PayloadType& GetPayload() const
+    {
+        assert(component_data.size() == sizeof(PayloadType));
+        return *reinterpret_cast<const PayloadType*>(component_data.data());
+    }
+
     EntityId            entity_owner;
     ComponentId         component_id;
     std::vector<int8_t> component_data;
@@ -216,75 +265,10 @@ struct EntityPayload
     std::vector<ComponentPayload> component_payloads;
 };
 
+static const uint32_t MaximumLayers           = 32;
+
 static const uint32_t MaximumEntityComponents = 64;
 using ComponentMask = std::bitset<MaximumEntityComponents>;
-
-class Entity
-{
-public:
-
-    Entity(EntityId _unique_id) : entity_id(_unique_id) {};
-
-    /*
-
-    */
-    WorldPosition GetRepresentativeWorldPosition() const
-    {
-        return world_position;
-    }
-
-    /*
-    
-    */
-    void SetRepresentativeWorldPosition(WorldPosition _position)
-    {
-        world_position = _position;
-    }
-
-    /*
-    
-    */
-    EntityId GetUniqueId() const
-    {
-        return entity_id;
-    }
-
-    /*
-    
-    */
-    bool HasComponent(ComponentId _component_id) const
-    {
-        return component_mask.test(_component_id);
-    }
-    bool HasComponents(ComponentMask _component_mask) const
-    {
-        for (int i = 0; i < MaximumEntityComponents; i++)
-        {
-            if (component_mask[i] && !_component_mask[i])
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    void AddComponent(ComponentId _component_id)
-    {
-        component_mask[_component_id] = true;
-    }
-
-    void RemoveComponent(ComponentId _component_id)
-    {
-        component_mask[_component_id] = false;
-    }
-
-private:
-
-    EntityId      entity_id      = std::numeric_limits<EntityId>::max();
-    WorldPosition world_position = { 0, 0 };
-    ComponentMask component_mask;
-};
 
 template <typename EnumType, typename EnumBitsType = uint32_t>
 class enum_bitset
@@ -406,7 +390,7 @@ private:
 };
 
 using Hash      = uint64_t;
-using LayerHash = Hash;
+using LayerId   = uint64_t;
 
 // A hasher object
 struct Hasher
@@ -937,12 +921,11 @@ public:
     std::vector<ComponentId>               query_component_ids;
     ComponentMask                          component_mask = 0;
     std::vector<ComponentQueryInstruction> queries;
-
 };
 
 JaniNamespaceBegin(Message)
 
-struct ClientWorkerAuthenticationRequest
+struct RuntimeClientAuthenticationRequest
 {
     Serializable();
 
@@ -954,29 +937,31 @@ struct ClientWorkerAuthenticationRequest
     uint32_t authentication_token = 0;
 };
 
-struct ClientWorkerAuthenticationResponse
+struct RuntimeClientAuthenticationResponse
 {
     Serializable();
 
     bool succeed = false;
 };
 
-struct WorkerAuthenticationRequest
+struct RuntimeAuthenticationRequest
 {
     Serializable();
 
-    char      ip[16];
-    uint32_t  port;
-    LayerHash layer_hash            = std::numeric_limits<LayerHash>::max();
-    uint32_t  access_token          = 0;
-    uint32_t  worker_authentication = 0;
+    char     ip[16];
+    uint32_t port;
+    LayerId  layer_id              = std::numeric_limits<LayerId>::max();
+    uint32_t access_token          = 0;
+    uint32_t worker_authentication = 0;
 };
 
-struct WorkerAuthenticationResponse
+struct RuntimeAuthenticationResponse
 {
     Serializable();
 
-    bool succeed = false;
+    bool     succeed              = false;
+    bool     use_spatial_area     = false;
+    uint32_t maximum_entity_limit = 0;
 };
 
 struct WorkerSpawnRequest
@@ -985,7 +970,7 @@ struct WorkerSpawnRequest
 
     std::string runtime_ip;
     uint32_t    runtime_worker_connection_port = 0;
-    LayerHash   layer_hash                     = std::numeric_limits<LayerHash>::max();
+    LayerId     layer_id                       = std::numeric_limits<LayerId>::max();
 };
 
 struct WorkerSpawnResponse
@@ -995,8 +980,8 @@ struct WorkerSpawnResponse
     bool succeed = false;
 };
 
-// WorkerLogMessage
-struct WorkerLogMessageRequest
+// RuntimeLogMessage
+struct RuntimeLogMessageRequest
 {
     Serializable();
 
@@ -1005,16 +990,16 @@ struct WorkerLogMessageRequest
     std::string    log_message;
 };
 
-// WorkerReserveEntityIdRange
-struct WorkerReserveEntityIdRangeRequest
+// RuntimeReserveEntityIdRange
+struct RuntimeReserveEntityIdRangeRequest
 {
     Serializable();
 
     uint32_t total_ids;
 };
 
-// WorkerReserveEntityIdRange
-struct WorkerReserveEntityIdRangeResponse
+// RuntimeReserveEntityIdRange
+struct RuntimeReserveEntityIdRangeResponse
 {
     Serializable();
 
@@ -1023,8 +1008,8 @@ struct WorkerReserveEntityIdRangeResponse
     EntityId id_end   = std::numeric_limits<EntityId>::max();
 };
 
-// WorkerAddEntity
-struct WorkerAddEntityRequest
+// RuntimeAddEntity
+struct RuntimeAddEntityRequest
 {
     Serializable();
 
@@ -1032,16 +1017,16 @@ struct WorkerAddEntityRequest
     EntityPayload entity_payload;
 };
 
-// WorkerRemoveEntity
-struct WorkerRemoveEntityRequest
+// RuntimeRemoveEntity
+struct RuntimeRemoveEntityRequest
 {
     Serializable();
 
     EntityId entity_id;
 };
 
-// WorkerAddComponent
-struct WorkerAddComponentRequest
+// RuntimeAddComponent
+struct RuntimeAddComponentRequest
 {
     Serializable();
 
@@ -1050,8 +1035,8 @@ struct WorkerAddComponentRequest
     ComponentPayload component_payload;
 };
 
-// WorkerRemoveComponent
-struct WorkerRemoveComponentRequest
+// RuntimeRemoveComponent
+struct RuntimeRemoveComponentRequest
 {
     Serializable();
 
@@ -1059,8 +1044,8 @@ struct WorkerRemoveComponentRequest
     ComponentId component_id;
 };
 
-// WorkerComponentUpdate
-struct WorkerComponentUpdateRequest
+// RuntimeComponentUpdate
+struct RuntimeComponentUpdateRequest
 {
     Serializable();
 
@@ -1070,20 +1055,59 @@ struct WorkerComponentUpdateRequest
     std::optional<WorldPosition> entity_world_position;
 };
 
-// WorkerComponentQuery
-struct WorkerComponentQueryRequest
+// RuntimeComponentQuery
+struct RuntimeComponentQueryRequest
 {
     Serializable();
 
     ComponentQuery query;
 };
 
-struct WorkerComponentQueryResponse
+struct RuntimeComponentQueryResponse
 {
     Serializable();
 
     bool                            succeed = false;
     std::optional<ComponentPayload> component_payload;
+};
+
+// RuntimeWorkerReportAcknowledge
+struct RuntimeWorkerReportAcknowledgeRequest
+{
+    Serializable();
+
+    std::optional<EntityId>  extreme_top_entity;
+    std::optional<EntityId>  extreme_right_entity;
+    std::optional<EntityId>  extreme_left_entity;
+    std::optional<EntityId>  extreme_bottom_entity;
+    uint32_t                 total_entities_over_capacity = 0;
+    std::optional<WorldRect> worker_rect;
+};
+
+struct RuntimeDefaultResponse
+{
+    Serializable();
+
+    bool succeed = false;
+};
+
+// WorkerAddComponent
+struct WorkerAddComponentRequest
+{
+    Serializable();
+
+    EntityId         entity_id    = std::numeric_limits<EntityId>::max();
+    ComponentId      component_id = std::numeric_limits<ComponentId>::max();
+    ComponentPayload component_payload;
+};
+
+// WorkerRemoveComponent
+struct WorkerRemoveComponentRequest
+{
+    Serializable();
+
+    EntityId    entity_id    = std::numeric_limits<EntityId>::max();
+    ComponentId component_id = std::numeric_limits<ComponentId>::max();
 };
 
 struct WorkerDefaultResponse
@@ -1093,7 +1117,176 @@ struct WorkerDefaultResponse
     bool succeed = false;
 };
 
+// RuntimeGetEntitiesInfo
+struct RuntimeGetEntitiesInfoRequest
+{
+    Serializable();
+
+    bool dummy = false;
+};
+
+// RuntimeGetEntitiesInfo
+struct RuntimeGetEntitiesInfoResponse
+{
+    Serializable();
+
+    bool                                                       succeed = false;
+    std::vector<std::tuple<EntityId, WorldPosition, WorkerId>> entities_infos;
+};
+
+// RuntimeGetWorkersInfo
+struct RuntimeGetWorkersInfoRequest
+{
+    Serializable();
+
+    bool dummy = false;
+};
+
+// RuntimeGetWorkersInfo
+struct RuntimeGetWorkersInfoResponse
+{
+    Serializable();
+
+    bool                                                                           succeed = false;
+    std::vector<std::tuple<WorkerId, LayerId, WorldRect, uint32_t>> worker_infos;
+};
+
 JaniNamespaceEnd(Message)
+
+class Entity
+{
+    DISABLE_COPY(Entity);
+
+public:
+
+    Entity(EntityId _unique_id) : entity_id(_unique_id) 
+    {
+
+    }
+
+    /*
+
+    */
+    WorldPosition GetRepresentativeWorldPosition() const
+    {
+        return world_position;
+    }
+
+    /*
+    
+    */
+    WorkerId GetRepresentativeWorldPositionWorker() const
+    {
+        return world_position_worker_owner;
+    }
+
+    /*
+    
+    */
+    void SetRepresentativeWorldPosition(WorldPosition _position, WorkerId _position_worker)
+    {
+        world_position              = _position;
+        world_position_worker_owner = _position_worker;
+    }
+
+    /*
+    
+    */
+    EntityId GetUniqueId() const
+    {
+        return entity_id;
+    }
+
+    /*
+    
+    */
+    bool HasComponent(ComponentId _component_id) const
+    {
+        return component_mask.test(_component_id);
+    }
+    bool HasComponents(ComponentMask _component_mask) const
+    {
+        for (int i = 0; i < MaximumEntityComponents; i++)
+        {
+            if (component_mask[i] && !_component_mask[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    void AddComponent(ComponentId _component_id)
+    {
+        component_mask[_component_id] = true;
+    }
+
+    void RemoveComponent(ComponentId _component_id)
+    {
+        component_mask[_component_id] = false;
+
+        // Function that maps from component to layer
+        uint32_t layer_id = -1;
+
+        assert(_component_id < MaximumEntityComponents);
+        assert(layer_id < MaximumLayers);
+
+        m_worker_authority_info[layer_id][_component_id] = std::nullopt;
+    }
+
+    void AddQueriesForLayer(uint32_t _layer_id, std::vector<ComponentQuery> _queries)
+    {
+        return UpdateQueriesForLayer(_layer_id, std::move(_queries)); // Add and update is basically the same since we will always receive the entire layer query data
+    }
+
+    void RemoveQueriesForLayer(uint32_t _layer_id)
+    {
+        assert(_layer_id < MaximumLayers);
+        m_layer_queries[_layer_id].clear();
+    }
+
+    void UpdateQueriesForLayer(uint32_t _layer_id, std::vector<ComponentQuery> _queries) // Could use a transient vector, clear the query one and copy into the already existent memory
+    {
+        assert(_layer_id < MaximumLayers);
+        m_layer_queries[_layer_id] = std::move(_queries);
+    }
+
+    void SetComponentAuthority(LayerId _layer_id, ComponentId _component_id, WorkerId _worker_id)
+    {
+        assert(_component_id < MaximumEntityComponents);
+        assert(_layer_id < MaximumLayers);
+
+        m_worker_authority_info[_layer_id][_component_id] = _worker_id;
+    }
+
+    std::optional<WorkerId> GetComponentAuthority(LayerId _layer_id, ComponentId _component_id) const
+    {
+        assert(_component_id < MaximumEntityComponents);
+        assert(_layer_id < MaximumLayers);
+
+        return m_worker_authority_info[_layer_id][_component_id];
+    }
+
+    bool VerifyWorkerComponentAuthority(LayerId _layer_id, ComponentId _component_id, WorkerId _worker_id) const
+    {
+        assert(_component_id < MaximumEntityComponents);
+        assert(_layer_id < MaximumLayers);
+
+        return m_worker_authority_info[_layer_id][_component_id] ? m_worker_authority_info[_layer_id][_component_id].value() == _worker_id : false;
+    }
+
+private:
+
+    EntityId      entity_id                   = std::numeric_limits<EntityId>::max();
+    WorldPosition world_position              = { 0, 0 };
+    WorkerId      world_position_worker_owner = std::numeric_limits<WorkerId>::max();
+    ComponentMask component_mask;
+
+    std::array<std::array<std::optional<WorkerId>, MaximumEntityComponents>, MaximumLayers> m_worker_authority_info;
+
+    std::array<std::vector<ComponentQuery>, MaximumLayers> m_layer_queries;
+};
 
 JaniNamespaceEnd(Jani)
 

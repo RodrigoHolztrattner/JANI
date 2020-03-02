@@ -23,10 +23,17 @@ class LayerCollection
     struct LayerInfo
     {
         std::string              name;
-        LayerHash                layer_hash    = std::numeric_limits<LayerHash>::max();
         bool                     is_user_layer = false;
-        uint32_t                 unique_id     = std::numeric_limits<uint32_t>::max();
+        LayerId                  unique_id     = std::numeric_limits<LayerId>::max();
         LayerLoadBalanceStrategy load_balance_strategy;
+    };
+
+    struct ComponentInfo
+    {
+        std::string name;
+        std::string layer_name;
+        LayerId     layer_unique_id = std::numeric_limits<LayerId>::max();
+        ComponentId unique_id       = std::numeric_limits<ComponentId>::max();
     };
 
 //////////////////////////
@@ -54,13 +61,23 @@ public: // MAIN METHODS //
     /*
     * Return a map with all registered layers and their infos
     */
-    const std::map<LayerHash, LayerInfo>& GetLayers() const;
+    const std::map<LayerId, LayerInfo>& GetLayers() const;
+
+    /*
+    * Return a map with all registered components and their infos
+    */
+    const std::map<ComponentId, ComponentInfo> GetComponents() const;
+
+    /*
+    * Return the layer id associated with the given component id
+    */
+    LayerId GetLayerIdForComponent(ComponentId _component_id) const;
 
     /*
     * Return if the given layer info exist
     */
     bool HasLayer(const std::string& _layer_name) const;
-    bool HasLayer(LayerHash _layer_hash)          const;
+    bool HasLayer(LayerId _layer_id)              const;
 
     /*
     * Return a layer info
@@ -68,7 +85,7 @@ public: // MAIN METHODS //
     * can throw if it fails
     */
     const LayerInfo& GetLayerInfo(const std::string& _layer_name) const;
-    const LayerInfo& GetLayerInfo(LayerHash _layer_hash)          const;
+    const LayerInfo& GetLayerInfo(LayerId _layer_id)              const;
 
     /*
     * Return a layer load balance strategy info
@@ -76,14 +93,15 @@ public: // MAIN METHODS //
     * can throw if it fails
     */
     const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const;
-    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(LayerHash _layer_hash)          const;
+    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(LayerId _layer_id)              const;
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    bool                           m_is_valid = false;
-    std::map<LayerHash, LayerInfo> m_layers;
+    bool                                 m_is_valid = false;
+    std::map<LayerId, LayerInfo>         m_layers;
+    std::map<ComponentId, ComponentInfo> m_components;
 };
 
 // Jani

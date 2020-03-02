@@ -22,6 +22,8 @@ class Worker
 {
 public:
 
+    using OnComponentAddedCallback = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
+
     template<typename ResponseType>
     struct ResponseCallback
     {
@@ -84,16 +86,16 @@ public:
 
     using ResponseCallbackType = std::variant
         <
-        ResponseCallback<Message::WorkerReserveEntityIdRangeResponse>,
-        ResponseCallback<Message::WorkerAuthenticationResponse>,
-        ResponseCallback<Message::WorkerDefaultResponse>
+        ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>,
+        ResponseCallback<Message::RuntimeAuthenticationResponse>,
+        ResponseCallback<Message::RuntimeDefaultResponse>
         >;
 
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    Worker(LayerHash _layer_id_hash);
+    Worker(LayerId _layer_id);
     ~Worker();
 
 //////////////////////////
@@ -109,9 +111,41 @@ public: // MAIN METHODS //
         uint32_t    _server_port);
 
     /*
+    * Return a reference to the underlying entity manager
+    */
+    entityx::EntityManager& GetEntityManager();
+
+    /*
     * Returns if this worker is connected to the game server
     */
     bool IsConnected() const;
+
+    /*
+    * Reports an entity position
+    * This should be called whenever possible if this worker has access to whatever is
+    * the entity "position" component
+    * Having this information is crucial to determine the worker influence area and
+    * if it is over its capacity
+    * If this worker doesn't deal with this "position" component and it doesn't operate
+    * in a spatial area, no action is required
+    */
+    void ReportEntityPosition(EntityId _entity_id, WorldPosition _position);
+
+///////////////////////
+public: // CALLBACKS //
+///////////////////////
+
+    void RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback);
+
+private:
+
+    void CalculateWorkerProperties(
+        std::optional<EntityId>&  _extreme_top_entity,
+        std::optional<EntityId>&  _extreme_right_entity,
+        std::optional<EntityId>&  _extreme_left_entity,
+        std::optional<EntityId>&  _extreme_bottom_entity,
+        uint32_t&                 _total_entities_over_capacity,
+        std::optional<WorldRect>& _worker_rect) const;
 
 protected:
 
@@ -151,14 +185,14 @@ public:
     * Only after this worker is authenticated it will be able to interact
     * with the game server
     */
-    ResponseCallback<Message::WorkerAuthenticationResponse> RequestAuthentication();
+    ResponseCallback<Message::RuntimeAuthenticationResponse> RequestAuthentication();
 
     /*
     * Send a log message to the game server
     * This is only available on production builds and its basically 
     * a noop when live
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestLogMessage(
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestLogMessage(
         WorkerLogLevel     _log_level, 
         const std::string& _title, 
         const std::string& _message);
@@ -169,14 +203,14 @@ public:
     * This operation can only succeed if this worker has the rights to
     * request and manage entities
     */
-    ResponseCallback<Message::WorkerReserveEntityIdRangeResponse> RequestReserveEntityIdRange(uint32_t _total);
+    ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse> RequestReserveEntityIdRange(uint32_t _total);
 
     /*
     * Request the game server to add a certain entity and a payload
     * containing its component info
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestAddEntity(
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestAddEntity(
         EntityId      _entity_id, 
         EntityPayload _entity_payload);
 
@@ -184,13 +218,13 @@ public:
     * Request the game server to remove a certain entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestRemoveEntity(EntityId _entity_id);
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestRemoveEntity(EntityId _entity_id);
 
     /*
     * Request the game server to add a certain component to an entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestAddComponent(
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestAddComponent(
         EntityId         _entity_id, 
         ComponentId      _component_id, 
         ComponentPayload _component_payload);
@@ -199,7 +233,7 @@ public:
     * Request the game server to remove a certain component from an entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestRemoveComponent(
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestRemoveComponent(
         EntityId         _entity_id,
         ComponentId      _component_id);
 
@@ -211,7 +245,7 @@ public:
     * Requires this worker to be authoritative against the given component
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::WorkerDefaultResponse> RequestUpdateComponent(
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestUpdateComponent(
         EntityId                     _entity_id,
         ComponentId                  _component_id,
         ComponentPayload             _component_payload, 
@@ -235,10 +269,26 @@ private: // VARIABLES //
     uint32_t  m_current_message_index    = 0;
     uint32_t  m_received_message_index   = 0; // From where we are reading on m_response_callbacks
     uint32_t  m_received_message_counter = 0; // What is the next response index
-    LayerHash m_layer_id_hash          = std::numeric_limits<uint32_t>::max();
-    bool      m_did_server_timeout     = false;
+    LayerId   m_layer_id                 = std::numeric_limits<LayerId>::max();
+    bool      m_did_server_timeout       = false;
+
+    bool     m_use_spatial_area     = false;
+    uint32_t m_maximum_entity_limit = 0;
+    uint32_t m_entity_count         = 0;
+
+    std::chrono::time_point<std::chrono::steady_clock> m_last_worker_report_timestamp = std::chrono::steady_clock::now();
+
+    entityx::EntityX m_ecs_manager;
+
+    std::unordered_map<EntityId, entityx::Entity> m_server_entity_to_local_map;
+    std::unordered_map<entityx::Entity, EntityId> m_local_entity_to_server_map;
+
+    std::unordered_map<EntityId, WorldPosition> m_entities_positions;
 
     std::vector<std::pair<uint32_t, ResponseCallbackType>> m_response_callbacks;
+
+    // Callbacks
+    OnComponentAddedCallback m_on_component_added_callback;
 };
 
 // Jani

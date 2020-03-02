@@ -29,14 +29,14 @@ bool Jani::WorkerSpawnerInstance::Initialize(
     return true;
 }
 
-bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerHash _layer_hash)
+bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id)
 {
     if (m_connection)
     {
         Message::WorkerSpawnRequest worker_spawn_request;
         worker_spawn_request.runtime_worker_connection_port = m_runtime_worker_connection_port;
         worker_spawn_request.runtime_ip                     = m_runtime_address;
-        worker_spawn_request.layer_hash                     = _layer_hash;
+        worker_spawn_request.layer_id                       = _layer_id;
 
         bool result = m_request_manager.MakeRequest(
             *m_connection,

@@ -1,7 +1,8 @@
 {
     "layers": [
         {
-            "name": "physics",
+            "name": "game",
+            "id": 0, 
             "user_layer": false, 
             "minimum_area": {
                 "width": 5,
@@ -9,27 +10,22 @@
             }
         }, 
         {
-            "name": "chat",
+            "name": "brain",
+            "id": 1, 
             "user_layer": false, 
             "maximum_workers": 1
-        },      
+        }
+    ], 
+    "components": [
         {
-            "name": "npc_ai",
-            "user_layer": false, 
-            "maximum_workers": 4, 
-            "minimum_area": {
-                "width": 5,
-                "height": 5
-            }
-        },       
+            "name": "position",
+            "id": 0, 
+            "layer_name": "game"
+        },
         {
-            "name": "background_simulation",
-            "user_layer": false, 
-            "maximum_workers": 10
-        },       
-        {
-            "name": "user_layer",
-            "user_layer": true
-        }                   
+            "name": "npc",
+            "id": 1, 
+            "layer_name": "brain"
+        }
     ]
 }

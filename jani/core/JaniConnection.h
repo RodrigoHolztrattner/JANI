@@ -74,9 +74,9 @@ namespace Jani
         using SocketType = int;
 #endif
 
-    private:
+        static const uint32_t MaximumDatagramSize = 2048; // Change  this to 576 bytes
 
-        static const uint32_t MaximumDatagramSize = 2048;
+    private:
 
         struct ClientInfo
         {
@@ -316,10 +316,11 @@ namespace Jani
 
             if (m_is_server)
             {
-                for (auto& [client_hash, client_info] : m_server_clients)
+                for (auto client_iter = m_server_clients.cbegin(); client_iter != m_server_clients.cend();)
                 {
-                    auto time_from_last_receive_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - client_info.last_receive_timestamp).count();
-                    auto time_from_last_update_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
+                    auto& [client_hash, client_info] = *client_iter;
+                    auto time_from_last_receive_ms   = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - client_info.last_receive_timestamp).count();
+                    auto time_from_last_update_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
                     auto time_elapsed_for_timeout_ms = time_from_last_receive_ms - time_from_last_update_ms;
 
                     if (time_elapsed_for_timeout_ms > m_timeout_ms)
@@ -327,6 +328,19 @@ namespace Jani
                         client_info.timed_out = true;
 
                         _timeout_callback(client_info.hash);
+                    }
+
+                    // Check if this client should be disconnected
+                    if (time_elapsed_for_timeout_ms > m_timeout_ms * 8)
+                    {
+                        ikcp_release(client_info.kcp_instance);
+                        m_server_clients.erase(client_iter++);
+
+                        std::cout << "Connection -> Deleting obsolete client connection" << std::endl;
+                    }
+                    else
+                    {
+                        ++client_iter;
                     }
                 }
             }
@@ -423,6 +437,12 @@ namespace Jani
                         if (total_received <= 0)
                         {
                             break;
+                        }
+
+                        if (total_received >= MaximumDatagramSize)
+                        {
+                            std::cout << "Connection -> Trying to receive " << total_received << " that is over the current capacity" << std::endl;
+                            assert(false);
                         }
 
                         // [[likely]]
@@ -711,53 +731,59 @@ namespace Jani
         std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp         = std::chrono::steady_clock::now();
         std::chrono::time_point<std::chrono::steady_clock> m_last_server_receive_timestamp = std::chrono::steady_clock::now();
 
-        std::map<ClientHash, ClientInfo> m_server_clients;
+        mutable std::map<ClientHash, ClientInfo> m_server_clients;
     };
 
     enum class RequestType : uint64_t
     {
-        /* Worker Requests */
-        WorkerAuthentication,           /* pure worker type */
-        ClientWorkerAuthentication,     /* client worker type */
-        WorkerLogMessage, 
-        WorkerReserveEntityIdRange, 
-        WorkerAddEntity, 
-        WorkerRemoveEntity, 
-        WorkerAddComponent, 
-        WorkerRemoveComponent, 
-        WorkerComponentUpdate,
-        WorkerComponentQuery, 
+        /* Worker -> Runtime Requests */
+        RuntimeAuthentication,           /* pure worker type */
+        RuntimeClientAuthentication,     /* client worker type */
+        RuntimeLogMessage, 
+        RuntimeReserveEntityIdRange, 
+        RuntimeAddEntity, 
+        RuntimeRemoveEntity, 
+        RuntimeAddComponent, 
+        RuntimeRemoveComponent, 
+        RuntimeComponentUpdate,
+        RuntimeComponentQuery, 
+        RuntimeLayerInterestQueryUpdate, /* add/update a certain layer query */
+        RuntimeLayerInterestQueryRemove, /* remove a certain layer query */
+        RuntimeLayerInterestQuery,       /* perform a certain layer query */
+        RuntimeWorkerReportAcknowledge, 
 
         /* Worker Spawner Requests */
         SpawnWorkerForLayer,
+        // Missing an enum to retrieve info about current cpu/gpu usage on the target pc
 
-        /* Runtime Requests */
+        /* Runtime -> Worker Requests */
+        WorkerAddComponent, 
+        WorkerRemoveComponent, 
+        WorkerLayerAuthorityLossImminent, 
+        WorkerLayerAuthorityLoss, 
+        WorkerLayerAuthorityGainImminent,
+        WorkerLayerAuthorityGain, 
+
+        /* Inspector -> Runtime Requests */
+        RuntimeGetEntitiesInfo, 
+        RuntimeGetWorkersInfo,
     };
 
     class Request
     {
     public:
 
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(type);
+            ar(request_index);
+        }
+
         using RequestIndex = uint32_t;
 
         RequestType  type;
         RequestIndex request_index = std::numeric_limits<RequestIndex>::max();
-
-        friend std::ostream& operator<< (std::ostream& _stream, const Request& _request)
-        {
-            _stream.write((char*)&_request.type, sizeof(_request.type));
-            _stream.write((char*)&_request.request_index, sizeof(_request.request_index));
-
-            return _stream;
-        }
-
-        friend std::istream& operator>> (std::istream& _stream, Request& _request)
-        {
-            _stream.read((char*)&_request.type, sizeof(_request.type));
-            _stream.read((char*)&_request.request_index, sizeof(_request.request_index));
-
-            return _stream;
-        }
     };
 
     struct RequestResponse
@@ -831,10 +857,10 @@ namespace Jani
     public:
 
         template<typename RequestPayloadType>
-        bool MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
+        bool MakeRequest(const Connection<>& _connection, Connection<>::ClientHash _client_hash, RequestType _request_type, const RequestPayloadType& _payload)
         {
             m_temporary_request_buffer.clear();
-            m_temporary_request_buffer.resize(sizeof(Request) + sizeof(RequestPayloadType));
+            m_temporary_request_buffer.resize(Connection<>::MaximumDatagramSize);
 
             vectorwrapbuf<char> data_buffer(m_temporary_request_buffer);
             std::ostream        out_stream(&data_buffer);
@@ -843,17 +869,22 @@ namespace Jani
             new_request.type          = _request_type;
             new_request.request_index = m_request_counter++;
 
-            out_stream << new_request;
-
             bool is_request = true;
-            out_stream << is_request;
 
             {
                 cereal::BinaryOutputArchive archive(out_stream);
+                archive(new_request);
+                archive(is_request);
                 archive(_payload);
             }
 
-            return _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp());
+            return _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash);
+        }
+
+        template<typename RequestPayloadType>
+        bool MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
+        {
+            return MakeRequest(_connection, 0, _request_type, _payload);
         }
 
         void Update(const Connection<>& _connection, std::function<void(std::optional<Connection<>::ClientHash>, const Request&, const RequestResponse&)> _response_callback)
@@ -879,28 +910,28 @@ namespace Jani
                     cereal::BinaryInputArchive in_archive(in_stream);
 
                     Request original_request;
-                    in_stream >> original_request;
+                    in_archive(original_request);
 
                     bool is_request = {};
-                    in_stream >> is_request;
+                    in_archive(is_request);
 
                     if (is_request && _request_callback)
                     {
-                        m_temporary_request_buffer.clear();
-                        m_temporary_request_buffer.resize(4096);
+                        m_temporary_response_buffer.clear();
+                        m_temporary_response_buffer.resize(Connection<>::MaximumDatagramSize);
 
-                        vectorwrapbuf<char> out_data_buffer(m_temporary_request_buffer);
+                        vectorwrapbuf<char> out_data_buffer(m_temporary_response_buffer);
                         std::ostream        out_stream(&out_data_buffer);
                         cereal::BinaryOutputArchive out_archive(out_stream);
 
-                        out_stream << original_request;
+                        out_archive(original_request);
 
                         is_request = false;
-                        out_stream << is_request;
+                        out_archive(is_request);
 
                         _request_callback(_client_hash, original_request, in_archive, out_archive);
 
-                        _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash.has_value() ? _client_hash.value() : 0);
+                        _connection.Send(m_temporary_response_buffer.data(), out_stream.tellp(), _client_hash.has_value() ? _client_hash.value() : 0);
                     }
                     else if(_response_callback)
                     {
@@ -920,6 +951,7 @@ namespace Jani
 
         Request::RequestIndex m_request_counter = 0;
         std::vector<char>     m_temporary_request_buffer;
+        std::vector<char>     m_temporary_response_buffer;
     };
 
 } // namespace Jani

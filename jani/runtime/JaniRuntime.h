@@ -58,7 +58,7 @@ private:
     * If no bridge exist for the given layer, one will be attempted to be created
     */
     bool TryAllocateNewWorker(
-        LayerHash                _layer_hash, 
+        LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash, 
         bool                     _is_user);
 
@@ -70,22 +70,25 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker sends a log message
     */
     bool OnWorkerLogMessage(
-        WorkerId       _worker_id,
-        WorkerLogLevel _log_level,
-        std::string    _log_title,
-        std::string    _log_message);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id,
+        WorkerLogLevel  _log_level,
+        std::string     _log_title,
+        std::string     _log_message);
 
     /*
     * Received when a worker sends a request to reserve a range of entity ids
     */
     std::optional<Jani::EntityId> OnWorkerReserveEntityIdRange(
-        WorkerId _worker_id, 
-        uint32_t _total_ids);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id, 
+        uint32_t        _total_ids);
 
     /*
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
+        WorkerInstance&      _worker_instance,
         WorkerId             _worker_id,
         EntityId             _entity_id,
         const EntityPayload& _entity_payload);
@@ -94,13 +97,15 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to remove an existing entity
     */
     bool OnWorkerRemoveEntity(
-        WorkerId _worker_id, 
-        EntityId _entity_id);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id, 
+        EntityId        _entity_id);
 
     /*
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
+        WorkerInstance&         _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
@@ -110,9 +115,10 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to remove an existing component for the given entity
     */
     bool OnWorkerRemoveComponent(
-        WorkerId _worker_id,
-        EntityId _entity_id, 
-        ComponentId _component_id);
+        WorkerInstance& _worker_instance,
+        WorkerId        _worker_id,
+        EntityId        _entity_id, 
+        ComponentId     _component_id);
 
     /*
     * Received when a worker updates a component
@@ -120,6 +126,7 @@ protected: // WORKER COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
+        WorkerInstance&              _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
@@ -130,11 +137,28 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker request a component query
     */
     WorkerRequestResult OnWorkerComponentQuery(
+        WorkerInstance&       _worker_instance,
         WorkerId              _worker_id,
         EntityId              _entity_id,
         const ComponentQuery& _component_query);
 
 private:
+
+    /*
+    * Perform a quick check if there is an active worker layer that accepts the
+    * given component
+    */
+    bool IsLayerForComponentAvailable(ComponentId _component_id) const;
+
+    /*
+    * Retrieve the best existing worker (according to the load balance strategy)
+    * for the given component id
+    * In case no option is available, or there are no worker available for the
+    * underlying layer, or the workers are over their capacity
+    */
+    std::optional<WorkerInstance*> GetBestWorkerForComponent(
+        ComponentId                  _component_id, 
+        std::optional<WorldPosition> _entity_world_position = std::nullopt) const;
 
     /*
     *
@@ -149,6 +173,7 @@ private: // VARIABLES //
 
     std::unique_ptr<Connection<>>              m_client_connections;
     std::unique_ptr<Connection<>>              m_worker_connections;
+    std::unique_ptr<Connection<>>              m_inspector_connections;
 
     std::vector<std::unique_ptr<WorkerSpawnerInstance>> m_worker_spawner_instances;
 
@@ -157,9 +182,10 @@ private: // VARIABLES //
     std::unique_ptr<LayerCollection>           m_layer_collection;
     std::unique_ptr<WorkerSpawnerCollection>   m_worker_spawner_collection;
 
-    std::map<EntityId, Entity>                                    m_active_entities;
-    std::map<Hash, std::unique_ptr<Bridge>>                       m_bridges;
+    std::map<LayerId, std::unique_ptr<Bridge>>                    m_bridges;
     std::unordered_map<Connection<>::ClientHash, WorkerInstance*> m_worker_instance_mapping;
+
+    // std::vector<Entity*> m_orphan_entities_components;
 
     std::chrono::time_point<std::chrono::steady_clock> m_load_balance_previous_update_time = std::chrono::steady_clock::now();
 };

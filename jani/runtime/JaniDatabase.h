@@ -31,37 +31,56 @@ public: // CONSTRUCTORS //
 public: // MAIN METHODS //
 //////////////////////////
 
+    // Return an entity by its identifier
+    std::optional<const Entity*> GetEntityById(EntityId _entity_id) const;
+
+    /*
+    * Return the entity map
+    */
+    const std::map<EntityId, std::unique_ptr<Entity>>& GetEntities() const;
+
+public:
+
     /*
     */
     std::optional<EntityId> ReserveEntityIdRange(uint32_t _total_ids);
 
     /*
     */
-    bool AddEntity(
+    std::optional<Entity*> AddEntity(
+        WorkerId             _worker_id,
         EntityId             _entity_id,
         const EntityPayload& _entity_payload);
 
     /*
     */
-    bool RemoveEntity(EntityId _entity_id);
+    bool RemoveEntity(
+        WorkerId _worker_id,
+        EntityId _entity_id);
 
     /*
     */
-    bool AddComponent(
+    std::optional<Entity*> AddComponent(
+        WorkerId                _worker_id,
         EntityId                _entity_id, 
+        LayerId                 _layer_id,
         ComponentId             _component_id, 
         const ComponentPayload& _component_payload);
 
     /*
     */
-    bool RemoveComponent(
-        EntityId _entity_id, 
+    std::optional<Entity*> RemoveComponent(
+        WorkerId    _worker_id,
+        EntityId    _entity_id, 
+        LayerId     _layer_id,
         ComponentId _component_id);
 
     /*
     */
-    bool ComponentUpdate(
+    std::optional<Entity*> ComponentUpdate(
+        WorkerId                     _worker_id,
         EntityId                     _entity_id, 
+        LayerId                      _layer_id,
         ComponentId                  _component_id, 
         const ComponentPayload&      _component_payload, 
         std::optional<WorldPosition> _entity_world_position);
@@ -69,6 +88,8 @@ public: // MAIN METHODS //
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
+
+    std::map<EntityId, std::unique_ptr<Entity>> m_active_entities;
 
 };
 

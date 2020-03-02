@@ -49,7 +49,7 @@ public: // MAIN METHODS //
     * Do not call this function withing small intervals, ideally this should be called every 10-30
     * seconds (or more)
     */
-    bool RequestWorkerForLayer(LayerHash _layer_hash);
+    bool RequestWorkerForLayer(LayerId _layer_id);
 
     /*
     * Perform the internal connection update

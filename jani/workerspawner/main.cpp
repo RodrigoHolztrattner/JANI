@@ -57,6 +57,11 @@ int main(int _argc, char* _argv[])
 
         runtime_connection.Update();
 
+        runtime_connection.DidTimeout(
+            [&](auto _client_hash)
+            {
+            });
+
         request_manager.Update(
             runtime_connection,
             [&](auto _client_hash, const Jani::Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
@@ -70,14 +75,14 @@ int main(int _argc, char* _argv[])
                             _request_payload(worker_spawn_request);
                         }
 
-                        std::cout << "WorkerSpawner -> Received spawn request: runtime_ip{" << worker_spawn_request.runtime_ip << "}, runtime_listen_port{" << worker_spawn_request.runtime_worker_connection_port << "}, layer_hash{" << worker_spawn_request.layer_hash << "}" << std::endl;
+                        std::cout << "WorkerSpawner -> Received spawn request: runtime_ip{" << worker_spawn_request.runtime_ip << "}, runtime_listen_port{" << worker_spawn_request.runtime_worker_connection_port << "}, layer_id{" << worker_spawn_request.layer_id << "}" << std::endl;
 
                         std::wstring process_parameters;
                         process_parameters += char_to_wchar(worker_spawn_request.runtime_ip.c_str());
                         process_parameters += L" ";
                         process_parameters += std::to_wstring(worker_spawn_request.runtime_worker_connection_port);
                         process_parameters += L" ";
-                        process_parameters += std::to_wstring(worker_spawn_request.layer_hash);
+                        process_parameters += std::to_wstring(worker_spawn_request.layer_id);
 
                         bool result = ExecuteExternalExeFileNGetReturnValue(L"C:\\Users\\rodri\\Documents\\JANI\\build\\Debug\\jani_worker.exe", process_parameters) != 0;
 
