@@ -53,6 +53,11 @@ void Jani::Worker::RegisterOnComponentAddedCallback(OnComponentAddedCallback _ca
     m_on_component_added_callback = _callback;
 }
 
+void Jani::Worker::RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback)
+{
+    m_on_component_removed_callback = _callback;
+}
+
 void Jani::Worker::CalculateWorkerProperties(
     std::optional<EntityId>&  _extreme_top_entity,
     std::optional<EntityId>&  _extreme_right_entity,
@@ -115,17 +120,23 @@ void Jani::Worker::CalculateWorkerProperties(
             _extreme_top_entity = top_entity.entity_index;
         }
 
-        if (right_entity.entity_index != std::numeric_limits<EntityId>::max())
+        if (right_entity.entity_index != std::numeric_limits<EntityId>::max()
+            && right_entity.entity_index != top_entity.entity_index)
         {
             _extreme_right_entity = right_entity.entity_index;
         }
 
-        if (left_entity.entity_index != std::numeric_limits<EntityId>::max())
+        if (left_entity.entity_index != std::numeric_limits<EntityId>::max()
+            && left_entity.entity_index != right_entity.entity_index
+            && left_entity.entity_index != top_entity.entity_index)
         {
             _extreme_left_entity = left_entity.entity_index;
         }
 
-        if (bottom_entity.entity_index != std::numeric_limits<EntityId>::max())
+        if (bottom_entity.entity_index != std::numeric_limits<EntityId>::max()
+            && bottom_entity.entity_index != right_entity.entity_index
+            && bottom_entity.entity_index != top_entity.entity_index
+            && bottom_entity.entity_index != left_entity.entity_index)
         {
             _extreme_bottom_entity = bottom_entity.entity_index;
         }
@@ -412,8 +423,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 cereal::BinaryInputArchive&  _request_payload,
                 cereal::BinaryOutputArchive& _response_payload)
             {
-                std::cout << "Worker -> Received request from server" << std::endl;
-
                 switch (_request.type)
                 {
                     case RequestType::WorkerAddComponent:
@@ -429,12 +438,15 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         {
                             auto new_entity = m_ecs_manager.entities.create();
 
+                            m_entity_count++;
+
                             entity_iter = m_server_entity_to_local_map.insert({ add_component_request.entity_id, new_entity }).first;
                             m_local_entity_to_server_map.insert({ new_entity, add_component_request.entity_id });
                         }
 
                         auto& entity = entity_iter->second;
 
+                        std::cout << "Entity ID: {" << add_component_request.entity_id << "} - ";
                         assert(m_on_component_added_callback);
                         m_on_component_added_callback(entity, add_component_request.component_id, add_component_request.component_payload);
 
@@ -442,6 +454,32 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     case RequestType::WorkerRemoveComponent:
                     {
+                        Message::WorkerRemoveComponentRequest remove_component_request;
+                        {
+                            _request_payload(remove_component_request);
+                        }
+
+                        auto entity_iter = m_server_entity_to_local_map.find(remove_component_request.entity_id);
+                        if (entity_iter != m_server_entity_to_local_map.end())
+                        {
+                            auto& entity = entity_iter->second;
+
+                            std::cout << "Entity ID: {" << remove_component_request.entity_id << "} - ";
+                            assert(m_on_component_removed_callback);
+                            m_on_component_removed_callback(entity, remove_component_request.component_id);
+
+                            if (entity.component_mask().count() == 0)
+                            {
+                                m_entity_count--;
+
+                                entity.destroy();
+
+                                m_entities_positions.erase(entity_iter->first);
+                                m_local_entity_to_server_map.erase(entity);
+                                m_server_entity_to_local_map.erase(entity_iter);
+                            }
+                        }
+
                         break;
                     }
                     case RequestType::WorkerLayerAuthorityLossImminent:
@@ -458,6 +496,12 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     case RequestType::WorkerLayerAuthorityGain:
                     {
+                        break;
+                    }
+                    default:
+                    {
+                        std::cout << "Worker -> Received invalid request from server" << std::endl;
+
                         break;
                     }
                 }

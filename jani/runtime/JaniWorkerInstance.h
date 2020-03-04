@@ -78,7 +78,7 @@ public: // MAIN METHODS //
     /*
     * Returns 4 optional entity ids that are on the limits of this worker area of influence
     */
-    EntitiesOnAreaLimit GetEntitiesOnAreaLimit() const;
+    std::array<std::optional<EntityId>, 4> GetEntitiesOnAreaLimit() const;
 
     /*
     * Returns the world rect this worker currently have

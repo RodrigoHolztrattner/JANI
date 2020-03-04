@@ -53,9 +53,15 @@ bool Jani::WorkerInstance::IsOverCapacity() const
     return m_is_over_capacity;
 }
 
-Jani::WorkerInstance::EntitiesOnAreaLimit Jani::WorkerInstance::GetEntitiesOnAreaLimit() const
+std::array<std::optional<Jani::EntityId>, 4> Jani::WorkerInstance::GetEntitiesOnAreaLimit() const
 {
-    return m_entities_on_area_limit;
+    return 
+    { 
+        m_entities_on_area_limit.extreme_top_entity, 
+        m_entities_on_area_limit.extreme_right_entity, 
+        m_entities_on_area_limit.extreme_left_entity, 
+        m_entities_on_area_limit.extreme_bottom_entity 
+    };
 }
 
 Jani::WorldRect Jani::WorkerInstance::GetWorldRect() const

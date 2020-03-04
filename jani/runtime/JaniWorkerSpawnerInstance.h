@@ -20,6 +20,12 @@ JaniNamespaceBegin(Jani)
 ////////////////////////////////////////////////////////////////////////////////
 class WorkerSpawnerInstance
 {
+    struct WorkerSpawnStatus
+    {
+        mutable bool                                       has_timed_out   = false;
+        uint32_t                                           timeout_time_ms = std::numeric_limits<uint32_t>::max();
+        std::chrono::time_point<std::chrono::steady_clock> request_time    = std::chrono::steady_clock::now();
+    };
 
 //////////////////////////
 public: // CONSTRUCTORS //
@@ -49,7 +55,18 @@ public: // MAIN METHODS //
     * Do not call this function withing small intervals, ideally this should be called every 10-30
     * seconds (or more)
     */
-    bool RequestWorkerForLayer(LayerId _layer_id);
+    bool RequestWorkerForLayer(LayerId _layer_id, uint32_t _timeout_ms = 10000);
+
+    /*
+    * Acknowledge a worker spawn for the given layer, this is required to determine if a request succeed
+    * or if it timed out
+    */
+    void AcknowledgeWorkerSpawn(LayerId _layer_id);
+
+    /*
+    * Return if this spawner is expecting a worker of the given layer type to be created soon
+    */
+    bool IsExpectingWorkerForLayer(LayerId _layer_id) const;
 
     /*
     * Perform the internal connection update
@@ -77,6 +94,8 @@ private: // VARIABLES //
     std::string                   m_spawner_address;
     uint32_t                      m_runtime_worker_connection_port    = std::numeric_limits<uint32_t>::max();
     std::string                   m_runtime_address;
+
+    std::array<std::optional<WorkerSpawnStatus>, MaximumLayers> m_worker_spawn_status;
 };
 
 // Jani

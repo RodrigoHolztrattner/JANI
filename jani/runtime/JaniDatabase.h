@@ -33,6 +33,7 @@ public: // MAIN METHODS //
 
     // Return an entity by its identifier
     std::optional<const Entity*> GetEntityById(EntityId _entity_id) const;
+    std::optional<Entity*> GetEntityByIdMutable(EntityId _entity_id) const;
 
     /*
     * Return the entity map

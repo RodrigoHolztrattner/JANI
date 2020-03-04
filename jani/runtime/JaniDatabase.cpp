@@ -13,6 +13,11 @@ Jani::Database::~Database()
 
 std::optional<const Jani::Entity*> Jani::Database::GetEntityById(EntityId _entity_id) const
 {
+    return GetEntityByIdMutable(_entity_id);
+}
+
+std::optional<Jani::Entity*> Jani::Database::GetEntityByIdMutable(EntityId _entity_id) const
+{
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter != m_active_entities.end())
     {
@@ -51,7 +56,7 @@ std::optional<Jani::Entity*> Jani::Database::AddEntity(
     // Add each component contained on the payload
     for (auto& component_payload : _entity_payload.component_payloads)
     {
-        entity->AddComponent(component_payload.component_id);
+        entity->AddComponent(component_payload.component_id, component_payload);
     }
 
     return entity.get();
@@ -96,7 +101,7 @@ std::optional<Jani::Entity*> Jani::Database::AddComponent(
     }
 
     // Add the component to the entity
-    entity->AddComponent(_component_id);
+    entity->AddComponent(_component_id, _component_payload);
 
     return entity.get();
 }
@@ -159,6 +164,11 @@ std::optional<Jani::Entity*> Jani::Database::ComponentUpdate(
 
     // Check if this entity already has the given component id
     if (!entity->HasComponent(_component_id))
+    {
+        return std::nullopt;
+    }
+
+    if (!entity->UpdateComponent(_component_id, _component_payload))
     {
         return std::nullopt;
     }

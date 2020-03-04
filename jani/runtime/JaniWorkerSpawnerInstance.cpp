@@ -29,9 +29,9 @@ bool Jani::WorkerSpawnerInstance::Initialize(
     return true;
 }
 
-bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id)
+bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id, uint32_t _timeout_ms)
 {
-    if (m_connection)
+    if (m_connection && (!m_worker_spawn_status[_layer_id] || m_worker_spawn_status[_layer_id]->has_timed_out))
     {
         Message::WorkerSpawnRequest worker_spawn_request;
         worker_spawn_request.runtime_worker_connection_port = m_runtime_worker_connection_port;
@@ -42,17 +42,41 @@ bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id)
             *m_connection,
             RequestType::SpawnWorkerForLayer,
             worker_spawn_request);
-
         if (result)
         {
-            // Set that we are waiting for a new worker on this layer
-            // ...
+            WorkerSpawnStatus worker_spawn_status;
+            worker_spawn_status.timeout_time_ms = _timeout_ms;
+            m_worker_spawn_status[_layer_id] = std::move(worker_spawn_status);
 
             return true;
         }
     }
 
     return false;
+}
+
+void Jani::WorkerSpawnerInstance::AcknowledgeWorkerSpawn(LayerId _layer_id)
+{
+    m_worker_spawn_status[_layer_id] = std::nullopt;
+}
+
+bool Jani::WorkerSpawnerInstance::IsExpectingWorkerForLayer(LayerId _layer_id) const
+{
+    if (m_worker_spawn_status[_layer_id] && !m_worker_spawn_status[_layer_id]->has_timed_out)
+    {
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_worker_spawn_status[_layer_id]->request_time).count();
+        if (elapsed_time > m_worker_spawn_status[_layer_id]->timeout_time_ms)
+        {
+            m_worker_spawn_status[_layer_id]->has_timed_out = true;
+        }
+    }
+
+    if (!m_worker_spawn_status[_layer_id] || m_worker_spawn_status[_layer_id]->has_timed_out)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 void Jani::WorkerSpawnerInstance::Update()

@@ -2,6 +2,7 @@
 // Filename: JaniRuntime.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniRuntime.h"
+#include "JaniDeploymentConfig.h"
 #include "JaniLayerCollection.h"
 #include "JaniWorkerSpawnerCollection.h"
 #include "JaniBridge.h"
@@ -14,8 +15,15 @@ uint32_t    s_client_worker_listen_port = 8080;
 uint32_t    s_worker_listen_port        = 13051;
 uint32_t    s_inspector_listen_port     = 14051;
 
-Jani::Runtime::Runtime(Database& _database) :
-    m_database(_database)
+Jani::Runtime::Runtime(
+    Database&                      _database, 
+    const DeploymentConfig&        _deployment_config, 
+    const LayerCollection&         _layer_collection,
+    const WorkerSpawnerCollection& _worker_spawner_collection) 
+    : m_database(_database)
+    , m_deployment_config(_deployment_config)
+    , m_layer_collection(_layer_collection)
+    , m_worker_spawner_collection(_worker_spawner_collection)
 {
 }
 
@@ -23,28 +31,14 @@ Jani::Runtime::~Runtime()
 {
 }
 
-bool Jani::Runtime::Initialize(
-    std::unique_ptr<LayerCollection>         layer_collection,
-    std::unique_ptr<WorkerSpawnerCollection> worker_spawner_collection)
+bool Jani::Runtime::Initialize()
 {
-    assert(layer_collection);
-    assert(worker_spawner_collection);
-
-    if (!layer_collection->IsValid()
-        || !worker_spawner_collection->IsValid())
-    {
-        return false;
-    }
-
-    m_layer_collection          = std::move(layer_collection);
-    m_worker_spawner_collection = std::move(worker_spawner_collection);
-
     m_client_connections    = std::make_unique<Connection<>>(s_client_worker_listen_port);
     m_worker_connections    = std::make_unique<Connection<>>(s_worker_listen_port);
     m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
     m_request_manager       = std::make_unique<RequestManager>();
 
-    auto& worker_spawners = m_worker_spawner_collection->GetWorkerSpawnersInfos();
+    auto& worker_spawners = m_worker_spawner_collection.GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
         static uint32_t spawner_port = 13000;
@@ -126,9 +120,17 @@ void Jani::Runtime::Update()
                 _client_hash.value(),
                 false);
 
+            if (worker_allocation_result)
+            {
+                for (auto& worker_spawner : m_worker_spawner_instances)
+                {
+                    worker_spawner->AcknowledgeWorkerSpawn(authentication_request.layer_id);
+                }
+            }
+
             std::cout << "Runtime -> New worker connected" << std::endl;
 
-            Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 10 };
+            Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 7 };
             {
                 _response_payload(authentication_response);
             }
@@ -302,7 +304,7 @@ void Jani::Runtime::Update()
         worker_spawner_connection->Update();
     }
 
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 10000)
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 1000)
     {
         ApplyLoadBalanceUpdate();
         m_load_balance_previous_update_time = std::chrono::steady_clock::now();
@@ -680,8 +682,151 @@ std::optional<Jani::WorkerInstance*> Jani::Runtime::GetBestWorkerForComponent(
 
 void Jani::Runtime::ApplyLoadBalanceUpdate()
 {
-    auto& worker_spawners   = m_worker_spawner_collection->GetWorkerSpawnersInfos();
-    auto& registered_layers = m_layer_collection->GetLayers();
+    auto&                           worker_spawners             = m_worker_spawner_collection->GetWorkerSpawnersInfos();
+    auto&                           registered_layers           = m_layer_collection->GetLayers();
+    std::array<bool, MaximumLayers> is_worker_required_on_layer = {};
+
+    /*
+        => O que essa funcao deve fazer:
+
+        - Ela deve rodar tipo uma vez a cada segundo (nao muito frequente)
+
+        - Deve verificar se existe pelo menos 1 layer de cada tipo ativado, caso nao tenha ele deve
+        requisitar a criacao dos workers necessarios
+        - Deve verificar dentre os layers/bridges existentes se alguma esta sobrecarregada, requisitando
+        a criacao de um novo worker para o layer em questao
+    */
+
+    // Check for workers that are over their capacity
+    // We only need to check the ones who use spatial area, if there is no
+    // area limit we will evenly distribute the entities across workers
+    // so no validation is needed
+    for (auto& [layer_id, bridge] : m_bridges)
+    {
+        auto& worker_map = bridge->GetWorkers();
+        for (auto& [worker_id, worker] : worker_map)
+        {
+            auto entities_on_area_limit = worker->GetEntitiesOnAreaLimit();
+            std::array<std::optional<std::tuple<WorkerInstance*, uint32_t, Entity*>>, 4> distance_infos;
+
+            // Check if there are enough entities on this worker for us to consider moving them
+            // to another one
+            // ...
+
+            if (!worker->IsOverCapacity()/* || !worker->UseSpatialArea()*/)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < entities_on_area_limit.size(); i++)
+            {
+                auto& entity_info = entities_on_area_limit[i];
+                if (!entity_info)
+                {
+                    continue;
+                }
+
+                auto entity = m_database.GetEntityByIdMutable(entity_info.value());
+                if (!entity)
+                {
+                    continue;
+                }
+
+                /*
+                * One optimization would be passing the entity position to the worker and not only the ids for
+                * the extreme locations, that way we would not need to retrieve the entity from the database map 
+                * all the time
+                */
+                WorldPosition entity_position = entity.value()->GetRepresentativeWorldPosition();
+
+                bool found_worker = false;
+                for (auto& [thief_worker_id, thief_worker] : worker_map)
+                {
+                    if (worker_id != thief_worker_id && !thief_worker->IsOverCapacity())
+                    {
+                        uint32_t distance_to_worker_area = thief_worker->GetWorldRect().ManhattanDistanceFromPosition(entity_position);
+
+                        if (!distance_infos[i] || (std::get<1>(distance_infos[i].value()) > distance_to_worker_area /* && distance_to_worker_area > 100 */))
+                        {
+                            distance_infos[i] = { thief_worker.get() , distance_to_worker_area, entity.value() };
+                            found_worker = true;
+                        }
+                    }
+                }
+
+                if (!found_worker)
+                {
+                    if (!is_worker_required_on_layer[layer_id])
+                    {
+                        std::cout << "Runtime -> Requesting to create another worker since one is over capacity and there is no other available to steal components from it" << std::endl;
+                    }
+
+                    is_worker_required_on_layer[layer_id] = true;
+                }
+            }
+
+            for (auto& distance_info : distance_infos)
+            {
+                if (!distance_info)
+                {
+                    continue;
+                }
+
+                auto [thief_worker, thief_worker_distance, entity] = distance_info.value();
+
+                auto position_component = entity->GetComponentPayload(0);
+                if (!position_component)
+                {
+                    continue;
+                }
+
+                ComponentId component_id = 0; // This should be done for all components, not only position
+
+                std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
+
+                {
+                    Message::WorkerAddComponentRequest add_component_request;
+                    add_component_request.entity_id         = entity->GetId();
+                    add_component_request.component_id      = component_id;
+                    add_component_request.component_payload = std::move(position_component.value());
+
+                    if (!m_request_manager->MakeRequest(
+                        *m_worker_connections,
+                        thief_worker->GetConnectionClientHash(),
+                        RequestType::WorkerAddComponent,
+                        add_component_request))
+                    {
+
+                    }
+
+                    entity->SetComponentAuthority(
+                        layer_id,
+                        component_id,
+                        thief_worker->GetId());
+                }
+
+                {
+                    Message::WorkerRemoveComponentRequest remove_component_request;
+                    remove_component_request.entity_id    = entity->GetId();
+                    remove_component_request.component_id = component_id;
+
+                    if (!m_request_manager->MakeRequest(
+                        *m_worker_connections,
+                        worker->GetConnectionClientHash(),
+                        RequestType::WorkerRemoveComponent,
+                        remove_component_request))
+                    {
+
+                    }
+                }
+            }
+        }
+
+        for (auto& [worker_id, worker] : worker_map)
+        {
+            worker->ResetOverCapacityFlag();
+        }
+    }
 
     for (auto& [layer_id, layer_info] : registered_layers)
     {
@@ -701,43 +846,28 @@ void Jani::Runtime::ApplyLoadBalanceUpdate()
             // We must have at least one worker on this bridge
             if (bridge->GetTotalWorkerCount() == 0 && m_worker_spawner_instances.size() > 0)
             {
-                if (!m_worker_spawner_instances.back()->RequestWorkerForLayer(layer_id))
-                {
-                    std::cout << "Unable to request a new worker from worker spawner, layer{" << layer_info.name << "}" << std::endl;
-                }
+                is_worker_required_on_layer[layer_id] = true;
             }
         }
     }
-
-    /*
-        => O que essa funcao deve fazer:
-
-        - Ela deve rodar tipo uma vez a cada segundo (nao muito frequente)
-
-        - Deve verificar se existe pelo menos 1 layer de cada tipo ativado, caso nao tenha ele deve
-        requisitar a criacao dos workers necessarios
-        - Deve verificar dentre os layers/bridges existentes se alguma esta sobrecarregada, requisitando
-        a criacao de um novo worker para o layer em questao
-    */
-
-    // Check for workers that are over their capacity
-    // We only need to check the ones who use spatial area, if there is no
-    // area limit we will evenly distribute the entities across workers
-    // so no validation is needed
-    for (auto& [layer_hash, bridge] : m_bridges)
+    
+    for (int i = 0; i < is_worker_required_on_layer.size(); i++)
     {
-        auto& worker_map = bridge->GetWorkers();
-        for (auto& [worker_id, worker] : worker_map)
+        if (is_worker_required_on_layer[i])
         {
-            // Check if its over capacity
-            if (worker->IsOverCapacity() && worker->UseSpatialArea())
+            bool is_expecting_worker_for_layer = false;
+            for (auto& worker_spawner : m_worker_spawner_instances)
             {
-                auto entities_on_area_limit = worker->GetEntitiesOnAreaLimit();
+                if (worker_spawner->IsExpectingWorkerForLayer(i))
+                {
+                    is_expecting_worker_for_layer = true;
+                    break;
+                }
+            }
 
-                // Move these entities to other workers or flag to request new ones
-                // ...
-
-                worker->ResetOverCapacityFlag();
+            if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(i))
+            {
+                std::cout << "Unable to request a new worker from worker spawner, layer{" << registered_layers.find(i)->second.name << "}" << std::endl;
             }
         }
     }

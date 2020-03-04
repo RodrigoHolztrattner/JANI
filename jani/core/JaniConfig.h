@@ -93,6 +93,39 @@ struct WorldPosition
 {
     Serializable();
 
+    bool operator() (const WorldPosition& rhs) const
+    {
+        if (x < rhs.x) return true;
+        if (x > rhs.x) return false;
+        //x == rhs.x
+        if (y < rhs.y) return true;
+        if (y > rhs.y) return false;
+
+        return false;
+    }
+
+    bool operator <(const WorldPosition& rhs) const
+    {
+        if (x < rhs.x) return true;
+        if (x > rhs.x) return false;
+        //x == rhs.x
+        if (y < rhs.y) return true;
+        if (y > rhs.y) return false;
+
+        return false;
+    }
+
+    bool operator() (const WorldPosition& rhs) const
+    {
+        if (x < rhs.x) return true;
+        if (x > rhs.x) return false;
+        //x == rhs.x
+        if (y < rhs.y) return true;
+        if (y > rhs.y) return false;
+
+        return false;
+    }
+
     int32_t x, y;
 };
 
@@ -1192,7 +1225,7 @@ public:
     /*
     
     */
-    EntityId GetUniqueId() const
+    EntityId GetId() const
     {
         return entity_id;
     }
@@ -1217,14 +1250,37 @@ public:
         return true;
     }
 
-    void AddComponent(ComponentId _component_id)
+    void AddComponent(ComponentId _component_id, ComponentPayload _payload)
     {
-        component_mask[_component_id] = true;
+        component_mask[_component_id]       = true;
+        m_component_payloads[_component_id] = std::move(_payload);
+    }
+
+    bool UpdateComponent(ComponentId _component_id, ComponentPayload _payload)
+    {
+        if (!component_mask[_component_id])
+        {
+            return false;
+        }
+
+        m_component_payloads[_component_id] = std::move(_payload);
+        return true;
+    }
+
+    std::optional<ComponentPayload> GetComponentPayload(ComponentId _component_id) const
+    {
+        if (!component_mask[_component_id])
+        {
+            return std::nullopt;
+        }
+
+        return m_component_payloads[_component_id];
     }
 
     void RemoveComponent(ComponentId _component_id)
     {
-        component_mask[_component_id] = false;
+        component_mask[_component_id]       = false;
+        m_component_payloads[_component_id] = ComponentPayload();
 
         // Function that maps from component to layer
         uint32_t layer_id = -1;
@@ -1284,6 +1340,7 @@ private:
     ComponentMask component_mask;
 
     std::array<std::array<std::optional<WorkerId>, MaximumEntityComponents>, MaximumLayers> m_worker_authority_info;
+    std::array<ComponentPayload, MaximumEntityComponents>                                   m_component_payloads;
 
     std::array<std::vector<ComponentQuery>, MaximumLayers> m_layer_queries;
 };

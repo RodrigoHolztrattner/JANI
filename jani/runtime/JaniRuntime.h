@@ -18,6 +18,7 @@ JaniNamespaceBegin(Jani)
 class WorkerInstance;
 class LayerCollection;
 class WorkerSpawnerCollection;
+class DeploymentConfig;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: Runtime
@@ -30,7 +31,11 @@ class Runtime
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    Runtime(Database& _database);
+    Runtime(
+        Database&                      _database, 
+        const DeploymentConfig&        _deployment_config, 
+        const LayerCollection&         _layer_collection,
+        const WorkerSpawnerCollection& _worker_spawner_collection);
     ~Runtime();
 
 //////////////////////////
@@ -40,9 +45,7 @@ public: // MAIN METHODS //
     /*
     
     */
-    bool Initialize(
-        std::unique_ptr<LayerCollection>         layer_collection, 
-        std::unique_ptr<WorkerSpawnerCollection> worker_spawner_collection);
+    bool Initialize();
 
     /*
     *
@@ -179,8 +182,9 @@ private: // VARIABLES //
 
     std::unique_ptr<RequestManager> m_request_manager;
 
-    std::unique_ptr<LayerCollection>           m_layer_collection;
-    std::unique_ptr<WorkerSpawnerCollection>   m_worker_spawner_collection;
+    const DeploymentConfig&        m_deployment_config;
+    const LayerCollection&         m_layer_collection;
+    const WorkerSpawnerCollection& m_worker_spawner_collection;
 
     std::map<LayerId, std::unique_ptr<Bridge>>                    m_bridges;
     std::unordered_map<Connection<>::ClientHash, WorkerInstance*> m_worker_instance_mapping;

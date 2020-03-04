@@ -4,15 +4,16 @@
             "name": "game",
             "id": 0, 
             "user_layer": false, 
-            "minimum_area": {
-                "width": 5,
-                "height": 5
-            }
+            "use_spatial_area": true, 
+            "maximum_entities_per_worker": 5, 
+            "maximum_workers": -1
         }, 
         {
             "name": "brain",
             "id": 1, 
             "user_layer": false, 
+            "use_spatial_area": false, 
+            "maximum_entities_per_worker": -1, 
             "maximum_workers": 1
         }
     ], 

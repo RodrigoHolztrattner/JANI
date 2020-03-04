@@ -162,7 +162,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
     auto GetColorForIndex = [](uint64_t _index) -> ImVec4
     {
-        float step = 20.0f;
+        float step = 7.0f;
         float r = std::abs(std::sin(_index / step));
         float g = std::abs(std::cos(_index / step));
         float b = std::abs(std::sin(_index / step * 3.0));

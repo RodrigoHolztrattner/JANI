@@ -22,7 +22,8 @@ class Worker
 {
 public:
 
-    using OnComponentAddedCallback = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
+    using OnComponentAddedCallback   = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
+    using OnComponentRemovedCallback = std::function<void(entityx::Entity&, ComponentId)>;
 
     template<typename ResponseType>
     struct ResponseCallback
@@ -136,6 +137,7 @@ public: // CALLBACKS //
 ///////////////////////
 
     void RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback);
+    void RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback);
 
 private:
 
@@ -257,6 +259,20 @@ public:
     */
     virtual void Update(uint32_t _time_elapsed_ms);
 
+    /*
+    * TEMPORARY -> Maps an entityx entity to the original server entity id
+    */
+    std::optional<EntityId> GetJaniEntityId(entityx::Entity _entity) const
+    {
+        auto entity_iter = m_local_entity_to_server_map.find(_entity);
+        if (entity_iter != m_local_entity_to_server_map.end())
+        {
+            return entity_iter->second;
+        }
+
+        return std::nullopt;
+    }
+
 private:
 
 ////////////////////////
@@ -288,7 +304,8 @@ private: // VARIABLES //
     std::vector<std::pair<uint32_t, ResponseCallbackType>> m_response_callbacks;
 
     // Callbacks
-    OnComponentAddedCallback m_on_component_added_callback;
+    OnComponentAddedCallback   m_on_component_added_callback;
+    OnComponentRemovedCallback m_on_component_removed_callback;
 };
 
 // Jani

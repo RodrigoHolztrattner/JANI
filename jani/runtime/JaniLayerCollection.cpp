@@ -36,27 +36,29 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
 
     for (auto& layer : *layers)
     {
-        if (layer.find("name") == layer.end())
+        if (layer.find("name") == layer.end()
+            || layer.find("id") == layer.end()
+            || layer.find("user_layer") == layer.end()
+            || layer.find("use_spatial_area") == layer.end())
         {
             return false;
         }
 
         LayerInfo layer_info;
 
-        layer_info.name          = layer["name"];
-        layer_info.unique_id     = layer["id"];
-        layer_info.is_user_layer = layer["user_layer"];
+        layer_info.name             = layer["name"];
+        layer_info.unique_id        = layer["id"];
+        layer_info.user_layer       = layer["user_layer"];
+        layer_info.use_spatial_area = layer["use_spatial_area"];
+
+        if (layer.find("maximum_entities_per_worker") != layer.end())
+        {
+            layer_info.maximum_entities_per_worker = layer["maximum_entities_per_worker"].get<uint32_t>();
+        }
 
         if (layer.find("maximum_workers") != layer.end())
         {
-            layer_info.load_balance_strategy.maximum_workers = layer["maximum_workers"].get<uint32_t>();
-        }
-
-        if (layer.find("minimum_area") != layer.end())
-        {
-            auto& js = layer["minimum_area"];
-            js.get<WorldArea>();
-            // layer_info.load_balance_strategy.minimum_area = layer["minimum_area"].get<Jani::WorldArea>();
+            layer_info.maximum_workers = layer["maximum_workers"].get<uint32_t>();
         }
 
         LayerId layer_id = layer_info.unique_id;
@@ -146,16 +148,4 @@ const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(Laye
 {
     assert(m_layers.find(_layer_id) != m_layers.end());
     return m_layers.find(_layer_id)->second;
-}
-
-const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const
-{
-    assert(m_layers.find(Hasher(_layer_name)) != m_layers.end());
-    return m_layers.find(Hasher(_layer_name))->second.load_balance_strategy;
-}
-
-const Jani::LayerLoadBalanceStrategy& Jani::LayerCollection::GetLayerLoadBalanceStrategyInfo(LayerId _layer_id) const
-{
-    assert(m_layers.find(_layer_id) != m_layers.end());
-    return m_layers.find(_layer_id)->second.load_balance_strategy;
 }

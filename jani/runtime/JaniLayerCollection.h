@@ -23,9 +23,11 @@ class LayerCollection
     struct LayerInfo
     {
         std::string              name;
-        bool                     is_user_layer = false;
-        LayerId                  unique_id     = std::numeric_limits<LayerId>::max();
-        LayerLoadBalanceStrategy load_balance_strategy;
+        LayerId                  unique_id                   = std::numeric_limits<LayerId>::max();
+        bool                     user_layer                  = false;
+        bool                     use_spatial_area            = false;
+        uint32_t                 maximum_entities_per_worker = std::numeric_limits<uint32_t>::max();
+        uint32_t                 maximum_workers             = std::numeric_limits<uint32_t>::max();
     };
 
     struct ComponentInfo
@@ -86,14 +88,6 @@ public: // MAIN METHODS //
     */
     const LayerInfo& GetLayerInfo(const std::string& _layer_name) const;
     const LayerInfo& GetLayerInfo(LayerId _layer_id)              const;
-
-    /*
-    * Return a layer load balance strategy info
-    * This function considers that the layer exist (call HasLayer() to check if a layer is valid) and
-    * can throw if it fails
-    */
-    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(const std::string& _layer_name) const;
-    const LayerLoadBalanceStrategy& GetLayerLoadBalanceStrategyInfo(LayerId _layer_id)              const;
 
 ////////////////////////
 private: // VARIABLES //

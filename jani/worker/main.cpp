@@ -29,7 +29,7 @@ int main(int _argc, char* _argv[])
     };
 
     uint32_t total_npcs_alive = 0;
-    uint32_t maximum_npcs     = 20;
+    uint32_t maximum_npcs     = 40;
 
     Jani::EntityId initial_entity_id = 0;
     Jani::EntityId final_entity_id   = 0;
@@ -100,6 +100,39 @@ int main(int _argc, char* _argv[])
             }
         });
 
+    worker.RegisterOnComponentRemovedCallback(
+        [](entityx::Entity& _entity, Jani::ComponentId _component_id)
+        {
+            // Somehow I know that component id 0 translate to Position component
+            switch (_component_id)
+            {
+                case 0:
+                {
+                    std::cout << "Worker -> Removing Position component from entity id{" << _entity << "}" << std::endl;
+
+                    assert(_entity.has_component<PositionComponent>());
+                    _entity.remove<PositionComponent>();
+
+                    break;
+                }
+                case 1:
+                {
+                    std::cout << "Worker -> Removing NPC component from entity id{" << _entity << "}" << std::endl;
+
+                    assert(_entity.has_component<NpcComponent>());
+                    _entity.remove<NpcComponent>();
+
+                    break;
+                }
+                default:
+                {
+                    std::cout << "Worker -> Trying to remove invalid component from entity" << std::endl;
+
+                    break;
+                }
+            }
+        });
+
     std::cout << "Worker -> Entering main loop!" << std::endl;
 
     while (worker.IsConnected())
@@ -108,7 +141,7 @@ int main(int _argc, char* _argv[])
 
         if (is_brain)
         {
-            if (total_npcs_alive < maximum_npcs && rand() % 200 == 1 && initial_entity_id < final_entity_id)
+            if (total_npcs_alive < maximum_npcs && rand() % 100 == 1 && initial_entity_id < final_entity_id)
             {
                 auto new_entity = s_ecs_manager.entities.create();
 
@@ -141,7 +174,6 @@ int main(int _argc, char* _argv[])
         }
         else
         {
-            int entity_index = 0;
             worker.GetEntityManager().each<PositionComponent>(
                 [&](auto entity, PositionComponent& _position)
                 {
@@ -151,13 +183,17 @@ int main(int _argc, char* _argv[])
                         _position.y += (rand() % 3) - 1;
                     }
 
-                    worker.ReportEntityPosition(entity_index, Jani::WorldPosition({ _position.x, _position.y }));
+                    auto jani_entity = worker.GetJaniEntityId(entity);
+                    if (jani_entity)
+                    {
+                        worker.ReportEntityPosition(jani_entity.value(), Jani::WorldPosition({ _position.x, _position.y }));
 
-                    Jani::ComponentPayload component_payload;
-                    component_payload.entity_owner = 0;
-                    component_payload.component_id = 0;
-                    component_payload.SetPayload(_position);
-                    worker.RequestUpdateComponent(entity_index++, 0, component_payload, Jani::WorldPosition({ _position .x, _position .y}));
+                        Jani::ComponentPayload component_payload;
+                        component_payload.entity_owner = jani_entity.value();
+                        component_payload.component_id = 0;
+                        component_payload.SetPayload(_position);
+                        worker.RequestUpdateComponent(jani_entity.value(), 0, component_payload, Jani::WorldPosition({ _position .x, _position .y}));
+                    }
                 });
         }
 
