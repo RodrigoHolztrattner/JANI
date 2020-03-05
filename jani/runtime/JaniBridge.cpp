@@ -20,7 +20,7 @@ Jani::Bridge::~Bridge()
 std::optional<Jani::WorkerInstance*> Jani::Bridge::TryAllocateNewWorker(
     LayerId                  _layer_id,
     Connection<>::ClientHash _client_hash,
-    bool                     _is_user)
+    bool                     _is_user, bool _deprecated)
 {
     // Check if there is space for more workers on this layer
     if (m_load_balance_strategy.maximum_workers && m_worker_instances.size() >= m_load_balance_strategy.maximum_workers.value())

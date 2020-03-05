@@ -60,7 +60,7 @@ public: // MAIN METHODS //
     std::optional<WorkerInstance*> TryAllocateNewWorker(
         LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash,
-        bool                     _is_user);
+        bool                     _is_user, bool _deprecated);
 
     /*
     * Disconnect the given worker

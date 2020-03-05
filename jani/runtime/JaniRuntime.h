@@ -19,6 +19,7 @@ class WorkerInstance;
 class LayerCollection;
 class WorkerSpawnerCollection;
 class DeploymentConfig;
+class WorldController;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: Runtime
@@ -153,21 +154,6 @@ private:
     */
     bool IsLayerForComponentAvailable(ComponentId _component_id) const;
 
-    /*
-    * Retrieve the best existing worker (according to the load balance strategy)
-    * for the given component id
-    * In case no option is available, or there are no worker available for the
-    * underlying layer, or the workers are over their capacity
-    */
-    std::optional<WorkerInstance*> GetBestWorkerForComponent(
-        ComponentId                  _component_id, 
-        std::optional<WorldPosition> _entity_world_position = std::nullopt) const;
-
-    /*
-    *
-    */
-    void ApplyLoadBalanceUpdate();
-
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
@@ -186,12 +172,10 @@ private: // VARIABLES //
     const LayerCollection&         m_layer_collection;
     const WorkerSpawnerCollection& m_worker_spawner_collection;
 
+    std::unique_ptr<WorldController> m_world_controller;
+
     std::map<LayerId, std::unique_ptr<Bridge>>                    m_bridges;
     std::unordered_map<Connection<>::ClientHash, WorkerInstance*> m_worker_instance_mapping;
-
-    // std::vector<Entity*> m_orphan_entities_components;
-
-    std::chrono::time_point<std::chrono::steady_clock> m_load_balance_previous_update_time = std::chrono::steady_clock::now();
 };
 
 // Jani

@@ -9,6 +9,7 @@
 #include "JaniDatabase.h"
 #include "JaniWorkerInstance.h"
 #include "JaniWorkerSpawnerInstance.h"
+#include "JaniWorldController.h"
 
 const char* s_local_ip                  = "127.0.0.1";
 uint32_t    s_client_worker_listen_port = 8080;
@@ -38,6 +39,8 @@ bool Jani::Runtime::Initialize()
     m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
     m_request_manager       = std::make_unique<RequestManager>();
 
+
+
     auto& worker_spawners = m_worker_spawner_collection.GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
@@ -58,6 +61,44 @@ bool Jani::Runtime::Initialize()
         m_worker_spawner_instances.push_back(std::move(spawner_connection));
     }
 
+    m_world_controller = std::make_unique<WorldController>(m_deployment_config, m_layer_collection);
+    if (!m_world_controller->Initialize())
+    {
+        return false;
+    }
+
+    m_world_controller->RegisterCellOwnershipChangeCallback(
+        [](WorldCellCoordinates _cell_coordinates, LayerId _layer_id, WorkerId _current_worker_id, WorkerId _new_worker_id)
+        {
+
+        });
+
+    m_world_controller->RegisterEntityLayerOwnershipChangeCallback(
+        [](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        {
+
+        });
+
+    m_world_controller->RegisterWorkerLayerRequestCallback(
+        [&](LayerId _layer_id)
+        {
+            bool is_expecting_worker_for_layer = false;
+            for (auto& worker_spawner : m_worker_spawner_instances)
+            {
+                if (worker_spawner->IsExpectingWorkerForLayer(_layer_id))
+                {
+                    is_expecting_worker_for_layer = true;
+                    break;
+                }
+            }
+
+            if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(_layer_id))
+            {
+                auto& registered_layers = m_layer_collection.GetLayers();
+                std::cout << "Unable to request a new worker from worker spawner, layer{" << registered_layers.find(_layer_id)->second.name << "}" << std::endl;
+            }
+        });
+
     return true;
 }
 
@@ -66,6 +107,8 @@ void Jani::Runtime::Update()
     m_client_connections->Update();
     m_worker_connections->Update();
     m_inspector_connections->Update();
+
+    m_world_controller->Update();
 
     auto ProcessWorkerRequest = [&](
         auto                         _client_hash, 
@@ -210,8 +253,8 @@ void Jani::Runtime::Update()
                 {
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
-                        entity->GetRepresentativeWorldPosition(),
-                        entity->GetRepresentativeWorldPositionWorker() });
+                        entity->GetWorldPosition(),
+                        0 });
                 }
 
                 {
@@ -304,12 +347,6 @@ void Jani::Runtime::Update()
         worker_spawner_connection->Update();
     }
 
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_load_balance_previous_update_time).count() > 1000)
-    {
-        ApplyLoadBalanceUpdate();
-        m_load_balance_previous_update_time = std::chrono::steady_clock::now();
-    }
-
     for (auto& [layer_hash, bridge] : m_bridges)
     {
         bridge->Update();
@@ -323,24 +360,43 @@ bool Jani::Runtime::TryAllocateNewWorker(
 {
     assert(m_worker_instance_mapping.find(_client_hash) == m_worker_instance_mapping.end());
 
-    if (!m_layer_collection->HasLayer(_layer_id))
+    if (!m_layer_collection.HasLayer(_layer_id))
     {
         return false;
     }
 
-    auto layer_info = m_layer_collection->GetLayerInfo(_layer_id);
+    auto layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
     // Make sure the layer is an user layer if the requester is also an user, also vice-versa
-    if (layer_info.is_user_layer != _is_user)
+    if (layer_info.user_layer != _is_user)
     {
         return false;
     }
 
     // Make sure that this layer support at least one worker
-    if (layer_info.load_balance_strategy.maximum_workers && layer_info.load_balance_strategy.maximum_workers.value() == 0)
+    if (layer_info.maximum_workers == 0)
     {
         return false;
     }
+
+    // Check other layer requirements, as necessary
+    // ...
+
+    auto worker_instance = std::make_unique<WorkerInstance>(
+        *this,
+        _layer_id,
+        _client_hash,
+        _is_user);
+
+    WorkerInstance* worker_instance_ptr = worker_instance.get();
+
+    if (!m_world_controller->AddWorkerForLayer(std::move(worker_instance), _layer_id))
+    {
+        return false;
+    }
+
+    // Put a reference of this worker into the bridge, or make the worker knows what bridge it should reference?
+    // worker_instance_ptr
 
     // Ok we are free to at least attempt to retrieve (or create) a bridge for this layer //
     auto bridge_iter = m_bridges.find(_layer_id);
@@ -353,15 +409,9 @@ bool Jani::Runtime::TryAllocateNewWorker(
 
     auto& bridge = bridge_iter->second;
 
-    auto worker_allocation_result = bridge->TryAllocateNewWorker(_layer_id, _client_hash, _is_user);
-    if (!worker_allocation_result)
-    {
-        return false;
-    }
-
     // Add an entry into our worker instance mapping to provide future mapping between
     // worker messages and the bridge callbacks
-    m_worker_instance_mapping.insert({ _client_hash, worker_allocation_result.value()});
+    m_worker_instance_mapping.insert({ _client_hash, worker_instance_ptr });
 
     return true;
 }
@@ -412,18 +462,23 @@ bool Jani::Runtime::OnWorkerAddEntity(
         return false;
     }
 
+    m_world_controller->InsertEntity(*entity.value(), entity.value()->GetWorldPosition());
+
     for (auto requested_component_payload : _entity_payload.component_payloads)
     {
-        auto worker = GetBestWorkerForComponent(requested_component_payload.component_id, entity.value()->GetRepresentativeWorldPosition());
+        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(requested_component_payload.component_id);
+        auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
+            m_world_controller->RemoveEntity(*entity.value());
+
             // Remove the entity since the entire operation failed
             m_database.RemoveEntity(_worker_id, _entity_id);
 
             return false;
         }
 
-        LayerId layer_id = m_layer_collection->GetLayerIdForComponent(requested_component_payload.component_id);
+        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(requested_component_payload.component_id);
 
         Message::WorkerAddComponentRequest add_component_request;
         add_component_request.entity_id         = _entity_id;
@@ -442,11 +497,6 @@ bool Jani::Runtime::OnWorkerAddEntity(
 
             return false;
         }
-        
-        entity.value()->SetComponentAuthority(
-            layer_id,
-            requested_component_payload.component_id, 
-            worker.value()->GetId());
     }
     
     return true;
@@ -472,7 +522,7 @@ bool Jani::Runtime::OnWorkerAddComponent(
     ComponentId             _component_id,
     const ComponentPayload& _component_payload)
 {
-    LayerId layer_id = m_layer_collection->GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
 
     // Quick check if there is a layer available to this component
     if (!IsLayerForComponentAvailable(_component_id))
@@ -493,7 +543,8 @@ bool Jani::Runtime::OnWorkerAddComponent(
     }
 
     {
-        auto worker = GetBestWorkerForComponent(_component_id, entity.value()->GetRepresentativeWorldPosition());
+        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+        auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
             m_database.RemoveComponent(
@@ -523,11 +574,6 @@ bool Jani::Runtime::OnWorkerAddComponent(
                 _component_id);
             return false;
         }
-
-        entity.value()->SetComponentAuthority(
-            layer_id, 
-            _component_id, 
-            worker.value()->GetId());
     }
 
     return true;
@@ -539,7 +585,7 @@ bool Jani::Runtime::OnWorkerRemoveComponent(
     EntityId        _entity_id,
     ComponentId     _component_id)
 {
-    LayerId layer_id = m_layer_collection->GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
 
     // Get the worker owner for this component
     // ...
@@ -569,7 +615,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
     const ComponentPayload&      _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
-    LayerId layer_id = m_layer_collection->GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
 
     // Update this component on the database for the given entity
     auto entity = m_database.ComponentUpdate(
@@ -586,7 +632,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
 
     if (_entity_world_position)
     {
-        entity.value()->SetRepresentativeWorldPosition(_entity_world_position.value(), _worker_id);
+        entity.value()->SetWorldPosition(_entity_world_position.value(), _worker_id);
     }
 
     return true;
@@ -621,15 +667,15 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(
                 else if (query.area_constraint && _component_query.query_position)
                 {
                     WorldRect search_rect = { _component_query.query_position->x, _component_query.query_position->y, query.area_constraint->width, query.area_constraint->height };
-                    if (search_rect.ManhattanDistanceFromPosition(entity.GetRepresentativeWorldPosition()) == 0)
+                    if (search_rect.ManhattanDistanceFromPosition(entity.GetWorldPosition()) == 0)
                     {
                         selected_entities.push_back(entity_id);
                     }
                 }
-                else if (query.radius_constraint && _component_query.query_position) // query.area_constraint->ManhattanDistanceFromPosition(entity.GetRepresentativeWorldPosition()) == 0)
+                else if (query.radius_constraint && _component_query.query_position) // query.area_constraint->ManhattanDistanceFromPosition(entity.GetWorldPosition()) == 0)
                 {
-                    int32_t diffY    = entity.GetRepresentativeWorldPosition().y - _component_query.query_position->y;
-                    int32_t diffX    = entity.GetRepresentativeWorldPosition().x - _component_query.query_position->x;
+                    int32_t diffY    = entity.GetWorldPosition().y - _component_query.query_position->y;
+                    int32_t diffX    = entity.GetWorldPosition().x - _component_query.query_position->x;
                     int32_t distance = std::sqrt((diffY * diffY) + (diffX * diffX));
                     if (distance < query.radius_constraint.value())
                     {
@@ -650,7 +696,7 @@ Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(
 bool Jani::Runtime::IsLayerForComponentAvailable(ComponentId _component_id) const
 {
     // Convert the component id to its operating layer id
-    LayerId layer_id = m_layer_collection->GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
 
     for (auto& [bridge_layer_id, bridge] : m_bridges)
     {
@@ -661,214 +707,4 @@ bool Jani::Runtime::IsLayerForComponentAvailable(ComponentId _component_id) cons
     }
 
     return false;
-}
-
-std::optional<Jani::WorkerInstance*> Jani::Runtime::GetBestWorkerForComponent(
-    ComponentId                  _component_id,
-    std::optional<WorldPosition> _entity_world_position) const
-{
-    LayerId layer_id = m_layer_collection->GetLayerIdForComponent(_component_id);
-    auto layer_iter  = m_bridges.find(layer_id);
-    if (layer_iter != m_bridges.end())
-    {
-        for (auto& [worker_id, worker] : layer_iter->second->GetWorkers())
-        {
-            return worker.get();
-        }
-    }
-
-    return std::nullopt;
-}
-
-void Jani::Runtime::ApplyLoadBalanceUpdate()
-{
-    auto&                           worker_spawners             = m_worker_spawner_collection->GetWorkerSpawnersInfos();
-    auto&                           registered_layers           = m_layer_collection->GetLayers();
-    std::array<bool, MaximumLayers> is_worker_required_on_layer = {};
-
-    /*
-        => O que essa funcao deve fazer:
-
-        - Ela deve rodar tipo uma vez a cada segundo (nao muito frequente)
-
-        - Deve verificar se existe pelo menos 1 layer de cada tipo ativado, caso nao tenha ele deve
-        requisitar a criacao dos workers necessarios
-        - Deve verificar dentre os layers/bridges existentes se alguma esta sobrecarregada, requisitando
-        a criacao de um novo worker para o layer em questao
-    */
-
-    // Check for workers that are over their capacity
-    // We only need to check the ones who use spatial area, if there is no
-    // area limit we will evenly distribute the entities across workers
-    // so no validation is needed
-    for (auto& [layer_id, bridge] : m_bridges)
-    {
-        auto& worker_map = bridge->GetWorkers();
-        for (auto& [worker_id, worker] : worker_map)
-        {
-            auto entities_on_area_limit = worker->GetEntitiesOnAreaLimit();
-            std::array<std::optional<std::tuple<WorkerInstance*, uint32_t, Entity*>>, 4> distance_infos;
-
-            // Check if there are enough entities on this worker for us to consider moving them
-            // to another one
-            // ...
-
-            if (!worker->IsOverCapacity()/* || !worker->UseSpatialArea()*/)
-            {
-                continue;
-            }
-
-            for (int i = 0; i < entities_on_area_limit.size(); i++)
-            {
-                auto& entity_info = entities_on_area_limit[i];
-                if (!entity_info)
-                {
-                    continue;
-                }
-
-                auto entity = m_database.GetEntityByIdMutable(entity_info.value());
-                if (!entity)
-                {
-                    continue;
-                }
-
-                /*
-                * One optimization would be passing the entity position to the worker and not only the ids for
-                * the extreme locations, that way we would not need to retrieve the entity from the database map 
-                * all the time
-                */
-                WorldPosition entity_position = entity.value()->GetRepresentativeWorldPosition();
-
-                bool found_worker = false;
-                for (auto& [thief_worker_id, thief_worker] : worker_map)
-                {
-                    if (worker_id != thief_worker_id && !thief_worker->IsOverCapacity())
-                    {
-                        uint32_t distance_to_worker_area = thief_worker->GetWorldRect().ManhattanDistanceFromPosition(entity_position);
-
-                        if (!distance_infos[i] || (std::get<1>(distance_infos[i].value()) > distance_to_worker_area /* && distance_to_worker_area > 100 */))
-                        {
-                            distance_infos[i] = { thief_worker.get() , distance_to_worker_area, entity.value() };
-                            found_worker = true;
-                        }
-                    }
-                }
-
-                if (!found_worker)
-                {
-                    if (!is_worker_required_on_layer[layer_id])
-                    {
-                        std::cout << "Runtime -> Requesting to create another worker since one is over capacity and there is no other available to steal components from it" << std::endl;
-                    }
-
-                    is_worker_required_on_layer[layer_id] = true;
-                }
-            }
-
-            for (auto& distance_info : distance_infos)
-            {
-                if (!distance_info)
-                {
-                    continue;
-                }
-
-                auto [thief_worker, thief_worker_distance, entity] = distance_info.value();
-
-                auto position_component = entity->GetComponentPayload(0);
-                if (!position_component)
-                {
-                    continue;
-                }
-
-                ComponentId component_id = 0; // This should be done for all components, not only position
-
-                std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
-
-                {
-                    Message::WorkerAddComponentRequest add_component_request;
-                    add_component_request.entity_id         = entity->GetId();
-                    add_component_request.component_id      = component_id;
-                    add_component_request.component_payload = std::move(position_component.value());
-
-                    if (!m_request_manager->MakeRequest(
-                        *m_worker_connections,
-                        thief_worker->GetConnectionClientHash(),
-                        RequestType::WorkerAddComponent,
-                        add_component_request))
-                    {
-
-                    }
-
-                    entity->SetComponentAuthority(
-                        layer_id,
-                        component_id,
-                        thief_worker->GetId());
-                }
-
-                {
-                    Message::WorkerRemoveComponentRequest remove_component_request;
-                    remove_component_request.entity_id    = entity->GetId();
-                    remove_component_request.component_id = component_id;
-
-                    if (!m_request_manager->MakeRequest(
-                        *m_worker_connections,
-                        worker->GetConnectionClientHash(),
-                        RequestType::WorkerRemoveComponent,
-                        remove_component_request))
-                    {
-
-                    }
-                }
-            }
-        }
-
-        for (auto& [worker_id, worker] : worker_map)
-        {
-            worker->ResetOverCapacityFlag();
-        }
-    }
-
-    for (auto& [layer_id, layer_info] : registered_layers)
-    {
-        if (!layer_info.is_user_layer)
-        {
-            // Make sure we have one bridge that owns managing this layer
-            auto bridge_iter = m_bridges.find(layer_id);
-            if (bridge_iter == m_bridges.end())
-            {
-                auto new_bridge = std::make_unique<Bridge>(*this, layer_id);
-                m_bridges.insert({ layer_id , std::move(new_bridge) });
-                bridge_iter = m_bridges.find(layer_id);
-            }
-
-            auto& bridge = bridge_iter->second;
-
-            // We must have at least one worker on this bridge
-            if (bridge->GetTotalWorkerCount() == 0 && m_worker_spawner_instances.size() > 0)
-            {
-                is_worker_required_on_layer[layer_id] = true;
-            }
-        }
-    }
-    
-    for (int i = 0; i < is_worker_required_on_layer.size(); i++)
-    {
-        if (is_worker_required_on_layer[i])
-        {
-            bool is_expecting_worker_for_layer = false;
-            for (auto& worker_spawner : m_worker_spawner_instances)
-            {
-                if (worker_spawner->IsExpectingWorkerForLayer(i))
-                {
-                    is_expecting_worker_for_layer = true;
-                    break;
-                }
-            }
-
-            if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(i))
-            {
-                std::cout << "Unable to request a new worker from worker spawner, layer{" << registered_layers.find(i)->second.name << "}" << std::endl;
-            }
-        }
-    }
 }

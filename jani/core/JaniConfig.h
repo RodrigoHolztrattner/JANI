@@ -88,10 +88,16 @@ class Bridge;
 class Runtime;
 class Database;
 class WorkerSpawnerInstance;
+class WorkerInstance; 
 
 struct WorldPosition
 {
     Serializable();
+
+    bool operator==(const WorldPosition& rhs)
+    {
+        return (x == rhs.x && y == rhs.y);
+    }
 
     bool operator() (const WorldPosition& rhs) const
     {
@@ -115,19 +121,10 @@ struct WorldPosition
         return false;
     }
 
-    bool operator() (const WorldPosition& rhs) const
-    {
-        if (x < rhs.x) return true;
-        if (x > rhs.x) return false;
-        //x == rhs.x
-        if (y < rhs.y) return true;
-        if (y > rhs.y) return false;
-
-        return false;
-    }
-
     int32_t x, y;
 };
+
+using WorldCellCoordinates = WorldPosition;
 
 struct WorldArea
 {
@@ -217,7 +214,7 @@ public:
     /*
     
     */
-    WorldPosition GetRepresentativeWorldPosition() const;
+    WorldPosition GetWorldPosition() const;
 
 private:
 
@@ -819,6 +816,159 @@ private:
 	Hash h = default_value();
 };
 
+template <typename mType, uint32_t mBucketDimSize = 16>
+class SparseGrid
+{
+	struct Bucket
+	{
+		std::array<std::array<std::optional<mType>, mBucketDimSize>, mBucketDimSize> cells;
+	};
+public:
+	SparseGrid(uint32_t _world_dim_size) : m_world_dim_size(_world_dim_size)
+	{
+		assert(m_world_dim_size % mBucketDimSize == 0);
+		m_world_dim_size = _world_dim_size;
+		using size_type = typename std::allocator_traits< std::allocator<std::vector<std::unique_ptr<Bucket>>>>::size_type;
+		size_type total_size = m_world_dim_size / mBucketDimSize * m_world_dim_size / mBucketDimSize;
+		assert(total_size > 0 && total_size < std::numeric_limits<size_type>::max());
+		m_buckets.resize(total_size);
+	}
+    bool IsCellEmpty(WorldCellCoordinates _cell_coordinates)
+	{
+		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
+		return m_buckets[bucket_y * m_world_dim_size + bucket_x] == nullptr || m_buckets[bucket_y * m_world_dim_size + bucket_x]->cells[local_x][local_y] == std::nullopt;
+	}
+	bool Set(WorldCellCoordinates _cell_coordinates, mType _value)
+	{
+		if (!IsWorldPositionValid(_cell_coordinates.x, _cell_coordinates.y))
+		{
+			return false;
+		}
+		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
+		auto& bucket = GetBucketAtBucketLocalPositionOrCreate(bucket_x, bucket_y);
+		bucket.cells[local_x][local_y] = std::move(_value);
+		m_total_active_cells++;
+		return true;
+	}
+	void Clear(WorldCellCoordinates _cell_coordinates)
+	{
+		if (!IsWorldPositionValid(_cell_coordinates.x, _cell_coordinates.y))
+		{
+			return;
+		}
+		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
+		auto& bucket = GetBucketAtBucketLocalPositionOrCreate(bucket_x, bucket_y);
+		if (bucket != std::nullopt)
+		{
+			bucket = std::nullopt;
+			m_total_active_cells--;
+		}
+	}
+	const mType* TryAt(WorldCellCoordinates _cell_coordinates) const
+	{
+		return TryAtMutable(_cell_coordinates.x, _cell_coordinates.y);
+	}
+	const mType* TryAtMutable(WorldCellCoordinates _cell_coordinates) const
+	{
+		if (IsCellEmpty(_cell_coordinates.x, _cell_coordinates.y))
+		{
+			return nullptr;
+		}
+		return &AtMutable(_cell_coordinates.x, _cell_coordinates.y);
+	}
+	const mType& At(WorldCellCoordinates _cell_coordinates) const
+	{
+		return AtMutable(_cell_coordinates.x, _cell_coordinates.y);
+	}
+	mType& AtMutable(WorldCellCoordinates _cell_coordinates) const
+	{
+		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
+		assert(IsBucketValid(bucket_x, bucket_y));
+		return GetBucketAtBucketLocalPosition(bucket_x, bucket_y).cells[local_x][local_y];
+	}
+	const std::vector<mType>& InsideRange(WorldCellCoordinates _cell_coordinates, float _radius) const
+	{
+		return InsideRangeMutable(_cell_coordinates.x, _cell_coordinates.y, _radius);
+	}
+	std::vector<mType>& InsideRangeMutable(WorldCellCoordinates _cell_coordinates, float _radius) const
+	{
+		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
+		int actual_radius	= std::ceil(_radius);
+		int actual_radius_pow2 = actual_radius * actual_radius;
+		int start_x = _x - actual_radius;
+		int start_y = _y - actual_radius;
+		int end_x   = _x + actual_radius;
+		int end_y   = _y + actual_radius;
+		m_query_temporary_buffer.clear();
+		for (int x = start_x; x <= end_x; x++)
+		{
+			for (int y = start_y; y <= end_y; y++)
+			{
+				if (!IsWorldPositionValid(x, y) || 
+					(x - _x + y - _y) * (x - _x + y - _y) > actual_radius_pow2)
+				{
+					continue;
+				}
+				auto& bucket_value = AtMutable(x, y);
+				m_query_temporary_buffer.push_back(bucket_value);
+			}
+		}
+		return m_query_temporary_buffer;
+	}
+	uint32_t GetTotalActiveCells() const
+	{
+		return m_total_active_cells;
+	}
+private:
+	Bucket& GetBucketAtBucketLocalPosition(int _x, int _y) const
+	{
+		uint32_t index = (_y / mBucketDimSize) * m_world_dim_size + (_x / mBucketDimSize);
+		if (m_buckets[index] != nullptr)
+		{
+			return *m_buckets[index];
+		}
+		else
+		{
+			throw "Trying to retrieve bucket from invalid location, should create is false";
+		}
+	}
+	Bucket& GetBucketAtBucketLocalPositionOrCreate(int _x, int _y)
+	{
+		uint32_t index = (_y / mBucketDimSize) * m_world_dim_size + (_x / mBucketDimSize);
+		if (m_buckets[index] != nullptr)
+		{
+			return *m_buckets[index];
+		}
+		else
+		{
+			m_buckets[index] = std::make_unique<Bucket>();
+			return *m_buckets[index];
+		}
+	}
+	bool IsWorldPositionValid(int _x, int _y) const
+	{
+		return static_cast<uint32_t>(_x) < m_world_dim_size && static_cast<uint32_t>(_y) < m_world_dim_size;
+	}
+	bool IsBucketValid(int _x, int _y) const
+	{
+		uint32_t index = (_y / mBucketDimSize) * m_world_dim_size + (_x / mBucketDimSize);
+		return m_buckets[index] != nullptr;
+	}
+	std::tuple<int, int, int, int> ConvertWorldToLocalCoordinates(int _x, int _y) const
+	{
+		int bucket_x = _x / mBucketDimSize;
+		int bucket_y = _y / mBucketDimSize;
+		int local_x  = _x % mBucketDimSize;
+		int local_y  = _y % mBucketDimSize;
+		return { bucket_x, bucket_y, local_x, local_y };
+	}
+private:
+	uint32_t							 m_total_active_cells = 0;
+	uint32_t							 m_world_dim_size	  = 0;
+	std::vector<std::unique_ptr<Bucket>> m_buckets;
+	mutable std::vector<mType>			 m_query_temporary_buffer;
+};
+
 struct ComponentQueryInstruction
 {   
     Serializable();
@@ -1186,6 +1336,45 @@ struct RuntimeGetWorkersInfoResponse
 
 JaniNamespaceEnd(Message)
 
+struct WorldCellWorkerInfo
+{
+    bool operator() (const WorldCellWorkerInfo& rhs) const
+    {
+        if (entity_count < rhs.entity_count) return true;
+        if (entity_count > rhs.entity_count) return false;
+        if (cell_coordinates < rhs.cell_coordinates) return true;
+
+        return false;
+    }
+
+    bool operator <(const WorldCellWorkerInfo& rhs) const
+    {
+        if (entity_count < rhs.entity_count) return true;
+        if (entity_count > rhs.entity_count) return false;
+        if (cell_coordinates < rhs.cell_coordinates) return true;
+
+        return false;
+    }
+
+    WorkerInstance*      worker_instance = nullptr;
+    uint32_t             entity_count    = 0;
+    WorkerId             worker_id       = std::numeric_limits<WorkerId>::max();
+    WorldCellCoordinates cell_coordinates;
+};
+
+struct WorldCellInfo
+{
+    std::map<EntityId, Entity*>                    entities;
+    std::array<WorldCellWorkerInfo, MaximumLayers> layer_infos;
+    WorldCellCoordinates                           cell_coordinates;
+
+    std::optional<WorkerInstance*> GetWorkerForLayer(LayerId _layer_id) const
+    {
+        assert(_layer_id < MaximumLayers);
+        return layer_infos[_layer_id].worker_instance != nullptr ? std::optional<WorkerInstance*>(layer_infos[_layer_id].worker_instance) : std::nullopt;
+    }
+};
+
 class Entity
 {
     DISABLE_COPY(Entity);
@@ -1198,9 +1387,38 @@ public:
     }
 
     /*
+    * Update this entity world cell coordinates
+    * This should only be called by the world controller
+    */
+    void SetWorldCellInfo(const WorldCellInfo& _world_cell) // TODO: Make this protected
+    {
+        world_cell_info = &_world_cell;
+    }
+
+    /*
+    * Return a reference to the current world cell info
+    */
+    const WorldCellInfo& GetWorldCellInfo() const
+    {
+        assert(world_cell_info);
+        return *world_cell_info;
+    }
+
+    /*
+    * Return the world cell coordinate that this entity is inside
+    * This coordinate will only be valid if this entity had at least one
+    * positional update, it has no meaning and will point to 0, 0 if no
+    * spatial info is present
+    */
+    WorldCellCoordinates GetWorldCellCoordinates() const
+    {
+        return world_cell_info->cell_coordinates;
+    }
+
+    /*
 
     */
-    WorldPosition GetRepresentativeWorldPosition() const
+    WorldPosition GetWorldPosition() const
     {
         return world_position;
     }
@@ -1208,15 +1426,22 @@ public:
     /*
     
     */
-    WorkerId GetRepresentativeWorldPositionWorker() const
-    {
-        return world_position_worker_owner;
-    }
 
     /*
     
     */
-    void SetRepresentativeWorldPosition(WorldPosition _position, WorkerId _position_worker)
+/*
+    WorkerId GetRepresentativeWorldPositionWorker() const
+    {
+        return world_position_worker_owner;
+    }
+*/
+
+    /*
+    
+    */
+    // This should not be used, I think
+    void SetWorldPosition(WorldPosition _position, WorkerId _position_worker)
     {
         world_position              = _position;
         world_position_worker_owner = _position_worker;
@@ -1248,6 +1473,11 @@ public:
         }
 
         return true;
+    }
+
+    const ComponentMask& GetComponentMask() const
+    {
+        return component_mask;
     }
 
     void AddComponent(ComponentId _component_id, ComponentPayload _payload)
@@ -1282,13 +1512,9 @@ public:
         component_mask[_component_id]       = false;
         m_component_payloads[_component_id] = ComponentPayload();
 
-        // Function that maps from component to layer
-        uint32_t layer_id = -1;
-
         assert(_component_id < MaximumEntityComponents);
-        assert(layer_id < MaximumLayers);
 
-        m_worker_authority_info[layer_id][_component_id] = std::nullopt;
+        // TODO: Somehow check if the entity still have enough components to justify a layer being owned by a worker
     }
 
     void AddQueriesForLayer(uint32_t _layer_id, std::vector<ComponentQuery> _queries)
@@ -1308,28 +1534,25 @@ public:
         m_layer_queries[_layer_id] = std::move(_queries);
     }
 
-    void SetComponentAuthority(LayerId _layer_id, ComponentId _component_id, WorkerId _worker_id)
+    void SetLayerAuthority(LayerId _layer_id, WorkerId _worker_id, bool _deprecated)
     {
-        assert(_component_id < MaximumEntityComponents);
         assert(_layer_id < MaximumLayers);
 
-        m_worker_authority_info[_layer_id][_component_id] = _worker_id;
+        m_worker_layer_authority_info[_layer_id] = _worker_id;
     }
 
-    std::optional<WorkerId> GetComponentAuthority(LayerId _layer_id, ComponentId _component_id) const
+    std::optional<WorkerId> GetLayerAuthority(LayerId _layer_id, bool _deprecated) const
     {
-        assert(_component_id < MaximumEntityComponents);
         assert(_layer_id < MaximumLayers);
 
-        return m_worker_authority_info[_layer_id][_component_id];
+        return m_worker_layer_authority_info[_layer_id];
     }
 
-    bool VerifyWorkerComponentAuthority(LayerId _layer_id, ComponentId _component_id, WorkerId _worker_id) const
+    bool VerifyWorkerLayerAuthority(LayerId _layer_id, WorkerId _worker_id, bool _deprecated) const
     {
-        assert(_component_id < MaximumEntityComponents);
         assert(_layer_id < MaximumLayers);
 
-        return m_worker_authority_info[_layer_id][_component_id] ? m_worker_authority_info[_layer_id][_component_id].value() == _worker_id : false;
+        return m_worker_layer_authority_info[_layer_id] ? m_worker_layer_authority_info[_layer_id].value() == _worker_id : false;
     }
 
 private:
@@ -1338,8 +1561,10 @@ private:
     WorldPosition world_position              = { 0, 0 };
     WorkerId      world_position_worker_owner = std::numeric_limits<WorkerId>::max();
     ComponentMask component_mask;
+    const WorldCellInfo* world_cell_info = nullptr;
 
-    std::array<std::array<std::optional<WorkerId>, MaximumEntityComponents>, MaximumLayers> m_worker_authority_info;
+
+    std::array<std::optional<WorkerId>, MaximumLayers> m_worker_layer_authority_info;
     std::array<ComponentPayload, MaximumEntityComponents>                                   m_component_payloads;
 
     std::array<std::vector<ComponentQuery>, MaximumLayers> m_layer_queries;
