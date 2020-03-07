@@ -201,11 +201,6 @@ public: // MAIN METHODS //
 private:
 
     /*
-    
-    */
-    WorldPosition SanitizeWorldPosition(WorldPosition _world_position) const;
-
-    /*
     * Make sure there is an allocated cell for the given coordinates
     * Also ensure there is a worker for each layer (whenever applicable) on the given cell
     */

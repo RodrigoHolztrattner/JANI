@@ -55,7 +55,7 @@ int main(int _argc, char* _argv[])
             {
                 case 0:
                 {
-                    std::cout << "Worker -> Assigning Position component to entity id{" << _entity << "}" << std::endl;
+                    // std::cout << "Worker -> Assigning Position component to entity id{" << _entity << "}" << std::endl;
 
                     assert(!_entity.has_component<PositionComponent>());
                     _entity.assign<PositionComponent>(_component_payload.GetPayload<PositionComponent>());
@@ -88,7 +88,7 @@ int main(int _argc, char* _argv[])
             {
                 case 0:
                 {
-                    std::cout << "Worker -> Removing Position component from entity id{" << _entity << "}" << std::endl;
+                    // std::cout << "Worker -> Removing Position component from entity id{" << _entity << "}" << std::endl;
 
                     assert(_entity.has_component<PositionComponent>());
                     _entity.remove<PositionComponent>();

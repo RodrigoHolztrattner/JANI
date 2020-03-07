@@ -28,6 +28,7 @@ class LayerCollection
         bool                     use_spatial_area            = false;
         uint32_t                 maximum_entities_per_worker = std::numeric_limits<uint32_t>::max();
         uint32_t                 maximum_workers             = std::numeric_limits<uint32_t>::max();
+        std::set<ComponentId>    components;
     };
 
     struct ComponentInfo

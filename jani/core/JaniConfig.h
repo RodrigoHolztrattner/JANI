@@ -53,13 +53,15 @@
     - Setup layer permissions on the config file
     - Check for worker/layer permissions before doing any action
     - Setup component authority when an entity or component is added
-    - Check when a component/layer should have its authority worker changed
     - Setup messages for QBI updates
     - Process the QBI (query) messages (instead of sending the query, pass only the id/component id/layer id)
     - Implement authority messages
-    - Implement authority check/change
     - Implement authority handling on the worker side
     - Implement worker disconnection recovery
+    - Cell lifetime (when reaches 0 entities it should be deleted after a while)
+    - Worker shutdown if unused
+    - Inspector: Better info, support for sending/receiving multiple messages
+    - Support for sending/receiving multiple messages
 */
 
 /////////////

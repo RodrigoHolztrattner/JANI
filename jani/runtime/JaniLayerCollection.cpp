@@ -83,6 +83,9 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
             if (layer.second.name == component_info.layer_name)
             {
                 component_info.layer_unique_id = layer.second.unique_id;
+                layer.second.components.insert(component_info.unique_id);
+
+                break;
             }
         }
 

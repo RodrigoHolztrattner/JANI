@@ -95,7 +95,7 @@ void Jani::WorldController::InsertEntity(Entity& _entity, WorldPosition _positio
 {
     PushDebugCommand("InsertEntity");
 
-    WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(SanitizeWorldPosition(_position));
+    WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_position);
 
     SetupCell(cell_coordinates);
 
@@ -178,9 +178,22 @@ void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info
 void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, WorldPosition _new_position)
 {
     WorldCellCoordinates current_world_cell_coordinates = _entity.GetWorldCellCoordinates();
-    WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(SanitizeWorldPosition(_new_position)); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
+    WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(_new_position); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
 
     if (current_world_cell_coordinates == new_world_cell_coordinates)
+    {
+        return;
+    }
+
+    WorldPosition current_cell_world_position = ConvertCellCoordinatesIntoPosition(current_world_cell_coordinates);
+    WorldPosition new_cell_world_position     = ConvertCellCoordinatesIntoPosition(new_world_cell_coordinates);
+
+    float half_cell_unit_length    = (m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine()) / 2.0f;
+    float distance_to_current_cell = glm::distance(glm::vec2(current_cell_world_position.x + half_cell_unit_length, current_cell_world_position.y + half_cell_unit_length), glm::vec2(_new_position.x, _new_position.y));
+    float distance_to_new_cell     = glm::distance(glm::vec2(new_cell_world_position.x + half_cell_unit_length, new_cell_world_position.y + half_cell_unit_length), glm::vec2(_new_position.x, _new_position.y));
+
+    // If we are at the border, we can tolerate a little amount before performing the cell change
+    if (distance_to_new_cell / distance_to_current_cell > 0.7f) // 0.0 = at center, 1.0 = at border
     {
         return;
     }
@@ -198,14 +211,8 @@ void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, Wor
 
     _entity.SetWorldCellInfo(new_world_cell_info);
 
-    uint32_t current_size = current_world_cell_info.entities.size();
-    uint32_t new_size = new_world_cell_info.entities.size();
-
     current_world_cell_info.entities.erase(_entity.GetId());
     new_world_cell_info.entities.insert({ _entity.GetId(), &_entity });
-
-    assert(current_world_cell_info.entities.size() == current_size - 1);
-    assert(new_world_cell_info.entities.size() == new_size + 1);
 
     for (auto& layer_info : m_layer_infos)
     {
@@ -244,13 +251,6 @@ void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, Wor
             *current_layer_worker, 
             *new_layer_worker);
     }
-}
-
-Jani::WorldPosition Jani::WorldController::SanitizeWorldPosition(WorldPosition _world_position) const
-{
-
-
-    return _world_position;
 }
 
 void Jani::WorldController::SetupCell(WorldCellCoordinates _cell_coordinates)

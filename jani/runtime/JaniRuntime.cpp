@@ -68,28 +68,30 @@ bool Jani::Runtime::Initialize()
     m_world_controller->RegisterCellOwnershipChangeCallback(
         [&](const std::map<EntityId, Entity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
-            if (_layer_id != 0)
-            {
-                return;
-            }
-
-            ComponentId component_id = 0; // This should be done for all components, not only position
+            auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
             for (auto& [entity_id, entity] : _entities)
             {
-                auto position_component = entity->GetComponentPayload(component_id);
-                if (!position_component)
+                for (auto component_id : layer_info.components)
                 {
-                    continue;
-                }
+                    if (!entity->HasComponent(component_id))
+                    {
+                        continue;
+                    }
 
-                std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
+                    auto component_payload = entity->GetComponentPayload(component_id);
+                    if (!component_payload)
+                    {
+                        std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
+                        continue;
+                    }
 
-                {
+                    std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
+
                     Message::WorkerAddComponentRequest add_component_request;
                     add_component_request.entity_id         = entity->GetId();
                     add_component_request.component_id      = component_id;
-                    add_component_request.component_payload = std::move(position_component.value());
+                    add_component_request.component_payload = std::move(component_payload.value());
 
                     if (!m_request_manager->MakeRequest(
                         *m_worker_connections,
@@ -97,13 +99,10 @@ bool Jani::Runtime::Initialize()
                         RequestType::WorkerAddComponent,
                         add_component_request))
                     {
-
                     }
-                }
-
-                {
+                     
                     Message::WorkerRemoveComponentRequest remove_component_request;
-                    remove_component_request.entity_id = entity->GetId();
+                    remove_component_request.entity_id    = entity->GetId();
                     remove_component_request.component_id = component_id;
 
                     if (!m_request_manager->MakeRequest(
@@ -112,7 +111,6 @@ bool Jani::Runtime::Initialize()
                         RequestType::WorkerRemoveComponent,
                         remove_component_request))
                     {
-
                     }
                 }
             }
@@ -121,27 +119,28 @@ bool Jani::Runtime::Initialize()
     m_world_controller->RegisterEntityLayerOwnershipChangeCallback(
         [&](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
-            if (_layer_id != 0)
+            auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
+
+            for (auto component_id : layer_info.components)
             {
-                return;
-            }
+                if (!_entity.HasComponent(component_id))
+                {
+                    continue;
+                }
 
-            ComponentId component_id = 0; // This should be done for all components, not only position
+                auto component_payload = _entity.GetComponentPayload(component_id);
+                if (!component_payload)
+                {
+                    std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
+                    continue;
+                }
 
-            auto position_component = _entity.GetComponentPayload(0);
-            if (!position_component)
-            {
-                std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
-                return;
-            }
+                // std::cout << "Runtime -> Entity crossed cell border entity_id{" << _entity.GetId() << "}, layer_id{" << _layer_id << "}" << std::endl;
 
-            // std::cout << "Runtime -> Entity crossed cell border entity_id{" << _entity.GetId() << "}, layer_id{" << _layer_id << "}" << std::endl;
-
-            {
                 Message::WorkerAddComponentRequest add_component_request;
                 add_component_request.entity_id         = _entity.GetId();
                 add_component_request.component_id      = component_id;
-                add_component_request.component_payload = std::move(position_component.value());
+                add_component_request.component_payload = std::move(component_payload.value());
 
                 if (!m_request_manager->MakeRequest(
                     *m_worker_connections,
@@ -149,13 +148,10 @@ bool Jani::Runtime::Initialize()
                     RequestType::WorkerAddComponent,
                     add_component_request))
                 {
-
                 }
-            }
-
-            {
+                   
                 Message::WorkerRemoveComponentRequest remove_component_request;
-                remove_component_request.entity_id = _entity.GetId();
+                remove_component_request.entity_id    = _entity.GetId();
                 remove_component_request.component_id = component_id;
 
                 if (!m_request_manager->MakeRequest(
@@ -164,7 +160,6 @@ bool Jani::Runtime::Initialize()
                     RequestType::WorkerRemoveComponent,
                     remove_component_request))
                 {
-
                 }
             }
         });

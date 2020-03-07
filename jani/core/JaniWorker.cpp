@@ -448,7 +448,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                         auto& entity = entity_iter->second;
 
-                        std::cout << "Entity ID: {" << add_component_request.entity_id << "} - ";
                         assert(m_on_component_added_callback);
                         m_on_component_added_callback(entity, add_component_request.component_id, add_component_request.component_payload);
 
@@ -466,7 +465,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         {
                             auto& entity = entity_iter->second;
 
-                            std::cout << "Entity ID: {" << remove_component_request.entity_id << "} - ";
                             assert(m_on_component_removed_callback);
                             m_on_component_removed_callback(entity, remove_component_request.component_id);
 
