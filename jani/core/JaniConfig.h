@@ -32,6 +32,7 @@
 #include <cereal/cereal.hpp>
 #include <cereal/archives/binary.hpp>
 #include <nlohmann/json.hpp>
+#include <glm/glm.hpp>
 #include "span.hpp"
 
 #include <ikcp.h>
@@ -89,6 +90,7 @@ class Runtime;
 class Database;
 class WorkerSpawnerInstance;
 class WorkerInstance; 
+class Entity;
 
 struct WorldPosition
 {
@@ -110,13 +112,13 @@ struct WorldPosition
         return false;
     }
 
-    bool operator <(const WorldPosition& rhs) const
+    friend bool operator <(const WorldPosition& lhs, const WorldPosition& rhs) //friend claim has to be here
     {
-        if (x < rhs.x) return true;
-        if (x > rhs.x) return false;
+        if (lhs.x < rhs.x) return true;
+        if (lhs.x > rhs.x) return false;
         //x == rhs.x
-        if (y < rhs.y) return true;
-        if (y > rhs.y) return false;
+        if (lhs.y < rhs.y) return true;
+        if (lhs.y > rhs.y) return false;
 
         return false;
     }
@@ -124,7 +126,28 @@ struct WorldPosition
     int32_t x, y;
 };
 
-using WorldCellCoordinates = WorldPosition;
+struct WorldPositionHasher
+{
+    size_t
+        operator()(const WorldPosition& obj) const
+    {
+        return std::hash<int32_t>()(obj.x) ^ (std::hash<int32_t>()(obj.y) << 1) >> 1;
+    }
+};
+
+struct WorldPositionComparator
+{
+    bool operator()(const WorldPosition& obj1, const WorldPosition& obj2) const
+    {
+        if (obj1.x == obj2.x && obj1.y == obj2.y)
+            return true;
+        return false;
+    }
+};
+
+using WorldCellCoordinates           = WorldPosition;
+using WorldCellCoordinatesHasher     = WorldPositionHasher;
+using WorldCellCoordinatesComparator = WorldPositionComparator;
 
 struct WorldArea
 {
@@ -827,16 +850,17 @@ public:
 	SparseGrid(uint32_t _world_dim_size) : m_world_dim_size(_world_dim_size)
 	{
 		assert(m_world_dim_size % mBucketDimSize == 0);
-		m_world_dim_size = _world_dim_size;
+		m_world_dim_size = _world_dim_size / mBucketDimSize;
 		using size_type = typename std::allocator_traits< std::allocator<std::vector<std::unique_ptr<Bucket>>>>::size_type;
-		size_type total_size = m_world_dim_size / mBucketDimSize * m_world_dim_size / mBucketDimSize;
+		size_type total_size = m_world_dim_size * m_world_dim_size;
 		assert(total_size > 0 && total_size < std::numeric_limits<size_type>::max());
 		m_buckets.resize(total_size);
 	}
     bool IsCellEmpty(WorldCellCoordinates _cell_coordinates)
 	{
 		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
-		return m_buckets[bucket_y * m_world_dim_size + bucket_x] == nullptr || m_buckets[bucket_y * m_world_dim_size + bucket_x]->cells[local_x][local_y] == std::nullopt;
+        uint32_t index = (bucket_y / mBucketDimSize) * m_world_dim_size + (bucket_x / mBucketDimSize);
+		return m_buckets[index] == nullptr || m_buckets[index]->cells[local_x][local_y] == std::nullopt;
 	}
 	bool Set(WorldCellCoordinates _cell_coordinates, mType _value)
 	{
@@ -874,38 +898,38 @@ public:
 		{
 			return nullptr;
 		}
-		return &AtMutable(_cell_coordinates.x, _cell_coordinates.y);
+		return &AtMutable(_cell_coordinates);
 	}
 	const mType& At(WorldCellCoordinates _cell_coordinates) const
 	{
-		return AtMutable(_cell_coordinates.x, _cell_coordinates.y);
+		return AtMutable(_cell_coordinates);
 	}
 	mType& AtMutable(WorldCellCoordinates _cell_coordinates) const
 	{
 		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
 		assert(IsBucketValid(bucket_x, bucket_y));
-		return GetBucketAtBucketLocalPosition(bucket_x, bucket_y).cells[local_x][local_y];
+		return GetBucketAtBucketLocalPosition(bucket_x, bucket_y).cells[local_x][local_y].value();
 	}
 	const std::vector<mType>& InsideRange(WorldCellCoordinates _cell_coordinates, float _radius) const
 	{
-		return InsideRangeMutable(_cell_coordinates.x, _cell_coordinates.y, _radius);
+		return InsideRangeMutable(_cell_coordinates, _radius);
 	}
 	std::vector<mType>& InsideRangeMutable(WorldCellCoordinates _cell_coordinates, float _radius) const
 	{
 		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
 		int actual_radius	= std::ceil(_radius);
 		int actual_radius_pow2 = actual_radius * actual_radius;
-		int start_x = _x - actual_radius;
-		int start_y = _y - actual_radius;
-		int end_x   = _x + actual_radius;
-		int end_y   = _y + actual_radius;
+		int start_x = _cell_coordinates.x - actual_radius;
+		int start_y = _cell_coordinates.y - actual_radius;
+		int end_x   = _cell_coordinates.x + actual_radius;
+		int end_y   = _cell_coordinates.y + actual_radius;
 		m_query_temporary_buffer.clear();
 		for (int x = start_x; x <= end_x; x++)
 		{
 			for (int y = start_y; y <= end_y; y++)
 			{
 				if (!IsWorldPositionValid(x, y) || 
-					(x - _x + y - _y) * (x - _x + y - _y) > actual_radius_pow2)
+					(x - _cell_coordinates.x + y - _cell_coordinates.y) * (x - _cell_coordinates.x + y - _cell_coordinates.y) > actual_radius_pow2)
 				{
 					continue;
 				}
@@ -947,7 +971,7 @@ private:
 	}
 	bool IsWorldPositionValid(int _x, int _y) const
 	{
-		return static_cast<uint32_t>(_x) < m_world_dim_size && static_cast<uint32_t>(_y) < m_world_dim_size;
+		return static_cast<uint32_t>(_x / mBucketDimSize) < m_world_dim_size && static_cast<uint32_t>(_y / mBucketDimSize) < m_world_dim_size;
 	}
 	bool IsBucketValid(int _x, int _y) const
 	{
@@ -1317,8 +1341,8 @@ struct RuntimeGetEntitiesInfoResponse
     std::vector<std::tuple<EntityId, WorldPosition, WorkerId>> entities_infos;
 };
 
-// RuntimeGetWorkersInfo
-struct RuntimeGetWorkersInfoRequest
+// RuntimeGetCellsInfos
+struct RuntimeGetCellsInfosRequest
 {
     Serializable();
 
@@ -1326,52 +1350,48 @@ struct RuntimeGetWorkersInfoRequest
 };
 
 // RuntimeGetWorkersInfo
-struct RuntimeGetWorkersInfoResponse
+struct RuntimeGetCellsInfosResponse
 {
     Serializable();
 
     bool                                                                           succeed = false;
-    std::vector<std::tuple<WorkerId, LayerId, WorldRect, uint32_t>> worker_infos;
+    std::vector<std::tuple<WorkerId, LayerId, WorldRect, uint32_t>> cells_infos;
 };
 
 JaniNamespaceEnd(Message)
 
-struct WorldCellWorkerInfo
+struct WorkerCellsInfos
 {
-    bool operator() (const WorldCellWorkerInfo& rhs) const
-    {
-        if (entity_count < rhs.entity_count) return true;
-        if (entity_count > rhs.entity_count) return false;
-        if (cell_coordinates < rhs.cell_coordinates) return true;
+    // - Cada worker tem um vector com as posicoes que ele cuida, coordenadas mesmo
+    // - Cada worker tem a quantidade de entidades que ele possui no momento
 
-        return false;
-    }
+    // The global entity count this worker has
+    uint32_t entity_count = 0;
 
-    bool operator <(const WorldCellWorkerInfo& rhs) const
-    {
-        if (entity_count < rhs.entity_count) return true;
-        if (entity_count > rhs.entity_count) return false;
-        if (cell_coordinates < rhs.cell_coordinates) return true;
+    // All the coordinates that this worker owns
+    std::unordered_set<WorldCellCoordinates, WorldCellCoordinatesHasher, WorldCellCoordinatesComparator> coordinates_owned;
 
-        return false;
-    }
-
-    WorkerInstance*      worker_instance = nullptr;
-    uint32_t             entity_count    = 0;
-    WorkerId             worker_id       = std::numeric_limits<WorkerId>::max();
-    WorldCellCoordinates cell_coordinates;
+    WorkerInstance* worker_instance = nullptr;
 };
 
 struct WorldCellInfo
 {
-    std::map<EntityId, Entity*>                    entities;
-    std::array<WorldCellWorkerInfo, MaximumLayers> layer_infos;
-    WorldCellCoordinates                           cell_coordinates;
+    // - Cada cell possui uma array com todos os layers possiveis, em cada layer tem um ponteiro pra esse worker info acima
+
+    std::map<EntityId, Entity*>                  entities;
+    std::array<WorkerCellsInfos*, MaximumLayers> worker_cells_infos;
+    WorldCellCoordinates                         cell_coordinates;
 
     std::optional<WorkerInstance*> GetWorkerForLayer(LayerId _layer_id) const
     {
         assert(_layer_id < MaximumLayers);
-        return layer_infos[_layer_id].worker_instance != nullptr ? std::optional<WorkerInstance*>(layer_infos[_layer_id].worker_instance) : std::nullopt;
+
+        if (!worker_cells_infos[_layer_id] || !worker_cells_infos[_layer_id]->worker_instance)
+        {
+            return std::nullopt;
+        }
+
+        return worker_cells_infos[_layer_id]->worker_instance;
     }
 };
 
@@ -1571,6 +1591,8 @@ private:
 };
 
 JaniNamespaceEnd(Jani)
+
+
 
 #undef max
 #undef min

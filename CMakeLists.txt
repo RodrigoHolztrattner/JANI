@@ -110,6 +110,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/glfw/glfw
 )
 
+# GLM (methematics library for graphics software)
+FetchContent_Declare(
+  glm
+  GIT_REPOSITORY https://github.com/g-truc/glm
+)
+
 FetchContent_GetProperties(ctti)
 if(NOT ctti_POPULATED)
   PrintFetchMessage("CTTI")
@@ -182,6 +188,12 @@ if(NOT glfw_POPULATED)
   add_subdirectory(${glfw_SOURCE_DIR} ${glfw_BINARY_DIR})
 endif()
 
+FetchContent_GetProperties(glm)
+if(NOT glm_POPULATED)
+  PrintFetchMessage("GLM")
+  FetchContent_Populate(glm)
+endif()
+
 ###########
 # PROJECT #
 ###########
@@ -235,7 +247,8 @@ ${magic_get_SOURCE_DIR}/include
 ${range_v3_SOURCE_DIR}/include
 ${cereal_SOURCE_DIR}/include
 ${entityx_SOURCE_DIR}
-${glfw_SOURCE_DIR}/include)
+${glfw_SOURCE_DIR}/include
+${glm_SOURCE_DIR})
 
 ###########
 # LIBRARY #

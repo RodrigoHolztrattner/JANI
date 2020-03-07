@@ -68,7 +68,7 @@ private: // VARIABLES //
 
     // Last runtime responses
     Jani::Message::RuntimeGetEntitiesInfoResponse m_entities_infos;
-    Jani::Message::RuntimeGetWorkersInfoResponse  m_workers_infos;
+    Jani::Message::RuntimeGetCellsInfosResponse   m_cells_infos;
 
     float  m_zoom_level = 5.0f;
     ImVec2 m_scroll = ImVec2(0, 0);

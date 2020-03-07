@@ -25,6 +25,8 @@ bool Jani::Worker::InitializeWorker(
         return false;
     }
 
+    // m_bridge_connection->SetTimeoutTime(500000000);
+
     return true;
 }
 

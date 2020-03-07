@@ -121,12 +121,6 @@ std::optional<Jani::Entity*> Jani::Database::RemoveComponent(
 
     auto& entity = entity_iter->second;
 
-    // Check if the worker has authority over the component
-    if (!entity->VerifyWorkerComponentAuthority(_layer_id, _component_id, _worker_id))
-    {
-        return std::nullopt;
-    }
-
     // Check if this entity has the given component id
     if (!entity->HasComponent(_component_id))
     {
@@ -155,12 +149,6 @@ std::optional<Jani::Entity*> Jani::Database::ComponentUpdate(
     }
 
     auto& entity = entity_iter->second;
-
-    // Check if the worker has authority over the component
-    if (!entity->VerifyWorkerComponentAuthority(_layer_id, _component_id, _worker_id))
-    {
-        return std::nullopt;
-    }
 
     // Check if this entity already has the given component id
     if (!entity->HasComponent(_component_id))

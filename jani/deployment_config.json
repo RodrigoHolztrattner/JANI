@@ -1,0 +1,5 @@
+{
+    "uses_centralized_world_origin": true, 
+    "maximum_world_length": 32768, 
+    "worker_length": 32
+}

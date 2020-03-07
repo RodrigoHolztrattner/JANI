@@ -19,8 +19,14 @@ int main(int _argc, char* _argv[])
 
     struct PositionComponent
     {
-        int32_t x = 0;
-        int32_t y = 0;
+        glm::vec2 position;
+        glm::vec2 target_position;
+
+        float speed = 1.0f;
+
+        float time_to_move = 0.0f;
+
+        bool is_moving = false;
     };
 
     struct NpcComponent
@@ -39,32 +45,6 @@ int main(int _argc, char* _argv[])
     if (!worker.InitializeWorker(runtime_ip, runtime_listen_port))
     {
         std::cout << "Worker -> Unable to initialize worker!" << std::endl;
-    }
-
-    worker.RequestAuthentication().OnResponse(
-        [](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
-        {
-            if (!_response.succeed)
-            {
-                std::cout << "Worker -> Failed to authenticate!" << std::endl;
-            }
-            else
-            {
-                std::cout << "Worker -> Authentication succeeded! uses_spatial_area{" << _response.use_spatial_area << "}, maximum_entities{" << _response.maximum_entity_limit << "}" << std::endl;
-            }
-        }).WaitResponse();
-
-    if(is_brain)
-    {
-        worker.RequestReserveEntityIdRange(100).OnResponse(
-            [&](const Jani::Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
-            {
-                if (_response.succeed)
-                {
-                    initial_entity_id = _response.id_begin;
-                    final_entity_id   = _response.id_end;
-                }
-            }).WaitResponse();
     }
 
     worker.RegisterOnComponentAddedCallback(
@@ -133,11 +113,42 @@ int main(int _argc, char* _argv[])
             }
         });
 
+
+    worker.RequestAuthentication().OnResponse(
+        [](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
+        {
+            if (!_response.succeed)
+            {
+                std::cout << "Worker -> Failed to authenticate!" << std::endl;
+            }
+            else
+            {
+                std::cout << "Worker -> Authentication succeeded! uses_spatial_area{" << _response.use_spatial_area << "}, maximum_entities{" << _response.maximum_entity_limit << "}" << std::endl;
+            }
+        }).WaitResponse();
+
+    if(is_brain)
+    {
+        worker.RequestReserveEntityIdRange(100).OnResponse(
+            [&](const Jani::Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
+            {
+                if (_response.succeed)
+                {
+                    initial_entity_id = _response.id_begin;
+                    final_entity_id   = _response.id_end;
+                }
+            }).WaitResponse();
+    }
+
+
     std::cout << "Worker -> Entering main loop!" << std::endl;
 
     while (worker.IsConnected())
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        uint32_t wait_time_ms = 20;
+        float    time_elapsed = static_cast<float>(wait_time_ms) / 1000.0f;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(wait_time_ms));
 
         if (is_brain)
         {
@@ -145,7 +156,12 @@ int main(int _argc, char* _argv[])
             {
                 auto new_entity = s_ecs_manager.entities.create();
 
-                PositionComponent position_component = PositionComponent{ 0, 0 };
+                PositionComponent position_component;
+                position_component.position        = glm::vec2(0.0f, 0.0f);
+                position_component.target_position = glm::vec2(0.0f, 0.0f);
+                position_component.speed           = (rand() % 1900 + 100) / 100.0f;
+                position_component.time_to_move    = 0.0f;
+                position_component.is_moving       = false;
 
                 new_entity.assign<PositionComponent>(position_component);
 
@@ -177,22 +193,47 @@ int main(int _argc, char* _argv[])
             worker.GetEntityManager().each<PositionComponent>(
                 [&](auto entity, PositionComponent& _position)
                 {
-                    if (rand() % 10 == 1)
+                    auto RandomFloat = [](float _from, float _to) -> float
                     {
-                        _position.x += (rand() % 3) - 1;
-                        _position.y += (rand() % 3) - 1;
+                        float random = ((float)rand()) / (float)RAND_MAX;
+                        float diff   = _to - _from;
+                        float r      = random * diff;
+                        return _from + r;
+                    };
+
+                    auto RandomVec2 = [&](float _from, float _to) -> glm::vec2
+                    {
+                        return glm::vec2(RandomFloat(_from, _to), RandomFloat(_from, _to));
+                    };
+
+                    float world_bounds      = 100.0f;
+                    _position.time_to_move -= time_elapsed;
+                    if (_position.time_to_move < 0 && !_position.is_moving)
+                    {
+                        _position.is_moving       = true;
+                        _position.target_position = RandomVec2(-world_bounds, world_bounds);
+                    }
+
+                    if (_position.is_moving)
+                    {
+                        _position.position -= glm::normalize(_position.position - _position.target_position) * _position.speed * time_elapsed;
+                        if (glm::distance(_position.position, _position.target_position) < 10.0f)
+                        {
+                            _position.is_moving    = false;
+                            _position.time_to_move = RandomFloat(10.0f, 1.0f);
+                        }
                     }
 
                     auto jani_entity = worker.GetJaniEntityId(entity);
                     if (jani_entity)
                     {
-                        worker.ReportEntityPosition(jani_entity.value(), Jani::WorldPosition({ _position.x, _position.y }));
+                        worker.ReportEntityPosition(jani_entity.value(), Jani::WorldPosition({ static_cast<int32_t>(_position.position.x), static_cast<int32_t>(_position.position.y) }));
 
                         Jani::ComponentPayload component_payload;
                         component_payload.entity_owner = jani_entity.value();
                         component_payload.component_id = 0;
                         component_payload.SetPayload(_position);
-                        worker.RequestUpdateComponent(jani_entity.value(), 0, component_payload, Jani::WorldPosition({ _position .x, _position .y}));
+                        worker.RequestUpdateComponent(jani_entity.value(), 0, component_payload, Jani::WorldPosition({ static_cast<int32_t>(_position.position.x), static_cast<int32_t>(_position.position.y) }));
                     }
                 });
         }

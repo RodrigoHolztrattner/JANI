@@ -30,14 +30,18 @@ bool Jani::WorldController::Initialize()
     LayerId layer_id_count = 0;
     for (auto& [layer_id, layer_collection_info] : layer_collection_infos)
     {
-        auto& layer_info = m_layer_infos[layer_id];
+        LayerInfo layer_info;
 
         layer_info.user_layer                  = layer_collection_info.user_layer;
         layer_info.uses_spatial_area           = layer_collection_info.use_spatial_area;
         layer_info.maximum_entities_per_worker = layer_collection_info.maximum_entities_per_worker;
         layer_info.maximum_workers             = layer_collection_info.maximum_workers;
         layer_info.layer_id                    = layer_id_count++;
+
+        m_layer_infos[layer_id] = std::move(layer_info);
     }
+    
+    m_world_grid = std::make_unique<SparseGrid<WorldCellInfo>>(m_deployment_config.GetMaximumWorldLength());
 
     return true;
 }
@@ -51,9 +55,10 @@ void Jani::WorldController::Update()
     // Balance each layer that doesn't use spatial area
     for (auto& layer_info : m_layer_infos)
     {
-        if (layer_info.uses_spatial_area
-            || layer_info.worker_instances.size() == 0
-            || (layer_info.worker_instances.size() == 1 && layer_info.maximum_workers == 1)) // If there is one instance and the limit is
+        if (!layer_info
+            || layer_info->uses_spatial_area
+            || layer_info->worker_instances.size() == 0
+            || (layer_info->worker_instances.size() == 1 && layer_info->maximum_workers == 1)) // If there is one instance and the limit is
             // one, no balance is required/possible
         {
             continue;
@@ -67,91 +72,228 @@ void Jani::WorldController::ValidateLayersWithoutWorkers() const
 {
     for (auto& layer_info : m_layer_infos)
     {
-        if (layer_info.worker_instances.size() == 0 && layer_info.maximum_workers > 0)
+        if (!layer_info)
         {
-            m_worker_layer_request_callback(layer_info.layer_id);
+            break;
+        }
+
+        if (layer_info->worker_instances.size() == 0 && layer_info->maximum_workers > 0)
+        {
+            m_worker_layer_request_callback(layer_info->layer_id);
         }
     }
 }
 
+std::vector<std::string> s_previous_commands;
+
+void PushDebugCommand(std::string _command)
+{
+    //s_previous_commands.push_back(std::move(_command));
+}
+
 void Jani::WorldController::InsertEntity(Entity& _entity, WorldPosition _position)
 {
-    WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_position);
-    auto&                cell_info        = m_world_grid->AtMutable(cell_coordinates);
+    PushDebugCommand("InsertEntity");
 
-    assert(cell_info.entities.find(_entity.GetId()) != cell_info.entities.end());
-    assert(_entity.GetComponentMask().count() == 0); // Maybe this should not be a restriction?
+    WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(SanitizeWorldPosition(_position));
+
+    SetupCell(cell_coordinates);
+
+    auto& cell_info = m_world_grid->AtMutable(cell_coordinates);
+
+    assert(cell_info.entities.find(_entity.GetId()) == cell_info.entities.end());
 
     _entity.SetWorldCellInfo(cell_info);
 
     // Do something about each worker that owns the given cell? (for each layer)
 
     cell_info.entities.insert({ _entity.GetId(), &_entity });
+
+    SetupWorkCellEntityInsertion(cell_info);
 }
 
 void Jani::WorldController::RemoveEntity(Entity& _entity)
 {
+    PushDebugCommand("RemoveEntity");
+
     WorldCellCoordinates cell_coordinates = _entity.GetWorldCellCoordinates();
     auto&                cell_info        = m_world_grid->AtMutable(cell_coordinates);
 
     // Do something about each worker that owns the given cell? (for each layer)
 
     cell_info.entities.erase(_entity.GetId());
+
+    SetupWorkCellEntityRemoval(cell_info);
+}
+
+void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info)
+{
+    PushDebugCommand("SetupWorkCellEntityInsertion");
+
+    for (auto& layer_info : m_layer_infos)
+    {
+        if (!layer_info)
+        {
+            break;
+        }
+
+        auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
+        auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
+        {
+            extracted_worker_node.key().global_entity_count++;
+            extracted_worker_node.mapped()->worker_cells_infos.entity_count++;
+            extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(_cell_info.cell_coordinates);
+        }
+        auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+    }
+}
+
+void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info)
+{
+    PushDebugCommand("SetupWorkCellEntityRemoval");
+
+    for (auto& layer_info : m_layer_infos)
+    {
+        if (!layer_info)
+        {
+            break;
+        }
+
+        // We don't care about layers that don't use spatial info
+        if (!layer_info->uses_spatial_area)
+        {
+            continue;
+        }
+
+        auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
+        auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
+        {
+            extracted_worker_node.key().global_entity_count--;
+            extracted_worker_node.mapped()->worker_cells_infos.entity_count--;
+        }
+        auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+    }
 }
 
 void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, WorldPosition _new_position)
 {
-    // Determine if this entity is entering a new cell
-    // TODO: Check current cell and compare with the new position, if that represents
-    // a different cell, update the entity current cell and proceed below
-    // ...
-
     WorldCellCoordinates current_world_cell_coordinates = _entity.GetWorldCellCoordinates();
-    WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(_new_position); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
+    WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(SanitizeWorldPosition(_new_position)); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
 
     if (current_world_cell_coordinates == new_world_cell_coordinates)
     {
         return;
     }
 
-    auto& current_world_cell_info = m_world_grid->AtMutable(current_world_cell_coordinates);
-    auto& new_world_cell_info     = m_world_grid->AtMutable(current_world_cell_coordinates);
+    PushDebugCommand("AcknowledgeEntityPositionChange id{" + std::to_string(_entity.GetId()) + std::string("} from{") + std::to_string(current_world_cell_coordinates.x) + "," + std::to_string(current_world_cell_coordinates.y) + "}" +
+    " to{" + std::to_string(new_world_cell_coordinates.x) + "," + std::to_string(new_world_cell_coordinates.y) + "}");
 
-    _entity.SetWorldCellInfo(new_world_cell_info);
+    SetupCell(new_world_cell_coordinates);
+
+    auto& current_world_cell_info = m_world_grid->AtMutable(current_world_cell_coordinates);
+    auto& new_world_cell_info     = m_world_grid->AtMutable(new_world_cell_coordinates);
 
     assert(current_world_cell_info.entities.find(_entity.GetId()) != current_world_cell_info.entities.end());
     assert(new_world_cell_info.entities.find(_entity.GetId()) == new_world_cell_info.entities.end());
 
+    _entity.SetWorldCellInfo(new_world_cell_info);
+
+    uint32_t current_size = current_world_cell_info.entities.size();
+    uint32_t new_size = new_world_cell_info.entities.size();
+
     current_world_cell_info.entities.erase(_entity.GetId());
     new_world_cell_info.entities.insert({ _entity.GetId(), &_entity });
 
+    assert(current_world_cell_info.entities.size() == current_size - 1);
+    assert(new_world_cell_info.entities.size() == new_size + 1);
+
     for (auto& layer_info : m_layer_infos)
     {
+        if (!layer_info)
+        {
+            break;
+        }
+
         // We don't care about layers that don't use spatial info
-        if (!layer_info.uses_spatial_area)
+        if (!layer_info->uses_spatial_area)
         {
             continue;
         }
 
-        auto& current_cell_layer_info = current_world_cell_info.layer_infos[layer_info.layer_id];
-        auto& new_cell_layer_info     = new_world_cell_info.layer_infos[layer_info.layer_id];
+        auto* current_layer_worker = current_world_cell_info.worker_cells_infos[layer_info->layer_id]->worker_instance;
+        auto* new_layer_worker     = new_world_cell_info.worker_cells_infos[layer_info->layer_id]->worker_instance;
 
-        auto* current_layer_worker = current_cell_layer_info.worker_instance;
-        auto* new_layer_worker     = new_cell_layer_info.worker_instance;
+        assert(current_layer_worker);
+        assert(new_layer_worker);
 
-        current_cell_layer_info.entity_count--; // TODO: Do something if it reaches 0?
-        new_cell_layer_info.entity_count++;
+        /*
+        * If both cells are owned by the same worker, we can just ignore this layer
+        */
+        if (current_layer_worker == new_layer_worker)
+        {
+            continue;
+        }
+
+        SetupWorkCellEntityInsertion(new_world_cell_info);
+        SetupWorkCellEntityRemoval(current_world_cell_info);
 
         assert(m_entity_layer_ownership_change_callback);
-        assert(new_layer_worker);
-        assert(new_layer_worker);
-
         m_entity_layer_ownership_change_callback(
             _entity, 
-            layer_info.layer_id, 
+            layer_info->layer_id, 
             *current_layer_worker, 
             *new_layer_worker);
+    }
+}
 
+Jani::WorldPosition Jani::WorldController::SanitizeWorldPosition(WorldPosition _world_position) const
+{
+
+
+    return _world_position;
+}
+
+void Jani::WorldController::SetupCell(WorldCellCoordinates _cell_coordinates)
+{
+    if (m_world_grid->IsCellEmpty(_cell_coordinates))
+    {
+        m_world_grid->Set(_cell_coordinates, WorldCellInfo());
+    }
+    else
+    {
+        return;
+    }
+
+    PushDebugCommand("SetupCell pos{" + std::to_string(_cell_coordinates.x) + "," + std::to_string(_cell_coordinates.y) + "}");
+
+    auto& cell_info            = m_world_grid->AtMutable(_cell_coordinates);
+    cell_info.cell_coordinates = _cell_coordinates;
+
+    for (int i = 0; i < cell_info.worker_cells_infos.size(); i++)
+    {
+        auto& layer_info = m_layer_infos[i];
+        if (!layer_info || layer_info.value().user_layer)
+        {
+            break;
+        }
+
+        // This is a new cell, so there shouldn't be any worker that owns the cell
+        assert(cell_info.worker_cells_infos[i] == nullptr);
+
+        // We require at least one worker
+        assert(layer_info.value().ordered_worker_density_info.size() > 0);
+
+        /*
+        * Update the ordered worker density info (both the key and the entity count on the worker cells infos)
+        */
+        auto extracted_worker_node = layer_info->ordered_worker_density_info.extract(layer_info->ordered_worker_density_info.begin());
+        {
+            extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(_cell_coordinates);
+        }
+        auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+
+        // Make the cell point to the right worker cells infos
+        cell_info.worker_cells_infos[i] = &insert_iter.position->second->worker_cells_infos;
     }
 }
 
@@ -170,38 +312,82 @@ void Jani::WorldController::RegisterWorkerLayerRequestCallback(WorkerLayerReques
     m_worker_layer_request_callback = _callback;
 }
 
+Jani::WorldCellCoordinates Jani::WorldController::ConvertPositionIntoCellCoordinates(WorldPosition _world_position) const
+{
+    auto maximum_world_length = m_deployment_config.GetMaximumWorldLength();
+
+    if (m_deployment_config.UsesCentralizedWorldOrigin())
+    {
+        _world_position.x += maximum_world_length / 2;
+        _world_position.y += maximum_world_length / 2;
+    }
+
+    _world_position.x = std::min(_world_position.x, static_cast<int32_t>(maximum_world_length));
+    _world_position.y = std::min(_world_position.y, static_cast<int32_t>(maximum_world_length));
+    _world_position.x = std::max(_world_position.x, 0);
+    _world_position.y = std::max(_world_position.y, 0);
+
+    assert(m_deployment_config.GetMaximumWorldLength() % m_deployment_config.GetTotalGridsPerWorldLine() == 0);
+
+    uint32_t cell_unit_length = m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine();
+
+    _world_position.x /= cell_unit_length;
+    _world_position.y /= cell_unit_length;
+
+    return _world_position;
+}
+
+Jani::WorldPosition Jani::WorldController::ConvertCellCoordinatesIntoPosition(WorldPosition _cell_coordinates) const
+{
+    assert(m_deployment_config.GetMaximumWorldLength() % m_deployment_config.GetTotalGridsPerWorldLine() == 0);
+
+    uint32_t cell_unit_length = m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine();
+
+    _cell_coordinates.x *= cell_unit_length;
+    _cell_coordinates.y *= cell_unit_length;
+
+    auto maximum_world_length = m_deployment_config.GetMaximumWorldLength();
+
+    if (m_deployment_config.UsesCentralizedWorldOrigin())
+    {
+        _cell_coordinates.x -= maximum_world_length / 2;
+        _cell_coordinates.y -= maximum_world_length / 2;
+    }
+
+    return _cell_coordinates;
+}
+
 void Jani::WorldController::ApplySpatialBalance()
 {
     for (auto& layer_info : m_layer_infos)
     {
-        if (!layer_info.uses_spatial_area 
-            || layer_info.worker_instances.size() == 0
-            || (layer_info.worker_instances.size() == 1 && layer_info.maximum_workers == 1)) // If there is one instance and the limit is
+        if (!layer_info)
+        {
+            break;
+        }
+
+        if (!layer_info->uses_spatial_area 
+            || layer_info->worker_instances.size() == 0
+            || (layer_info->worker_instances.size() == 1 && layer_info->maximum_workers == 1)) // If there is one instance and the limit is
             // one, no balance is required/possible
         {
             continue;
         }
 
-        // If there is only one worker, check if its over capacity and a new worker is required (if its
-        // possible to allocate a new one for this layer)
-        if (layer_info.worker_instances.size() == 1
-            && layer_info.worker_instances.begin()->second.global_entity_count > layer_info.maximum_entities_per_worker
-            && layer_info.maximum_workers > 1)
-        {
-            // Flag that another worker needs to be created for this layer
-            assert(m_worker_layer_request_callback);
-            m_worker_layer_request_callback(layer_info.layer_id);
-
-            continue;
-        }
-
-        // Determine if there is a worker instance that needs its surplus to be distributed over other
+        // Determine if there is a worker instance that needs its excess to be distributed over other
         // workers
         WorkerInfo* worker_instance_over_limit = nullptr;
-        for (auto& [worker_id, worker_instance] : layer_info.worker_instances)
+        for (auto& [worker_id, worker_instance] : layer_info->worker_instances)
         {
-            if (worker_instance.global_entity_count >= layer_info.maximum_entities_per_worker)
+            if (worker_instance.worker_cells_infos.entity_count >= layer_info->maximum_entities_per_worker)
             {
+                // Add a chance to not detect the current worker and move to another that is also over its capacity
+                // TODO: Add a better system to perform this
+                if (rand() % 2 == 0)
+                {
+                    continue;
+                }
+
                 worker_instance_over_limit = &worker_instance;
                 break;
             }
@@ -212,112 +398,116 @@ void Jani::WorldController::ApplySpatialBalance()
             continue;
         }
 
-        /*
-        * The idea is to move all the cells starting with the lowest density one to other workers
-        * that can handle more entities
-        * We keep doing this until the worker is not over its capacity or there are no workers
-        * available to receive the extra entities, in this case we should try to create another
-        * worker and try again on the next update
-        */
-        bool cannot_continue = false;
-        for (auto cell_info_iter = worker_instance_over_limit->ordered_cell_usage_info.cbegin(); cell_info_iter != worker_instance_over_limit->ordered_cell_usage_info.cend();)
+        auto& worker_cells_infos = worker_instance_over_limit->worker_cells_infos;
+
+        bool too_many_entities_on_same_cell    = false;
+        bool not_enough_space_on_other_workers = false;
+        for (auto coordinates_iter = worker_cells_infos.coordinates_owned.begin(); coordinates_iter != worker_cells_infos.coordinates_owned.end(); )
         {
-            if (cannot_continue || worker_instance_over_limit->global_entity_count < layer_info.maximum_entities_per_worker)
+            auto  cell_coordinate = *coordinates_iter;
+            auto& cell_info       = m_world_grid->AtMutable(cell_coordinate);
+
+            assert(cell_info.worker_cells_infos[layer_info->layer_id]->worker_instance == worker_instance_over_limit->worker_instance.get());
+
+            // Check if we reached our objective
+            if (worker_cells_infos.entity_count < layer_info->maximum_entities_per_worker)
             {
                 break;
             }
 
-            auto& cell_info = *cell_info_iter;
+            // Is there at least one entity on this cell to give away?
+            if (cell_info.entities.size() == 0)
+            {
+                ++coordinates_iter;
+                continue;
+            }
+
+            // Check if this cell is over it's capacity, making impossible to move its entities to another
+            // This basically means that this worker is unable to give away entities to lower the current 
+            // usage
+            // We will still continue to try to give away other cells from this worker
+            if (cell_info.entities.size() >= layer_info->maximum_entities_per_worker)
+            {
+                too_many_entities_on_same_cell = true;
+                ++coordinates_iter;
+                continue;
+            }
 
             /*
-            * Find the worker that have the lowest amount of entities and try to give him the ownership of the
-            * selected cell
+            * Go through each other worker and check if someone can assume the entities from this cell
             */
-            bool cell_has_switched_ownership = false;
-            for (auto& [density_key, worker_info] : layer_info.ordered_worker_density_info)
+            bool did_give_away_cell = false;
+            for (auto& [target_worker_density_key, target_worker_info] : layer_info->ordered_worker_density_info)
             {
-                // Make sure this worker is not over its capacity and has enough space
-                if (worker_info->global_entity_count + cell_info.entity_count > layer_info.maximum_entities_per_worker)
-                {
-                    // There is no point trying anymore, since the `ordered_grid_usage_info` is ordered by entity size
-                    // this is guaranteed to be the worker with the lowest number of entities, if it failed it means
-                    // no other worker will be able to accept the entities
-                    // Basically we need to try to create another worker for this layer
-                    cannot_continue = true;
-                    break;
-                }
-
-                // Do not try to move to itself
-                if (worker_info->worker_instance->GetId() == worker_instance_over_limit->worker_instance->GetId())
+                // Ignore self
+                if (target_worker_info->worker_instance == worker_instance_over_limit->worker_instance)
                 {
                     continue;
                 }
 
-                // Remove old entries from the ordered_worker_density_info
+                // Do not make the selected worker go over 70% of its capacity
+                if (target_worker_info->worker_cells_infos.entity_count + cell_info.entities.size() >= static_cast<uint32_t>(layer_info->maximum_entities_per_worker * 0.7))
                 {
-                    WorkerDensityKey over_limit_worker_key = { worker_instance_over_limit->global_entity_count, worker_instance_over_limit->worker_instance->GetId() };
-                    WorkerDensityKey target_worker_key     = { worker_info->global_entity_count, worker_info->worker_instance->GetId() };
-
-                    layer_info.ordered_worker_density_info.erase(over_limit_worker_key);
-                    layer_info.ordered_worker_density_info.erase(target_worker_key);
+                    continue;
                 }
 
-                // Update the entity count
-                worker_instance_over_limit->global_entity_count -= cell_info.entity_count;
-                worker_info->global_entity_count                += cell_info.entity_count;
+                WorkerDensityKey over_capacity_worker_density_key = WorkerDensityKey(*cell_info.worker_cells_infos[layer_info->layer_id]);
 
-                auto target_worker_info_iter    = layer_info.worker_instances.find(worker_info->worker_instance->GetId());
-                assert(target_worker_info_iter != layer_info.worker_instances.end());
-                auto* target_worker_info        = &target_worker_info_iter->second;
+                target_worker_info->worker_cells_infos.entity_count         += cell_info.entities.size();
+                worker_instance_over_limit->worker_cells_infos.entity_count -= cell_info.entities.size();
 
-                // Add the new cell into the target worker so it can keep track of it
-                // There is no need to remove the cell from the worker that is on limit because it will
-                // be removed after we leave the current loop
-                WorldCellWorkerInfo target_cell_info = cell_info;
-                target_cell_info.worker_instance     = worker_info->worker_instance.get();
-                target_cell_info.worker_id           = worker_info->worker_instance->GetId();
-                target_worker_info->ordered_cell_usage_info.insert(std::move(target_cell_info));
+                assert(worker_instance_over_limit->worker_cells_infos.coordinates_owned.find(cell_coordinate) != worker_instance_over_limit->worker_cells_infos.coordinates_owned.end());
+                assert(target_worker_info->worker_cells_infos.coordinates_owned.find(cell_coordinate) == target_worker_info->worker_cells_infos.coordinates_owned.end());
 
-                // Add new entries on the ordered_worker_density_info
+                // worker_instance_over_limit->worker_cells_infos.coordinates_owned.erase(cell_coordinate); This is done below, we are inside a loop!
+                target_worker_info->worker_cells_infos.coordinates_owned.insert(cell_coordinate);
+
                 {
-                    WorkerDensityKey new_over_limit_worker_key = { worker_instance_over_limit->global_entity_count, worker_instance_over_limit->worker_instance->GetId() };
-                    WorkerDensityKey new_target_worker_key     = { worker_info->global_entity_count, worker_info->worker_instance->GetId() };
-                        
-                    layer_info.ordered_worker_density_info.insert({ new_over_limit_worker_key, worker_instance_over_limit });
-                    layer_info.ordered_worker_density_info.insert({ new_target_worker_key, &target_worker_info_iter->second });
-                }                    
-
-                // Make the runtime aware that this ownership change is necessary
-                {
-                    WorldCellCoordinates cell_coordinates = cell_info.cell_coordinates;
-                    WorkerId             from_worker      = worker_instance_over_limit->worker_instance->GetId();
-                    WorkerId             to_worker        = worker_info->worker_instance->GetId();
-
-                    assert(m_cell_ownership_change_callback);
-                    m_cell_ownership_change_callback(cell_coordinates, layer_info.layer_id, from_worker, to_worker);
+                    auto over_capacity_extracted_worker_node = layer_info->ordered_worker_density_info.extract(over_capacity_worker_density_key);
+                    auto target_extracted_worker_node        = layer_info->ordered_worker_density_info.extract(target_worker_density_key);
+                    {
+                        over_capacity_extracted_worker_node.key().global_entity_count = worker_instance_over_limit->worker_cells_infos.entity_count;
+                        target_extracted_worker_node.key().global_entity_count        = target_worker_info->worker_cells_infos.entity_count;
+                        // over_capacity_extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(cell_coordinate);
+                    }
+                    layer_info->ordered_worker_density_info.insert(std::move(over_capacity_extracted_worker_node));
+                    layer_info->ordered_worker_density_info.insert(std::move(target_extracted_worker_node));
                 }
 
-                cell_has_switched_ownership = true;
+                // Tenho que tomar cuidado pra nao invalidar o target_worker_info ao mexer no ordered_worker_density_info
 
+                cell_info.worker_cells_infos[layer_info->layer_id] = &target_worker_info->worker_cells_infos;
+
+                assert(m_cell_ownership_change_callback);
+                m_cell_ownership_change_callback(
+                    cell_info.entities,
+                    cell_info.cell_coordinates,
+                    layer_info->layer_id,
+                    *worker_instance_over_limit->worker_instance,
+                    *target_worker_info->worker_instance);
+
+                did_give_away_cell = true;
                 break;
             }
 
-            if (cell_has_switched_ownership)
+            not_enough_space_on_other_workers |= !did_give_away_cell;
+            
+            if (did_give_away_cell)
             {
-                cell_info_iter = worker_instance_over_limit->ordered_cell_usage_info.erase(cell_info_iter);
+                coordinates_iter = worker_cells_infos.coordinates_owned.erase(coordinates_iter);
             }
-            else
+            else 
             {
-                ++cell_info_iter;
-            }  
+                ++coordinates_iter;
+            }
         }
 
-        // If we were not able to balance the entities between workers, check if at least we can request to create another worker
-        if (cannot_continue && layer_info.worker_instances.size() < layer_info.maximum_workers)
+        // If the current worker is still over its capacity 
+        if (worker_cells_infos.entity_count >= layer_info->maximum_entities_per_worker
+            && not_enough_space_on_other_workers)
         {
-            // Request to create another worker
             assert(m_worker_layer_request_callback);
-            m_worker_layer_request_callback(layer_info.layer_id);
+            m_worker_layer_request_callback(layer_info->layer_id);
         }
     }
 }

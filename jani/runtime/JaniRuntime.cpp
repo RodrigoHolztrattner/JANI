@@ -39,8 +39,6 @@ bool Jani::Runtime::Initialize()
     m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
     m_request_manager       = std::make_unique<RequestManager>();
 
-
-
     auto& worker_spawners = m_worker_spawner_collection.GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
@@ -68,15 +66,107 @@ bool Jani::Runtime::Initialize()
     }
 
     m_world_controller->RegisterCellOwnershipChangeCallback(
-        [](WorldCellCoordinates _cell_coordinates, LayerId _layer_id, WorkerId _current_worker_id, WorkerId _new_worker_id)
+        [&](const std::map<EntityId, Entity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
+            if (_layer_id != 0)
+            {
+                return;
+            }
 
+            ComponentId component_id = 0; // This should be done for all components, not only position
+
+            for (auto& [entity_id, entity] : _entities)
+            {
+                auto position_component = entity->GetComponentPayload(component_id);
+                if (!position_component)
+                {
+                    continue;
+                }
+
+                std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
+
+                {
+                    Message::WorkerAddComponentRequest add_component_request;
+                    add_component_request.entity_id         = entity->GetId();
+                    add_component_request.component_id      = component_id;
+                    add_component_request.component_payload = std::move(position_component.value());
+
+                    if (!m_request_manager->MakeRequest(
+                        *m_worker_connections,
+                        _new_worker.GetConnectionClientHash(),
+                        RequestType::WorkerAddComponent,
+                        add_component_request))
+                    {
+
+                    }
+                }
+
+                {
+                    Message::WorkerRemoveComponentRequest remove_component_request;
+                    remove_component_request.entity_id = entity->GetId();
+                    remove_component_request.component_id = component_id;
+
+                    if (!m_request_manager->MakeRequest(
+                        *m_worker_connections,
+                        _current_worker.GetConnectionClientHash(),
+                        RequestType::WorkerRemoveComponent,
+                        remove_component_request))
+                    {
+
+                    }
+                }
+            }
         });
 
     m_world_controller->RegisterEntityLayerOwnershipChangeCallback(
-        [](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        [&](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
+            if (_layer_id != 0)
+            {
+                return;
+            }
 
+            ComponentId component_id = 0; // This should be done for all components, not only position
+
+            auto position_component = _entity.GetComponentPayload(0);
+            if (!position_component)
+            {
+                std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
+                return;
+            }
+
+            // std::cout << "Runtime -> Entity crossed cell border entity_id{" << _entity.GetId() << "}, layer_id{" << _layer_id << "}" << std::endl;
+
+            {
+                Message::WorkerAddComponentRequest add_component_request;
+                add_component_request.entity_id         = _entity.GetId();
+                add_component_request.component_id      = component_id;
+                add_component_request.component_payload = std::move(position_component.value());
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    _new_worker.GetConnectionClientHash(),
+                    RequestType::WorkerAddComponent,
+                    add_component_request))
+                {
+
+                }
+            }
+
+            {
+                Message::WorkerRemoveComponentRequest remove_component_request;
+                remove_component_request.entity_id = _entity.GetId();
+                remove_component_request.component_id = component_id;
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    _current_worker.GetConnectionClientHash(),
+                    RequestType::WorkerRemoveComponent,
+                    remove_component_request))
+                {
+
+                }
+            }
         });
 
     m_world_controller->RegisterWorkerLayerRequestCallback(
@@ -251,41 +341,49 @@ void Jani::Runtime::Update()
                 auto& entity_map = m_database.GetEntities();
                 for (auto& [entity_id, entity] : entity_map)
                 {
+                    auto& cell_info = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates());
+                    
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
                         entity->GetWorldPosition(),
-                        0 });
+                        cell_info.GetWorkerForLayer(0).value()->GetId() });
                 }
 
                 {
                     _response_payload(get_entities_info_response);
                 }
             }
-            else if (_request.type == RequestType::RuntimeGetWorkersInfo)
+            else if (_request.type == RequestType::RuntimeGetCellsInfos)
             {
-                Message::RuntimeGetWorkersInfoRequest get_workers_info_request;
+                Message::RuntimeGetCellsInfosRequest get_cells_infos_request;
                 {
-                    _request_payload(get_workers_info_request);
+                    _request_payload(get_cells_infos_request);
                 }
 
-                Message::RuntimeGetWorkersInfoResponse get_workers_info_response;
-                get_workers_info_response.succeed = true;
+                Message::RuntimeGetCellsInfosResponse get_cells_infos_response;
+                get_cells_infos_response.succeed = true;
 
-                for (auto& [layer_id, bridge] : m_bridges)
+                auto& workers_infos_position_layer = m_world_controller->GetWorkersInfosForLayer(0);
+                int32_t worker_length              = m_deployment_config.GetWorkerLength();
+                for (auto& [worker_id, worker_info] : workers_infos_position_layer)
                 {
-                    auto& workers = bridge->GetWorkers();
-                    for (auto& [worker_id, worker_instance] : workers)
+                    for (auto& worker_coordinate : worker_info.worker_cells_infos.coordinates_owned)
                     {
-                        get_workers_info_response.worker_infos.push_back({
+                        auto& cell_info = m_world_controller->GetWorldCellInfo(worker_coordinate);
+
+                        auto  cell_world_position = m_world_controller->ConvertCellCoordinatesIntoPosition(worker_coordinate);
+                        auto  cell_rect           = WorldRect({ cell_world_position.x, cell_world_position.y, worker_length, worker_length });
+
+                        get_cells_infos_response.cells_infos.push_back({
                             worker_id,
-                            layer_id,
-                            worker_instance->GetWorldRect(),
-                            0 });
+                            0,
+                            cell_rect,
+                            cell_info.entities.size() });
                     }
                 }
 
                 {
-                    _response_payload(get_workers_info_response);
+                    _response_payload(get_cells_infos_response);
                 }
             }
         });
@@ -382,19 +480,6 @@ bool Jani::Runtime::TryAllocateNewWorker(
     // Check other layer requirements, as necessary
     // ...
 
-    auto worker_instance = std::make_unique<WorkerInstance>(
-        *this,
-        _layer_id,
-        _client_hash,
-        _is_user);
-
-    WorkerInstance* worker_instance_ptr = worker_instance.get();
-
-    if (!m_world_controller->AddWorkerForLayer(std::move(worker_instance), _layer_id))
-    {
-        return false;
-    }
-
     // Put a reference of this worker into the bridge, or make the worker knows what bridge it should reference?
     // worker_instance_ptr
 
@@ -408,6 +493,19 @@ bool Jani::Runtime::TryAllocateNewWorker(
     }
 
     auto& bridge = bridge_iter->second;
+
+    auto worker_instance = std::make_unique<WorkerInstance>(
+        *bridge,
+        _layer_id,
+        _client_hash,
+        _is_user);
+
+    WorkerInstance* worker_instance_ptr = worker_instance.get();
+
+    if (!m_world_controller->AddWorkerForLayer(std::move(worker_instance), _layer_id))
+    {
+        return false;
+    }
 
     // Add an entry into our worker instance mapping to provide future mapping between
     // worker messages and the bridge callbacks
@@ -477,8 +575,6 @@ bool Jani::Runtime::OnWorkerAddEntity(
 
             return false;
         }
-
-        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(requested_component_payload.component_id);
 
         Message::WorkerAddComponentRequest add_component_request;
         add_component_request.entity_id         = _entity_id;
@@ -633,6 +729,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
     if (_entity_world_position)
     {
         entity.value()->SetWorldPosition(_entity_world_position.value(), _worker_id);
+        m_world_controller->AcknowledgeEntityPositionChange(*entity.value(), _entity_world_position.value());
     }
 
     return true;

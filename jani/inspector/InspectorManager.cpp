@@ -51,15 +51,15 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
                     {
                         m_entities_infos = _response.GetResponse< Jani::Message::RuntimeGetEntitiesInfoResponse>();
 
-                        std::cout << "Inspector -> Received info about {" << m_entities_infos.entities_infos.size() << "} entities" << std::endl;
+                        // std::cout << "Inspector -> Received info about {" << m_entities_infos.entities_infos.size() << "} entities" << std::endl;
 
                         break;
                     }
-                    case Jani::RequestType::RuntimeGetWorkersInfo:
+                    case Jani::RequestType::RuntimeGetCellsInfos:
                     {
-                        m_workers_infos  = _response.GetResponse< Jani::Message::RuntimeGetWorkersInfoResponse>();
+                        m_cells_infos = _response.GetResponse< Jani::Message::RuntimeGetCellsInfosResponse>();
 
-                        std::cout << "Inspector -> Received info about {" << m_workers_infos.worker_infos.size() << "} workers" << std::endl;
+                        // std::cout << "Inspector -> Received info about {" << m_cells_infos.cells_infos.size() << "} cells infos" << std::endl;
 
                         break;
                     }
@@ -70,10 +70,10 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     }
     
     auto time_from_last_request_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_runtime_request_time).count();
-    if (time_from_last_request_ms > 1000)
+    if (time_from_last_request_ms > 100)
     {
         Jani::Message::RuntimeGetEntitiesInfoRequest get_entities_info_request;
-        Jani::Message::RuntimeGetWorkersInfoRequest get_workers_info_request;
+        Jani::Message::RuntimeGetCellsInfosRequest   get_cells_infos_request;
 
         if (!m_request_manager->MakeRequest(
             *m_runtime_connection,
@@ -85,10 +85,10 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
         if (!m_request_manager->MakeRequest(
             *m_runtime_connection,
-            Jani::RequestType::RuntimeGetWorkersInfo,
-            get_workers_info_request))
+            Jani::RequestType::RuntimeGetCellsInfos,
+            get_cells_infos_request))
         {
-            std::cout << "Inspector -> Failed to request entities infos" << std::endl;
+            std::cout << "Inspector -> Failed to request cells infos" << std::endl;
         }
 
         m_last_runtime_request_time = time_now;
@@ -105,10 +105,10 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     }
 
     // Discover the world size
-    float begin_x = -50;
-    float begin_y = -50;
-    float end_x = 50;
-    float end_y = 50;
+    float begin_x = 0;
+    float begin_y = 0;
+    float end_x   = 0;
+    float end_y   = 0;
 
     {
         for (auto& [entity_id, entity_position, entity_position_worker] : m_entities_infos.entities_infos)
@@ -119,19 +119,22 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             end_y   = std::max(end_y, static_cast<float>(entity_position.y));
         }
 
-        for (auto& [worker_id, layer_id, worker_rect, total_entities]: m_workers_infos.worker_infos)
+        for (auto& [worker_id, layer_id, worker_rect, total_entities]: m_cells_infos.cells_infos)
         {
             begin_x = std::min(begin_x, static_cast<float>(worker_rect.x));
-            begin_y = std::min(begin_y, static_cast<float>(worker_rect.y - worker_rect.height));
+            begin_y = std::min(begin_y, static_cast<float>(worker_rect.y));
             end_x   = std::max(end_x, worker_rect.x + static_cast<float>(worker_rect.width));
-            end_y   = std::max(end_y, static_cast<float>(worker_rect.y));
+            end_y   = std::max(end_y, worker_rect.y + static_cast<float>(worker_rect.height));
         }
     }
 
-    begin_x += m_scroll.x - 5;
-    begin_y += m_scroll.y - 5;
-    end_x += m_scroll.x + 5;
-    end_y += m_scroll.y + 5;
+    static float LargeGridSize = 128.0f;
+    static float MinorGridSize = 8;
+
+    begin_x += m_scroll.x - MinorGridSize;
+    begin_y += m_scroll.y - MinorGridSize;
+    end_x += m_scroll.x + MinorGridSize;
+    end_y += m_scroll.y + MinorGridSize;
 
     begin_x *= m_zoom_level;
     begin_y *= m_zoom_level;
@@ -140,8 +143,6 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
     auto DrawBackgroundLines = [](ImDrawList* _draw_list, ImVec2 _scroll, ImVec2 _position, ImVec2 _size, float _zoom_level)
     {
-        static float LargeGridSize = 80.0f;
-        static float MinorGridSize = 10;
         float line_padding            = -1.0f;
         float large_grid_size         = static_cast<float>(LargeGridSize) * _zoom_level;
         float minor_grid_size         = static_cast<float>(MinorGridSize) * _zoom_level;
@@ -177,7 +178,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     if (ImGui::Begin("World", &open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
     {
         std::string total_entities_text = "Entities: " + std::to_string(m_entities_infos.entities_infos.size());
-        std::string total_workers_text =  "Workers:  " + std::to_string(m_workers_infos.worker_infos.size());
+        std::string total_workers_text =  "Cells:  " + std::to_string(m_cells_infos.cells_infos.size());
         ImGui::Text(total_entities_text.c_str());
         ImGui::Text(total_workers_text.c_str());
 
@@ -190,15 +191,20 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
         for (auto& [entity_id, entity_position, entity_position_worker] : m_entities_infos.entities_infos)
         {
-            float  entity_size                 = 0.5f * m_zoom_level;
+            float  entity_size                 = 5.0f * m_zoom_level;
             auto   entity_color                = GetColorForIndex(entity_position_worker);
             ImVec2 entity_transformed_position = ImVec2(entity_position.x + m_scroll.x, entity_position.y + m_scroll.y);
             entity_transformed_position        = ImVec2(entity_transformed_position.x * m_zoom_level, entity_transformed_position.y * m_zoom_level);
 
-            ImGui::GetWindowDrawList()->AddCircle(entity_transformed_position, entity_size, ImColor(entity_color));
+            ImVec2 triangle_a = ImVec2(entity_transformed_position.x - entity_size / 3, entity_transformed_position.y + entity_size / 3);
+            ImVec2 triangle_b = ImVec2(entity_transformed_position.x, entity_transformed_position.y - entity_size / 3);
+            ImVec2 triangle_c = ImVec2(entity_transformed_position.x + entity_size / 3, entity_transformed_position.y + entity_size / 3);
+
+            ImGui::GetWindowDrawList()->AddQuad(triangle_a, triangle_b, triangle_c, triangle_a, ImColor(entity_color), 2);
         }
 
-        for (auto& [worker_id, layer_id, worker_rect, total_entities] : m_workers_infos.worker_infos)
+        int cell_render_index = 0;
+        for (auto& [worker_id, layer_id, worker_rect, total_entities] : m_cells_infos.cells_infos)
         {
             auto worker_color = GetColorForIndex(worker_id);
 
@@ -207,10 +213,12 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
                 continue;
             }
 
-            ImVec2 worker_transformed_position_begin = ImVec2(worker_rect.x + m_scroll.x - 5, worker_rect.y - worker_rect.height + m_scroll.y - 5);
-            ImVec2 worker_transformed_position_end   = ImVec2(worker_rect.x + worker_rect.width + m_scroll.x + 5, worker_rect.y + m_scroll.y + 5);
+            float  border                            = 0.2f;
+            ImVec2 worker_transformed_position_begin = ImVec2(worker_rect.x + m_scroll.x + border, worker_rect.y + m_scroll.y + border);
+            ImVec2 worker_transformed_position_end   = ImVec2(worker_rect.x + worker_rect.width + m_scroll.x - border, worker_rect.y + worker_rect.height + m_scroll.y - border);
             worker_transformed_position_begin        = ImVec2(worker_transformed_position_begin.x * m_zoom_level, worker_transformed_position_begin.y * m_zoom_level);
             worker_transformed_position_end          = ImVec2(worker_transformed_position_end.x * m_zoom_level, worker_transformed_position_end.y * m_zoom_level);
+            ImVec2 center_position                   = ImVec2((worker_transformed_position_end.x + worker_transformed_position_begin.x) / 2.0f, (worker_transformed_position_end.y + worker_transformed_position_begin.y) / 2.0f);
 
             ImGui::SetCursorScreenPos(ImVec2(worker_transformed_position_begin.x, worker_transformed_position_end.y));
             ImGui::TextColored(ImVec4(worker_color.x, worker_color.y, worker_color.z, 0.4), (std::string("worker_id: ") + std::to_string(worker_id)).c_str());
@@ -218,6 +226,11 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             ImGui::GetWindowDrawList()->AddRect(
                 worker_transformed_position_begin,
                 worker_transformed_position_end,
+                ImColor(worker_color));
+
+            ImGui::GetWindowDrawList()->AddCircle(
+                center_position,
+                0.3f * m_zoom_level,
                 ImColor(worker_color));
 
             ImGui::SetCursorScreenPos(worker_transformed_position_begin);
@@ -228,9 +241,14 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             {
                 std::string layer_id_text = "layer_id: " + std::to_string(layer_id);
                 std::string total_entities_text = "total_entities: " + std::to_string(total_entities);
+                std::string position_text = "position: {" + std::to_string(center_position.x) + ", " + std::to_string(center_position.y) + "}";
                 ImGui::BeginTooltip();
+                ImGui::PushID(cell_render_index);
                 ImGui::TextColored(ImVec4(worker_color.x + 0.2, worker_color.y + 0.2, worker_color.z + 0.2, 0.4), layer_id_text.c_str());
                 ImGui::TextColored(ImVec4(worker_color.x + 0.2, worker_color.y + 0.2, worker_color.z + 0.2, 0.4), total_entities_text.c_str());
+                ImGui::TextColored(ImVec4(worker_color.x + 0.2, worker_color.y + 0.2, worker_color.z + 0.2, 0.4), position_text.c_str());
+                ImGui::PopID();
+
                 ImGui::EndTooltip();
             }
         }

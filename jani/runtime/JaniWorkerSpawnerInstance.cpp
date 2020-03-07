@@ -62,6 +62,8 @@ void Jani::WorkerSpawnerInstance::AcknowledgeWorkerSpawn(LayerId _layer_id)
 
 bool Jani::WorkerSpawnerInstance::IsExpectingWorkerForLayer(LayerId _layer_id) const
 {
+    assert(_layer_id < MaximumLayers);
+
     if (m_worker_spawn_status[_layer_id] && !m_worker_spawn_status[_layer_id]->has_timed_out)
     {
         auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_worker_spawn_status[_layer_id]->request_time).count();
