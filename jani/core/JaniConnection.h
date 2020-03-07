@@ -791,6 +791,41 @@ namespace Jani
         friend RequestMaker;
         friend RequestManager;
 
+    private:
+
+        template<typename CharT, typename TraitsT = std::char_traits<CharT> >
+        class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT>
+        {
+            using Base = std::basic_streambuf<CharT, TraitsT>;
+
+        public:
+
+            vectorwrapbuf(std::vector<CharT>& vec)
+            {
+                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
+                this->setp(vec.data(), vec.data() + vec.size());
+            }
+            vectorwrapbuf(nonstd::span<CharT>& vec)
+            {
+                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
+                this->setp(vec.data(), vec.data() + vec.size());
+            }
+
+            Base::pos_type seekoff(
+                Base::off_type off,
+                std::ios_base::seekdir dir,
+                std::ios_base::openmode which = std::ios_base::in) override
+            {
+                if (dir == std::ios_base::cur)
+                    Base::gbump(off);
+                else if (dir == std::ios_base::end)
+                    Base::setg(Base::eback(), Base::egptr() + off, Base::egptr());
+                else if (dir == std::ios_base::beg)
+                    Base::setg(Base::eback(), Base::eback() + off, Base::egptr());
+                return (which == std::ios_base::in ? Base::gptr() : Base::pptr()) - Base::eback();
+            }
+        };
+
     protected:
         RequestPayload(cereal::BinaryInputArchive& _archive, const RequestInfo& _original_request)
             : original_request(_original_request)
@@ -798,16 +833,13 @@ namespace Jani
         {
         }
 
-        RequestPayload(cereal::BinaryOutputArchive& _archive, const RequestInfo& _original_request)
+        RequestPayload(
+            const RequestInfo&       _original_request, 
+            const Connection<>&      _connection, 
+            Connection<>::ClientHash _client_hash, 
+            std::vector<char>&       _response_buffer)
             : original_request(_original_request)
-            , output_archive(&_archive)
-        {
-        }
-
-        RequestPayload(cereal::BinaryInputArchive& _in_archive, cereal::BinaryOutputArchive& _out_archive, const RequestInfo& _original_request)
-            : original_request(_original_request)
-            , input_archive(&_in_archive)
-            , output_archive(&_out_archive)
+            , output_data({ &_connection, _client_hash, &_response_buffer })
         {
         }
 
@@ -821,6 +853,7 @@ namespace Jani
             ResponsePayloadType temp_response_object;
 
             assert(input_archive);
+            assert(sizeof(ResponsePayloadType) < Connection<>::MaximumDatagramSize);
 
             {
                 (*input_archive.value())(temp_response_object);
@@ -836,19 +869,42 @@ namespace Jani
         }
 
         template<typename ResponsePayloadType>
-        void SetResponse(const ResponsePayloadType& _response) const
+        void PushResponse(const ResponsePayloadType& _response)
         {
-            {
-                assert(output_archive);
+            assert(output_data);
+            assert(sizeof(ResponsePayloadType) < Connection<>::MaximumDatagramSize);
+                
+            output_data->response_buffer->clear();
+            output_data->response_buffer->resize(Connection<>::MaximumDatagramSize);
 
-                (*output_archive.value())(_response);
+            vectorwrapbuf<char>         out_data_buffer(*output_data->response_buffer);
+            std::ostream                out_stream(&out_data_buffer);
+
+            {
+                cereal::BinaryOutputArchive out_archive(out_stream);
+
+                out_archive(original_request);
+
+                bool is_request = false;
+                out_archive(is_request);
+
+                out_archive(_response);
             }
+
+            output_data->connection->Send(output_data->response_buffer->data(), out_stream.tellp(), output_data->client_hash);
         }
 
     private:
 
-        std::optional<cereal::BinaryInputArchive*>  input_archive;
-        std::optional<cereal::BinaryOutputArchive*> output_archive;
+        struct OutputData
+        {
+            const Connection<>*      connection;
+            Connection<>::ClientHash client_hash;
+            std::vector<char>*       response_buffer;
+        };
+
+        std::optional<cereal::BinaryInputArchive*> input_archive;
+        std::optional<OutputData>                  output_data;
     };
 
     using ResponsePayload = RequestPayload;
@@ -954,24 +1010,14 @@ namespace Jani
 
                     if (is_request && _request_callback)
                     {
-                        m_temporary_response_buffer.clear();
-                        m_temporary_response_buffer.resize(Connection<>::MaximumDatagramSize);
-
-                        vectorwrapbuf<char> out_data_buffer(m_temporary_response_buffer);
-                        std::ostream        out_stream(&out_data_buffer);
-                        cereal::BinaryOutputArchive out_archive(out_stream);
-
-                        out_archive(original_request);
-
-                        is_request = false;
-                        out_archive(is_request);
-
                         RequestPayload  request_payload(in_archive, original_request);
-                        ResponsePayload response_payload(out_archive, original_request);
+                        ResponsePayload response_payload(
+                            original_request, 
+                            _connection,
+                            _client_hash.has_value() ? _client_hash.value() : 0,
+                            m_temporary_response_buffer);
 
                         _request_callback(_client_hash, original_request, request_payload, response_payload);
-
-                        _connection.Send(m_temporary_response_buffer.data(), out_stream.tellp(), _client_hash.has_value() ? _client_hash.value() : 0);
                     }
                     else if(_response_callback)
                     {

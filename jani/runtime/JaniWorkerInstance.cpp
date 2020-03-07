@@ -91,7 +91,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -112,7 +112,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
                 result ? result.value() + entity_id_reserve_request.total_ids : 0
             };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -129,7 +129,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -145,7 +145,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -163,7 +163,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -180,7 +180,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -199,7 +199,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -224,7 +224,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { true };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;
@@ -245,7 +245,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload.SetResponse(std::move(response));
+                _response_payload.PushResponse(std::move(response));
             }
 
             break;

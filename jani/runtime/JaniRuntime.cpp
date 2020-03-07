@@ -226,7 +226,7 @@ void Jani::Runtime::Update()
 
             Message::RuntimeClientAuthenticationResponse authentication_response = { worker_allocation_result };
             {
-                _response_payload.SetResponse(std::move(authentication_response));
+                _response_payload.PushResponse(std::move(authentication_response));
             }
         }
         // [[unlikely]]
@@ -254,7 +254,7 @@ void Jani::Runtime::Update()
 
             Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 7 };
             {
-                _response_payload.SetResponse(std::move(authentication_response));
+                _response_payload.PushResponse(std::move(authentication_response));
             }
         }
         else
@@ -321,22 +321,22 @@ void Jani::Runtime::Update()
             {
                 auto get_entities_info_request = _request_payload.GetRequest<Message::RuntimeGetEntitiesInfoRequest>();
 
-                Message::RuntimeGetEntitiesInfoResponse get_entities_info_response;
-                get_entities_info_response.succeed = true;
+
 
                 auto& entity_map = m_database.GetEntities();
                 for (auto& [entity_id, entity] : entity_map)
                 {
                     auto& cell_info = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates());
                     
+                    Message::RuntimeGetEntitiesInfoResponse get_entities_info_response;
+                    get_entities_info_response.succeed = true;
+
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
                         entity->GetWorldPosition(),
                         cell_info.GetWorkerForLayer(0).value()->GetId() });
-                }
 
-                {
-                    _response_payload.SetResponse(std::move(get_entities_info_response));
+                    _response_payload.PushResponse(std::move(get_entities_info_response));
                 }
             }
             else if (_request.type == RequestType::RuntimeGetCellsInfos)
@@ -366,7 +366,7 @@ void Jani::Runtime::Update()
                 }
 
                 {
-                    _response_payload.SetResponse(std::move(get_cells_infos_response));
+                    _response_payload.PushResponse(std::move(get_cells_infos_response));
                 }
             }
         });

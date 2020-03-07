@@ -502,7 +502,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                 Message::WorkerDefaultResponse response = { true };
                 {
-                    _response_payload.SetResponse(std::move(response));
+                    _response_payload.PushResponse(std::move(response));
                 }
             });
     }

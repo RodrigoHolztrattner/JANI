@@ -85,7 +85,7 @@ int main(int _argc, char* _argv[])
 
                         Jani::Message::WorkerSpawnResponse authentication_response = { result };
                         {
-                            _response_payload.SetResponse(std::move(authentication_response));
+                            _response_payload.PushResponse(std::move(authentication_response));
                         }
                     }
                 }
