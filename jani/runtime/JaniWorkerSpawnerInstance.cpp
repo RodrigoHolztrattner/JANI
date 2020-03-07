@@ -89,13 +89,13 @@ void Jani::WorkerSpawnerInstance::Update()
 
         m_request_manager.Update(
             *m_connection, 
-            [](auto _client_hash, const Request& _request, const RequestResponse& _response)
+            [](auto _client_hash, const RequestInfo& _request, const ResponsePayload& _response_payload)
             {
                 switch (_request.type)
                 {
                     case RequestType::SpawnWorkerForLayer:
                     {
-                        auto worker_spawn_response = _response.GetResponse<Message::WorkerSpawnResponse>();
+                        auto worker_spawn_response = _response_payload.GetResponse<Message::WorkerSpawnResponse>();
                         
                         // Bla
                         // ...

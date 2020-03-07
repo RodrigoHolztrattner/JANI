@@ -769,7 +769,7 @@ namespace Jani
         RuntimeGetCellsInfos,
     };
 
-    class Request
+    class RequestInfo
     {
     public:
 
@@ -786,38 +786,72 @@ namespace Jani
         RequestIndex request_index = std::numeric_limits<RequestIndex>::max();
     };
 
-    struct RequestResponse
+    struct RequestPayload
     {
         friend RequestMaker;
         friend RequestManager;
 
     protected:
-        RequestResponse(cereal::BinaryInputArchive& _archive, const Request& _original_request)
+        RequestPayload(cereal::BinaryInputArchive& _archive, const RequestInfo& _original_request)
             : original_request(_original_request)
-            , archive(_archive)
+            , input_archive(&_archive)
+        {
+        }
+
+        RequestPayload(cereal::BinaryOutputArchive& _archive, const RequestInfo& _original_request)
+            : original_request(_original_request)
+            , output_archive(&_archive)
+        {
+        }
+
+        RequestPayload(cereal::BinaryInputArchive& _in_archive, cereal::BinaryOutputArchive& _out_archive, const RequestInfo& _original_request)
+            : original_request(_original_request)
+            , input_archive(&_in_archive)
+            , output_archive(&_out_archive)
         {
         }
 
     public:
 
-        const Request& original_request;
+        const RequestInfo& original_request;
 
         template<typename ResponsePayloadType>
         ResponsePayloadType GetResponse() const
         {
             ResponsePayloadType temp_response_object;
 
+            assert(input_archive);
+
             {
-                archive(temp_response_object);
+                (*input_archive.value())(temp_response_object);
             }
 
             return std::move(temp_response_object);
         }
 
+        template<typename ResponsePayloadType>
+        ResponsePayloadType GetRequest() const
+        {
+            return std::move(GetResponse<ResponsePayloadType>());
+        }
+
+        template<typename ResponsePayloadType>
+        void SetResponse(const ResponsePayloadType& _response) const
+        {
+            {
+                assert(output_archive);
+
+                (*output_archive.value())(_response);
+            }
+        }
+
     private:
 
-        cereal::BinaryInputArchive& archive;
+        std::optional<cereal::BinaryInputArchive*>  input_archive;
+        std::optional<cereal::BinaryOutputArchive*> output_archive;
     };
+
+    using ResponsePayload = RequestPayload;
 
     class RequestManager
     {
@@ -854,6 +888,9 @@ namespace Jani
             }
         };
 
+        using ResponseCallback = std::function<void(std::optional<Connection<>::ClientHash>, const RequestInfo&, const ResponsePayload&)>;
+        using RequestCallback  = std::function<void(std::optional<Connection<>::ClientHash>, const RequestInfo&, const RequestPayload&, ResponsePayload&)>;
+
     public:
 
         template<typename RequestPayloadType>
@@ -865,7 +902,7 @@ namespace Jani
             vectorwrapbuf<char> data_buffer(m_temporary_request_buffer);
             std::ostream        out_stream(&data_buffer);
 
-            Request new_request;
+            RequestInfo new_request;
             new_request.type          = _request_type;
             new_request.request_index = m_request_counter++;
 
@@ -887,20 +924,20 @@ namespace Jani
             return MakeRequest(_connection, 0, _request_type, _payload);
         }
 
-        void Update(const Connection<>& _connection, std::function<void(std::optional<Connection<>::ClientHash>, const Request&, const RequestResponse&)> _response_callback)
+        void Update(const Connection<>& _connection, ResponseCallback _response_callback)
         {
             return Update(_connection, _response_callback, {});
         }
 
-        void Update(const Connection<>& _connection, std::function<void(std::optional<Connection<>::ClientHash>, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _request_callback)
+        void Update(const Connection<>& _connection, RequestCallback _request_callback)
         {
             return Update(_connection, {}, _request_callback);
         }
 
         void Update(
-            const Connection<>&                                                                                                                     _connection, 
-            std::function<void(std::optional<Connection<>::ClientHash>, const Request&, const RequestResponse&)>                                    _response_callback,
-            std::function<void(std::optional<Connection<>::ClientHash>, const Request&, cereal::BinaryInputArchive&, cereal::BinaryOutputArchive&)> _request_callback)
+            const Connection<>& _connection, 
+            ResponseCallback    _response_callback,
+            RequestCallback     _request_callback)
         {
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
@@ -909,7 +946,7 @@ namespace Jani
                     std::istream        in_stream(&data_buffer);
                     cereal::BinaryInputArchive in_archive(in_stream);
 
-                    Request original_request;
+                    RequestInfo original_request;
                     in_archive(original_request);
 
                     bool is_request = {};
@@ -929,15 +966,18 @@ namespace Jani
                         is_request = false;
                         out_archive(is_request);
 
-                        _request_callback(_client_hash, original_request, in_archive, out_archive);
+                        RequestPayload  request_payload(in_archive, original_request);
+                        ResponsePayload response_payload(out_archive, original_request);
+
+                        _request_callback(_client_hash, original_request, request_payload, response_payload);
 
                         _connection.Send(m_temporary_response_buffer.data(), out_stream.tellp(), _client_hash.has_value() ? _client_hash.value() : 0);
                     }
                     else if(_response_callback)
                     {
-                        RequestResponse request_response(in_archive, original_request);
+                        ResponsePayload response_payload(in_archive, original_request);
 
-                        _response_callback(_client_hash, original_request, request_response);
+                        _response_callback(_client_hash, original_request, response_payload);
                     }
                     else
                     {
@@ -949,9 +989,9 @@ namespace Jani
 
     private:
 
-        Request::RequestIndex m_request_counter = 0;
-        std::vector<char>     m_temporary_request_buffer;
-        std::vector<char>     m_temporary_response_buffer;
+        RequestInfo::RequestIndex m_request_counter = 0;
+        std::vector<char>         m_temporary_request_buffer;
+        std::vector<char>         m_temporary_response_buffer;
     };
 
 } // namespace Jani

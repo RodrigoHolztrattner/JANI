@@ -89,7 +89,7 @@ public: // MAIN METHODS //
     * This function will process a request from the counterpart worker and attempt to resolve it, returning
     * a response whenever applicable
     */
-    void ProcessRequest(const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload);
+    void ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload);
 
 protected:
 

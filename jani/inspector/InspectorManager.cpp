@@ -43,21 +43,29 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
         m_request_manager->Update(
             *m_runtime_connection,
-            [&](auto _client_hash, const Jani::Request& _original_request, const Jani::RequestResponse& _response) -> void
+            [&](auto _client_hash, const Jani::RequestInfo& _request_info, const Jani::ResponsePayload& _resonse_payload) -> void
             {
-                switch (_original_request.type)
+                switch (_request_info.type)
                 {
                     case Jani::RequestType::RuntimeGetEntitiesInfo:
                     {
-                        m_entities_infos = _response.GetResponse< Jani::Message::RuntimeGetEntitiesInfoResponse>();
+                        auto infos = _resonse_payload.GetResponse< Jani::Message::RuntimeGetEntitiesInfoResponse>();
+                        for (auto& [entity_id, world_position, worker_id] : infos.entities_infos)
+                        {
+                            EntityInfo entity_info;
+                            entity_info.id                             = entity_id;
+                            entity_info.world_position                 = world_position;
+                            entity_info.worker_id                      = worker_id;
+                            entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
 
-                        // std::cout << "Inspector -> Received info about {" << m_entities_infos.entities_infos.size() << "} entities" << std::endl;
+                            m_entities_infos[entity_id] = std::move(entity_info);
+                        }
 
                         break;
                     }
                     case Jani::RequestType::RuntimeGetCellsInfos:
                     {
-                        m_cells_infos = _response.GetResponse< Jani::Message::RuntimeGetCellsInfosResponse>();
+                        m_cells_infos = _resonse_payload.GetResponse< Jani::Message::RuntimeGetCellsInfosResponse>();
 
                         // std::cout << "Inspector -> Received info about {" << m_cells_infos.cells_infos.size() << "} cells infos" << std::endl;
 
@@ -111,12 +119,12 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     float end_y   = 0;
 
     {
-        for (auto& [entity_id, entity_position, entity_position_worker] : m_entities_infos.entities_infos)
+        for (auto& [entity_id, entity_info] : m_entities_infos)
         {
-            begin_x = std::min(begin_x, static_cast<float>(entity_position.x));
-            begin_y = std::min(begin_y, static_cast<float>(entity_position.y));
-            end_x   = std::max(end_x, static_cast<float>(entity_position.x));
-            end_y   = std::max(end_y, static_cast<float>(entity_position.y));
+            begin_x = std::min(begin_x, static_cast<float>(entity_info.world_position.x));
+            begin_y = std::min(begin_y, static_cast<float>(entity_info.world_position.y));
+            end_x   = std::max(end_x, static_cast<float>(entity_info.world_position.x));
+            end_y   = std::max(end_y, static_cast<float>(entity_info.world_position.y));
         }
 
         for (auto& [worker_id, layer_id, worker_rect, total_entities]: m_cells_infos.cells_infos)
@@ -177,7 +185,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
     if (ImGui::Begin("World", &open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
     {
-        std::string total_entities_text = "Entities: " + std::to_string(m_entities_infos.entities_infos.size());
+        std::string total_entities_text = "Entities: " + std::to_string(m_entities_infos.size());
         std::string total_workers_text =  "Cells:  " + std::to_string(m_cells_infos.cells_infos.size());
         ImGui::Text(total_entities_text.c_str());
         ImGui::Text(total_workers_text.c_str());
@@ -189,11 +197,11 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             ImVec2(end_x - begin_x, end_y - begin_y), 
             m_zoom_level);
 
-        for (auto& [entity_id, entity_position, entity_position_worker] : m_entities_infos.entities_infos)
+        for (auto& [entity_id, entity_info] : m_entities_infos)
         {
             float  entity_size                 = 5.0f * m_zoom_level;
-            auto   entity_color                = GetColorForIndex(entity_position_worker);
-            ImVec2 entity_transformed_position = ImVec2(entity_position.x + m_scroll.x, entity_position.y + m_scroll.y);
+            auto   entity_color                = GetColorForIndex(entity_info.worker_id);
+            ImVec2 entity_transformed_position = ImVec2(entity_info.world_position.x + m_scroll.x, entity_info.world_position.y + m_scroll.y);
             entity_transformed_position        = ImVec2(entity_transformed_position.x * m_zoom_level, entity_transformed_position.y * m_zoom_level);
 
             ImVec2 triangle_a = ImVec2(entity_transformed_position.x - entity_size / 3, entity_transformed_position.y + entity_size / 3);

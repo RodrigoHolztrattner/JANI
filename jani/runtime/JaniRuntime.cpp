@@ -196,11 +196,11 @@ void Jani::Runtime::Update()
     m_world_controller->Update();
 
     auto ProcessWorkerRequest = [&](
-        auto                         _client_hash, 
-        bool                         _is_user, 
-        const Request&               _request, 
-        cereal::BinaryInputArchive&  _request_payload, 
-        cereal::BinaryOutputArchive& _response_payload)
+        auto                  _client_hash, 
+        bool                  _is_user, 
+        const RequestInfo&    _request, 
+        const RequestPayload& _request_payload, 
+        ResponsePayload&      _response_payload)
     {
         // Since we are always the server, there is no option for the client hash to be invalid
         if (!_client_hash)
@@ -212,10 +212,7 @@ void Jani::Runtime::Update()
         // [[unlikely]]
         if (_request.type == RequestType::RuntimeClientAuthentication)
         {
-            Message::RuntimeClientAuthenticationRequest authentication_request;
-            {
-                _request_payload(authentication_request);
-            }
+            auto authentication_request = _request_payload.GetRequest<Message::RuntimeClientAuthenticationRequest>();
 
             // Authenticate this worker
             // ...
@@ -229,16 +226,13 @@ void Jani::Runtime::Update()
 
             Message::RuntimeClientAuthenticationResponse authentication_response = { worker_allocation_result };
             {
-                _response_payload(authentication_response);
+                _response_payload.SetResponse(std::move(authentication_response));
             }
         }
         // [[unlikely]]
         else if (_request.type == RequestType::RuntimeAuthentication)
         {
-            Message::RuntimeAuthenticationRequest authentication_request;
-            {
-                _request_payload(authentication_request);
-            }
+            auto authentication_request = _request_payload.GetRequest<Message::RuntimeAuthenticationRequest>();
 
             // Authenticate this worker
             // ...
@@ -260,7 +254,7 @@ void Jani::Runtime::Update()
 
             Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 7 };
             {
-                _response_payload(authentication_response);
+                _response_payload.SetResponse(std::move(authentication_response));
             }
         }
         else
@@ -279,11 +273,11 @@ void Jani::Runtime::Update()
 
     m_request_manager->Update(
         *m_client_connections, 
-        [](auto _client_hash, const Request& _request, const RequestResponse& _response)
+        [](auto _client_hash, const RequestInfo& _request, const ResponsePayload& _response_payload)
         {
             // Currently we don't read from worker responses
         }, 
-        [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+        [&](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
         {
             ProcessWorkerRequest(
                 _client_hash,
@@ -295,11 +289,11 @@ void Jani::Runtime::Update()
 
     m_request_manager->Update(
         *m_worker_connections,
-        [](auto _client_hash, const Request& _request, const RequestResponse& _response)
+        [](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload)
         {
             // Currently we don't read from worker responses
         },
-        [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+        [&](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
         {
             ProcessWorkerRequest(
                 _client_hash,
@@ -311,11 +305,11 @@ void Jani::Runtime::Update()
 
     m_request_manager->Update(
         *m_inspector_connections,
-        [](auto _client_hash, const Request& _request, const RequestResponse& _response)
+        [](auto _client_hash, const RequestInfo& _request, const ResponsePayload& _response_payload)
         {
             // Currently we don't read from inspector responses
         },
-        [&](auto _client_hash, const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+        [&](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
         {
             // Since we are always the server, there is no option for the client hash to be invalid
             if (!_client_hash)
@@ -325,10 +319,7 @@ void Jani::Runtime::Update()
 
             if (_request.type == RequestType::RuntimeGetEntitiesInfo)
             {
-                Message::RuntimeGetEntitiesInfoRequest get_entities_info_request;
-                {
-                    _request_payload(get_entities_info_request);
-                }
+                auto get_entities_info_request = _request_payload.GetRequest<Message::RuntimeGetEntitiesInfoRequest>();
 
                 Message::RuntimeGetEntitiesInfoResponse get_entities_info_response;
                 get_entities_info_response.succeed = true;
@@ -345,15 +336,12 @@ void Jani::Runtime::Update()
                 }
 
                 {
-                    _response_payload(get_entities_info_response);
+                    _response_payload.SetResponse(std::move(get_entities_info_response));
                 }
             }
             else if (_request.type == RequestType::RuntimeGetCellsInfos)
             {
-                Message::RuntimeGetCellsInfosRequest get_cells_infos_request;
-                {
-                    _request_payload(get_cells_infos_request);
-                }
+                auto get_cells_infos_request = _request_payload.GetRequest<Message::RuntimeGetCellsInfosRequest>();
 
                 Message::RuntimeGetCellsInfosResponse get_cells_infos_response;
                 get_cells_infos_response.succeed = true;
@@ -378,7 +366,7 @@ void Jani::Runtime::Update()
                 }
 
                 {
-                    _response_payload(get_cells_infos_response);
+                    _response_payload.SetResponse(std::move(get_cells_infos_response));
                 }
             }
         });

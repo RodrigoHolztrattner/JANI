@@ -27,7 +27,7 @@ int main(int _argc, char* _argv[])
 
     std::cout << "Inspector -> Disconnected from the server!" << std::endl;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     return 0;
 }

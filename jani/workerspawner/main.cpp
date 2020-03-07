@@ -64,16 +64,13 @@ int main(int _argc, char* _argv[])
 
         request_manager.Update(
             runtime_connection,
-            [&](auto _client_hash, const Jani::Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+            [&](auto _client_hash, const Jani::RequestInfo& _request, const Jani::RequestPayload& _request_payload, Jani::ResponsePayload& _response_payload)
             {
                 switch (_request.type)
                 {
                     case Jani::RequestType::SpawnWorkerForLayer:
                     {
-                        Jani::Message::WorkerSpawnRequest worker_spawn_request;
-                        {
-                            _request_payload(worker_spawn_request);
-                        }
+                        auto worker_spawn_request = _request_payload.GetRequest<Jani::Message::WorkerSpawnRequest>();
 
                         std::cout << "WorkerSpawner -> Received spawn request: runtime_ip{" << worker_spawn_request.runtime_ip << "}, runtime_listen_port{" << worker_spawn_request.runtime_worker_connection_port << "}, layer_id{" << worker_spawn_request.layer_id << "}" << std::endl;
 
@@ -88,7 +85,7 @@ int main(int _argc, char* _argv[])
 
                         Jani::Message::WorkerSpawnResponse authentication_response = { result };
                         {
-                            _response_payload(authentication_response);
+                            _response_payload.SetResponse(std::move(authentication_response));
                         }
                     }
                 }

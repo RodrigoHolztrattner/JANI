@@ -316,11 +316,11 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
         m_request_manager.Update(
             *m_bridge_connection,
-            [&](auto _client_hash, const Jani::Request& _original_request, const Jani::RequestResponse& _response) -> void
+            [&](auto _client_hash, const Jani::RequestInfo& _request_info, const Jani::ResponsePayload& _response_payload) -> void
             {
                 // Check for internal responses
                 bool is_internal_response = false;
-                switch (_original_request.type)
+                switch (_request_info.type)
                 {
                     case Jani::RequestType::RuntimeWorkerReportAcknowledge:
                     {
@@ -350,11 +350,11 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 }
 
                 // RuntimeDefaultResponse
-                switch (_original_request.type)
+                switch (_request_info.type)
                 {
                     case Jani::RequestType::RuntimeAuthentication:
                     {
-                        auto response = _response.GetResponse<Jani::Message::RuntimeAuthenticationResponse>();
+                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeAuthenticationResponse>();
 
                         if (response.succeed)
                         {
@@ -371,7 +371,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     case Jani::RequestType::RuntimeLogMessage:
                     {
-                        auto response = _response.GetResponse<Jani::Message::RuntimeDefaultResponse>();
+                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeDefaultResponse>();
                         auto callback = std::get_if<ResponseCallback<Message::RuntimeDefaultResponse>>((response_callback));
                         if (callback)
                         {
@@ -381,7 +381,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     case Jani::RequestType::RuntimeReserveEntityIdRange:
                     {
-                        auto response = _response.GetResponse<Jani::Message::RuntimeReserveEntityIdRangeResponse>();
+                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeReserveEntityIdRangeResponse>();
                         auto callback = std::get_if<ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>>((response_callback));
                         if (callback)
                         {
@@ -395,7 +395,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     case Jani::RequestType::RuntimeRemoveComponent:
                     case Jani::RequestType::RuntimeComponentUpdate:
                     {
-                        auto response = _response.GetResponse<Jani::Message::RuntimeDefaultResponse>();
+                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeDefaultResponse>();
                         auto callback = std::get_if<ResponseCallback<Message::RuntimeDefaultResponse>>((response_callback));
                         if (callback)
                         {
@@ -421,18 +421,15 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 }
             },
             [&](auto                         _client_hash,
-                const Request&               _request,
-                cereal::BinaryInputArchive&  _request_payload,
-                cereal::BinaryOutputArchive& _response_payload)
+                const RequestInfo&           _request_info,
+                const Jani::RequestPayload& _request_payload,
+                Jani::ResponsePayload&      _response_payload)
             {
-                switch (_request.type)
+                switch (_request_info.type)
                 {
                     case RequestType::WorkerAddComponent:
                     {
-                        Message::WorkerAddComponentRequest add_component_request;
-                        {
-                            _request_payload(add_component_request);
-                        }
+                        auto add_component_request = _request_payload.GetRequest<Message::WorkerAddComponentRequest>();
 
                         // Check if we already have the entity created
                         auto entity_iter = m_server_entity_to_local_map.find(add_component_request.entity_id);
@@ -455,10 +452,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     case RequestType::WorkerRemoveComponent:
                     {
-                        Message::WorkerRemoveComponentRequest remove_component_request;
-                        {
-                            _request_payload(remove_component_request);
-                        }
+                        auto remove_component_request = _request_payload.GetRequest<Message::WorkerRemoveComponentRequest>();
 
                         auto entity_iter = m_server_entity_to_local_map.find(remove_component_request.entity_id);
                         if (entity_iter != m_server_entity_to_local_map.end())
@@ -508,7 +502,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                 Message::WorkerDefaultResponse response = { true };
                 {
-                    _response_payload(response);
+                    _response_payload.SetResponse(std::move(response));
                 }
             });
     }

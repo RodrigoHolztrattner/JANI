@@ -74,16 +74,13 @@ void Jani::WorkerInstance::ResetOverCapacityFlag()
     m_is_over_capacity = false;
 }
 
-void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::BinaryInputArchive& _request_payload, cereal::BinaryOutputArchive& _response_payload)
+void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
 {
     switch (_request.type)
     {
         case RequestType::RuntimeLogMessage:
         {
-            Message::RuntimeLogMessageRequest log_request;
-            {
-                _request_payload(log_request);
-            }
+            auto log_request = _request_payload.GetRequest<Message::RuntimeLogMessageRequest>();
 
             bool result = m_bridge.OnWorkerLogMessage(
                 *this, 
@@ -94,17 +91,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeReserveEntityIdRange:
         {
-            Message::RuntimeReserveEntityIdRangeRequest entity_id_reserve_request;
-            {
-                _request_payload(entity_id_reserve_request);
-            }
+            auto entity_id_reserve_request = _request_payload.GetRequest<Message::RuntimeReserveEntityIdRangeRequest>();
 
             auto result = m_bridge.OnWorkerReserveEntityIdRange(
                 *this,
@@ -118,17 +112,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
                 result ? result.value() + entity_id_reserve_request.total_ids : 0
             };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeAddEntity:
         {
-            Message::RuntimeAddEntityRequest add_entity_request;
-            {
-                _request_payload(add_entity_request);
-            }
+            auto add_entity_request = _request_payload.GetRequest<Message::RuntimeAddEntityRequest>();
 
             bool result = m_bridge.OnWorkerAddEntity(
                 *this,
@@ -138,17 +129,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeRemoveEntity:
         {
-            Message::RuntimeRemoveEntityRequest remove_entity_request;
-            {
-                _request_payload(remove_entity_request);
-            }
+            auto remove_entity_request = _request_payload.GetRequest<Message::RuntimeRemoveEntityRequest>();
 
             bool result = m_bridge.OnWorkerRemoveEntity(
                 *this,
@@ -157,17 +145,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeAddComponent:
         {
-            Message::RuntimeAddComponentRequest add_component_request;
-            {
-                _request_payload(add_component_request);
-            }
+            auto add_component_request = _request_payload.GetRequest<Message::RuntimeAddComponentRequest>();
 
             bool result = m_bridge.OnWorkerAddComponent(
                 *this,
@@ -178,17 +163,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeRemoveComponent:
         {
-            Message::RuntimeRemoveComponentRequest remove_component_request;
-            {
-                _request_payload(remove_component_request);
-            }
+            auto remove_component_request = _request_payload.GetRequest<Message::RuntimeRemoveComponentRequest>();
 
             bool result = m_bridge.OnWorkerRemoveComponent(
                 *this,
@@ -198,17 +180,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeComponentUpdate:
         {
-            Message::RuntimeComponentUpdateRequest component_update_request;
-            {
-                _request_payload(component_update_request);
-            }
+            auto component_update_request = _request_payload.GetRequest<Message::RuntimeComponentUpdateRequest>();
 
             bool result = m_bridge.OnWorkerComponentUpdate(
                 *this,
@@ -220,17 +199,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeWorkerReportAcknowledge:
         {
-            Message::RuntimeWorkerReportAcknowledgeRequest component_report_acknowledge_request;
-            {
-                _request_payload(component_report_acknowledge_request);
-            }
+            auto component_report_acknowledge_request = _request_payload.GetRequest<Message::RuntimeWorkerReportAcknowledgeRequest>();
 
             m_area                = component_report_acknowledge_request.worker_rect ? component_report_acknowledge_request.worker_rect.value() : WorldRect();
             m_total_over_capacity = component_report_acknowledge_request.total_entities_over_capacity;
@@ -248,17 +224,14 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { true };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;
         }
         case RequestType::RuntimeComponentQuery:
         {
-            Message::RuntimeComponentQueryRequest component_query_request;
-            {
-                _request_payload(component_query_request);
-            }
+            auto component_query_request = _request_payload.GetRequest<Message::RuntimeComponentQueryRequest>();
 
 #if 0
             bool result = m_bridge.OnWorkerComponentQuery(
@@ -272,7 +245,7 @@ void Jani::WorkerInstance::ProcessRequest(const Request& _request, cereal::Binar
 
             Message::RuntimeDefaultResponse response = { result };
             {
-                _response_payload(response);
+                _response_payload.SetResponse(std::move(response));
             }
 
             break;

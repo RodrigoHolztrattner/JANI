@@ -26,7 +26,23 @@ class Renderer;
 ////////////////////////////////////////////////////////////////////////////////
 class InspectorManager
 {
+    struct EntityInfo
+    {
+        EntityId      id;
+        WorldPosition world_position;
+        WorkerId      worker_id;
 
+        std::chrono::time_point<std::chrono::steady_clock> last_update_received_timestamp = std::chrono::steady_clock::now();
+    };
+
+    /*
+    
+auto time_from_last_update_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
+                auto time_elapsed_for_ping_ms = time_from_last_receive_ms - time_from_last_update_ms;
+                std::chrono::time_point<std::chrono::steady_clock> m_last_update_timestamp = std::chrono::steady_clock::now();
+
+    
+    */
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
@@ -67,8 +83,9 @@ private: // VARIABLES //
     bool m_should_disconnect = false;
 
     // Last runtime responses
-    Jani::Message::RuntimeGetEntitiesInfoResponse m_entities_infos;
     Jani::Message::RuntimeGetCellsInfosResponse   m_cells_infos;
+
+    std::unordered_map<EntityId, EntityInfo> m_entities_infos;
 
     float  m_zoom_level = 5.0f;
     ImVec2 m_scroll = ImVec2(0, 0);
