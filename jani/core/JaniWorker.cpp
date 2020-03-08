@@ -45,11 +45,6 @@ bool Jani::Worker::IsConnected() const
     return !m_did_server_timeout;
 }
 
-void Jani::Worker::ReportEntityPosition(EntityId _entity_id, WorldPosition _position)
-{
-    m_entities_positions[_entity_id] = _position;
-}
-
 void Jani::Worker::RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback)
 {
     m_on_component_added_callback = _callback;
@@ -58,101 +53,6 @@ void Jani::Worker::RegisterOnComponentAddedCallback(OnComponentAddedCallback _ca
 void Jani::Worker::RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback)
 {
     m_on_component_removed_callback = _callback;
-}
-
-void Jani::Worker::CalculateWorkerProperties(
-    std::optional<EntityId>&  _extreme_top_entity,
-    std::optional<EntityId>&  _extreme_right_entity,
-    std::optional<EntityId>&  _extreme_left_entity,
-    std::optional<EntityId>&  _extreme_bottom_entity,
-    uint32_t&                 _total_entities_over_capacity,
-    std::optional<WorldRect>& _worker_rect) const
-{
-    if (m_use_spatial_area && m_entities_positions.size() > 0)
-    {
-        struct EntityPositionInfo
-        {
-            EntityPositionInfo(WorldPosition _initial_position) : entity_position(_initial_position) {}
-
-            EntityId      entity_index    = std::numeric_limits<EntityId>::max();
-            WorldPosition entity_position = { 0, 0 };
-        };
-
-        constexpr int32_t  max_coordinate = std::numeric_limits<int32_t>::max() - 1;
-        EntityPositionInfo top_entity     = EntityPositionInfo({ 0, -max_coordinate });
-        EntityPositionInfo right_entity   = EntityPositionInfo({ -max_coordinate, 0 });
-        EntityPositionInfo left_entity    = EntityPositionInfo({ max_coordinate, 0 });
-        EntityPositionInfo bottom_entity  = EntityPositionInfo({ 0, max_coordinate });
-
-        for (auto& [entity_id, entity_position] : m_entities_positions)
-        {
-            if (entity_position.y > top_entity.entity_position.y)
-            {
-                top_entity.entity_index    = entity_id;
-                top_entity.entity_position = entity_position;
-            }
-
-            if (entity_position.x > right_entity.entity_position.x)
-            {
-                right_entity.entity_index    = entity_id;
-                right_entity.entity_position = entity_position;
-            }
-
-            if (entity_position.x < left_entity.entity_position.x)
-            {
-                left_entity.entity_index    = entity_id;
-                left_entity.entity_position = entity_position;
-            }
-
-            if (entity_position.y < bottom_entity.entity_position.y)
-            {
-                bottom_entity.entity_index    = entity_id;
-                bottom_entity.entity_position = entity_position;
-            }
-        }
-
-        WorldRect worker_area = {
-            left_entity.entity_position.x,
-            top_entity.entity_position.y,
-            right_entity.entity_position.x - left_entity.entity_position.x,
-            top_entity.entity_position.y - bottom_entity.entity_position.y };
-
-        if (top_entity.entity_index != std::numeric_limits<EntityId>::max())
-        {
-            _extreme_top_entity = top_entity.entity_index;
-        }
-
-        if (right_entity.entity_index != std::numeric_limits<EntityId>::max()
-            && right_entity.entity_index != top_entity.entity_index)
-        {
-            _extreme_right_entity = right_entity.entity_index;
-        }
-
-        if (left_entity.entity_index != std::numeric_limits<EntityId>::max()
-            && left_entity.entity_index != right_entity.entity_index
-            && left_entity.entity_index != top_entity.entity_index)
-        {
-            _extreme_left_entity = left_entity.entity_index;
-        }
-
-        if (bottom_entity.entity_index != std::numeric_limits<EntityId>::max()
-            && bottom_entity.entity_index != right_entity.entity_index
-            && bottom_entity.entity_index != top_entity.entity_index
-            && bottom_entity.entity_index != left_entity.entity_index)
-        {
-            _extreme_bottom_entity = bottom_entity.entity_index;
-        }
-
-        _worker_rect = worker_area;
-    }
-
-    // Check if there is no limit for the entity count
-    if (m_maximum_entity_limit == 0)
-    {
-        return;
-    }
-
-    _total_entities_over_capacity = std::max(0, (static_cast<int32_t>(m_entity_count) - static_cast<int32_t>(m_maximum_entity_limit)));
 }
 
 Jani::Worker::ResponseCallback<Jani::Message::RuntimeAuthenticationResponse> Jani::Worker::RequestAuthentication()
@@ -468,7 +368,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                                 entity.destroy();
 
-                                m_entities_positions.erase(entity_iter->first);
                                 m_local_entity_to_server_map.erase(entity);
                                 m_server_entity_to_local_map.erase(entity_iter);
                             }
@@ -514,14 +413,10 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         m_last_worker_report_timestamp = std::chrono::steady_clock::now();
      
         Message::RuntimeWorkerReportAcknowledgeRequest worker_report;
+        worker_report.total_data_received_per_second = Connection<>::GetTotalDataReceived();
+        worker_report.total_data_sent_per_second     = Connection<>::GetTotalDataSent();
 
-        CalculateWorkerProperties(
-            worker_report.extreme_bottom_entity, 
-            worker_report.extreme_right_entity, 
-            worker_report.extreme_left_entity, 
-            worker_report.extreme_bottom_entity, 
-            worker_report.total_entities_over_capacity, 
-            worker_report.worker_rect);
+        std::cout << "Worker -> total data received: {" << worker_report.total_data_received_per_second << "} total data sent: {" << worker_report.total_data_sent_per_second << "}" << std::endl;
 
         if (!m_request_manager.MakeRequest(
             *m_bridge_connection,

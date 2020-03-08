@@ -60,9 +60,11 @@ namespace Jani
     {
     public:
 
-        using ClientHash = ClientHashType;
+        using ClientHash      = ClientHashType;
         using ReceiveCallback = std::function<void(std::optional<ClientHash>, nonstd::span<char>)>;
         using TimeoutCallback = std::function<void(std::optional<ClientHash>)>;
+
+#define JANI_CONNECTION_RECORD_TRAFFIC
 
 #ifdef _WIN32
         using socklen_t = int;
@@ -77,6 +79,14 @@ namespace Jani
         static const uint32_t MaximumDatagramSize = 2048; // Change  this to 576 bytes
 
     private:
+
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+        inline static uint64_t s_total_data_received                                            = 0;
+        inline static uint64_t s_total_data_sent                                                = 0;
+        inline static uint64_t s_total_accumulated_data_received                                = 0;
+        inline static uint64_t s_total_accumulated_data_sent                                    = 0;
+        inline static std::chrono::time_point<std::chrono::steady_clock> s_last_network_traffic_update = std::chrono::steady_clock::now();
+#endif
 
         struct ClientInfo
         {
@@ -144,6 +154,7 @@ namespace Jani
             }
 
             ikcp_nodelay(m_single_kcp_instance, 1, IntervalUpdateTime, 2, 1);
+            ikcp_wndsize(m_single_kcp_instance, 4096 * 8, 4096 * 8);
 
             {
                 struct sockaddr_in outaddr;
@@ -161,7 +172,13 @@ namespace Jani
                 {
                     ServerInfo& server_info = *(ServerInfo*)user;
 
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+                    auto total_sent = sendto(*server_info.socket, buf, len, 0, (struct sockaddr*) & server_info.server_addr, sizeof(server_info.server_addr));
+                    s_total_accumulated_data_sent += total_sent;
+                    return total_sent;
+#else
                     return sendto(*server_info.socket, buf, len, 0, (struct sockaddr*) & server_info.server_addr, sizeof(server_info.server_addr));
+#endif
                 });
 
             m_is_valid = true;
@@ -250,6 +267,20 @@ namespace Jani
             auto time_now              = std::chrono::steady_clock::now();
             auto total_time_elapsed    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             uint32_t minimum_wait_time = IntervalUpdateTime;
+
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+            {
+                auto total_since_last_network_traffic_update = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - s_last_network_traffic_update).count();
+                if (total_since_last_network_traffic_update > 1000)
+                {
+                    s_last_network_traffic_update     = time_now;
+                    s_total_data_received             = s_total_accumulated_data_received;
+                    s_total_data_sent                 = s_total_accumulated_data_sent;
+                    s_total_accumulated_data_received = 0;
+                    s_total_accumulated_data_sent     = 0;
+                }
+            }
+#endif
 
             // It's client job to ping the server and not the opposite
             if (!m_is_server && !m_is_waiting_for_ping)
@@ -492,6 +523,31 @@ namespace Jani
             return m_is_server;
         }
 
+
+        /*
+        * Return the total amount of network data send over the last second
+        */
+        static uint64_t GetTotalDataReceived()
+        {
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+            return s_total_data_received;
+#else
+            return 0;
+#endif
+        }
+
+        /*
+        * Return the total amount of network data received over the last second
+        */
+        static uint64_t GetTotalDataSent()
+        {
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+            return s_total_data_sent;
+#else
+            return 0;
+#endif
+        }
+
     private:
 
         /*
@@ -527,6 +583,11 @@ namespace Jani
             while (CanReceiveDatagram())
             {
                 int total_received = recvfrom(m_socket, buffer, buffer_size, 0, reinterpret_cast<struct sockaddr*>(&sender), &sendersize);
+
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+                s_total_accumulated_data_received += total_received;
+#endif
+
                 // [[unlikely]]
                 if (total_received <= 0)
                 {
@@ -556,6 +617,7 @@ namespace Jani
                         }
 
                         ikcp_nodelay(client_info.kcp_instance, 1, IntervalUpdateTime, 2, 1);
+                        ikcp_wndsize(client_info.kcp_instance, 4096 * 8, 4096 * 8);
 
                         struct sockaddr_in outaddr;
                         memset(&outaddr, 0, sizeof(outaddr));
@@ -572,7 +634,13 @@ namespace Jani
                             {
                                 ClientInfo& client_info = *(ClientInfo*)user;
 
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+                                auto total_sent = sendto(*client_info.socket, buf, len, 0, (struct sockaddr*) & client_info.client_addr, sizeof(client_info.client_addr));
+                                s_total_accumulated_data_sent += total_sent;
+                                return total_sent;
+#else
                                 return sendto(*client_info.socket, buf, len, 0, (struct sockaddr*) & client_info.client_addr, sizeof(client_info.client_addr));
+#endif
                             });
 
                     }
@@ -638,6 +706,17 @@ namespace Jani
                     return false;
                 }
             }
+
+            int msg_buffer        = 1024 * 1024 * 512;
+            int msg_buffer_sizeof = sizeof(int);
+            retval                 = setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF, (char*)&msg_buffer, msg_buffer_sizeof);
+            assert(retval == 0);
+
+            retval                 = setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, (char*)&msg_buffer, msg_buffer_sizeof);
+            assert(retval == 0);
+
+            // retval = getsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&send_buffer, &send_buffer_sizeof);
+            // assert(retval == 0);
 
             if (true)
             {

@@ -65,8 +65,20 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
                     }
                     case Jani::RequestType::RuntimeGetCellsInfos:
                     {
-                        m_cells_infos = _resonse_payload.GetResponse< Jani::Message::RuntimeGetCellsInfosResponse>();
+                        auto infos = _resonse_payload.GetResponse< Jani::Message::RuntimeGetCellsInfosResponse>();
+                        for (auto& [worker_id, layer_id, rect, coordinates, total_entities] : infos.cells_infos)
+                        {
+                            CellInfo cell_info;
+                            cell_info.worker_id                      = worker_id;
+                            cell_info.layer_id                       = layer_id;
+                            cell_info.rect                           = rect;
+                            cell_info.position                       = WorldPosition({ rect.x, rect.y });
+                            cell_info.coordinates                    = coordinates;
+                            cell_info.total_entities                 = total_entities;
+                            cell_info.last_update_received_timestamp = std::chrono::steady_clock::now();
 
+                            m_cell_infos[coordinates] = std::move(cell_info);
+                        }
                         // std::cout << "Inspector -> Received info about {" << m_cells_infos.cells_infos.size() << "} cells infos" << std::endl;
 
                         break;
@@ -127,12 +139,12 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             end_y   = std::max(end_y, static_cast<float>(entity_info.world_position.y));
         }
 
-        for (auto& [worker_id, layer_id, worker_rect, total_entities]: m_cells_infos.cells_infos)
+        for (auto& [cell_coordinate, cell_info]: m_cell_infos)
         {
-            begin_x = std::min(begin_x, static_cast<float>(worker_rect.x));
-            begin_y = std::min(begin_y, static_cast<float>(worker_rect.y));
-            end_x   = std::max(end_x, worker_rect.x + static_cast<float>(worker_rect.width));
-            end_y   = std::max(end_y, worker_rect.y + static_cast<float>(worker_rect.height));
+            begin_x = std::min(begin_x, static_cast<float>(cell_info.rect.x));
+            begin_y = std::min(begin_y, static_cast<float>(cell_info.rect.y));
+            end_x   = std::max(end_x, cell_info.rect.x + static_cast<float>(cell_info.rect.width));
+            end_y   = std::max(end_y, cell_info.rect.y + static_cast<float>(cell_info.rect.height));
         }
     }
 
@@ -186,7 +198,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
     if (ImGui::Begin("World", &open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove))
     {
         std::string total_entities_text = "Entities: " + std::to_string(m_entities_infos.size());
-        std::string total_workers_text =  "Cells:  " + std::to_string(m_cells_infos.cells_infos.size());
+        std::string total_workers_text =  "Cells:  " + std::to_string(m_cell_infos.size());
         ImGui::Text(total_entities_text.c_str());
         ImGui::Text(total_workers_text.c_str());
 
@@ -212,24 +224,24 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
         }
 
         int cell_render_index = 0;
-        for (auto& [worker_id, layer_id, worker_rect, total_entities] : m_cells_infos.cells_infos)
+        for (auto& [cell_coordinate, cell_info] : m_cell_infos)
         {
-            auto worker_color = GetColorForIndex(worker_id);
+            auto worker_color = GetColorForIndex(cell_info.worker_id);
 
-            if (worker_rect.width == 0 || worker_rect.height == 0)
+            if (cell_info.rect.width == 0 || cell_info.rect.height == 0)
             {
                 continue;
             }
 
             float  border                            = 0.2f;
-            ImVec2 worker_transformed_position_begin = ImVec2(worker_rect.x + m_scroll.x + border, worker_rect.y + m_scroll.y + border);
-            ImVec2 worker_transformed_position_end   = ImVec2(worker_rect.x + worker_rect.width + m_scroll.x - border, worker_rect.y + worker_rect.height + m_scroll.y - border);
+            ImVec2 worker_transformed_position_begin = ImVec2(cell_info.rect.x + m_scroll.x + border, cell_info.rect.y + m_scroll.y + border);
+            ImVec2 worker_transformed_position_end   = ImVec2(cell_info.rect.x + cell_info.rect.width + m_scroll.x - border, cell_info.rect.y + cell_info.rect.height + m_scroll.y - border);
             worker_transformed_position_begin        = ImVec2(worker_transformed_position_begin.x * m_zoom_level, worker_transformed_position_begin.y * m_zoom_level);
             worker_transformed_position_end          = ImVec2(worker_transformed_position_end.x * m_zoom_level, worker_transformed_position_end.y * m_zoom_level);
             ImVec2 center_position                   = ImVec2((worker_transformed_position_end.x + worker_transformed_position_begin.x) / 2.0f, (worker_transformed_position_end.y + worker_transformed_position_begin.y) / 2.0f);
 
             ImGui::SetCursorScreenPos(ImVec2(worker_transformed_position_begin.x, worker_transformed_position_end.y));
-            ImGui::TextColored(ImVec4(worker_color.x, worker_color.y, worker_color.z, 0.4), (std::string("worker_id: ") + std::to_string(worker_id)).c_str());
+            ImGui::TextColored(ImVec4(worker_color.x, worker_color.y, worker_color.z, 0.4), (std::string("worker_id: ") + std::to_string(cell_info.worker_id)).c_str());
 
             ImGui::GetWindowDrawList()->AddRect(
                 worker_transformed_position_begin,
@@ -247,8 +259,8 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             ImGui::InvisibleButton("worker_region_tooltip", region_size);
             if (ImGui::IsItemHovered())
             {
-                std::string layer_id_text = "layer_id: " + std::to_string(layer_id);
-                std::string total_entities_text = "total_entities: " + std::to_string(total_entities);
+                std::string layer_id_text = "layer_id: " + std::to_string(cell_info.layer_id);
+                std::string total_entities_text = "total_entities: " + std::to_string(cell_info.total_entities);
                 std::string position_text = "position: {" + std::to_string(center_position.x) + ", " + std::to_string(center_position.y) + "}";
                 ImGui::BeginTooltip();
                 ImGui::PushID(cell_render_index);

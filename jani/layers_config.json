@@ -5,7 +5,7 @@
             "id": 0, 
             "user_layer": false, 
             "use_spatial_area": true, 
-            "maximum_entities_per_worker": 9, 
+            "maximum_entities_per_worker": 70, 
             "maximum_workers": -1
         }, 
         {

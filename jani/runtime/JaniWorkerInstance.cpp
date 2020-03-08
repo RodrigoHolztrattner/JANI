@@ -48,30 +48,9 @@ bool Jani::WorkerInstance::IsUserInstance() const
     return m_is_user;
 }
 
-bool Jani::WorkerInstance::IsOverCapacity() const
+std::pair<uint64_t, uint64_t> Jani::WorkerInstance::GetNetworkTrafficPerSecond() const
 {
-    return m_is_over_capacity;
-}
-
-std::array<std::optional<Jani::EntityId>, 4> Jani::WorkerInstance::GetEntitiesOnAreaLimit() const
-{
-    return 
-    { 
-        m_entities_on_area_limit.extreme_top_entity, 
-        m_entities_on_area_limit.extreme_right_entity, 
-        m_entities_on_area_limit.extreme_left_entity, 
-        m_entities_on_area_limit.extreme_bottom_entity 
-    };
-}
-
-Jani::WorldRect Jani::WorkerInstance::GetWorldRect() const
-{
-    return m_area;
-}
-
-void Jani::WorkerInstance::ResetOverCapacityFlag()
-{
-    m_is_over_capacity = false;
+    return { m_total_data_received_per_second, m_total_data_sent_per_second };
 }
 
 void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
@@ -208,19 +187,8 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
         {
             auto component_report_acknowledge_request = _request_payload.GetRequest<Message::RuntimeWorkerReportAcknowledgeRequest>();
 
-            m_area                = component_report_acknowledge_request.worker_rect ? component_report_acknowledge_request.worker_rect.value() : WorldRect();
-            m_total_over_capacity = component_report_acknowledge_request.total_entities_over_capacity;
-            m_is_over_capacity    = !m_is_user ? m_total_over_capacity > 0 : false;
-
-            if (m_is_over_capacity)
-            {
-                std::cout << "Worker Instance -> A worker is over its entity capacity" << std::endl;
-            }
-
-            m_entities_on_area_limit.extreme_top_entity    = component_report_acknowledge_request.extreme_top_entity;
-            m_entities_on_area_limit.extreme_right_entity  = component_report_acknowledge_request.extreme_right_entity;
-            m_entities_on_area_limit.extreme_left_entity   = component_report_acknowledge_request.extreme_left_entity;
-            m_entities_on_area_limit.extreme_bottom_entity = component_report_acknowledge_request.extreme_bottom_entity;
+            m_total_data_received_per_second = component_report_acknowledge_request.total_data_received_per_second;
+            m_total_data_sent_per_second     = component_report_acknowledge_request.total_data_sent_per_second;
 
             Message::RuntimeDefaultResponse response = { true };
             {

@@ -81,8 +81,11 @@ int main(int _argc, char* _argv[])
                         process_parameters += L" ";
                         process_parameters += std::to_wstring(worker_spawn_request.layer_id);
 
+#if NDEBUG
+                        bool result = ExecuteExternalExeFileNGetReturnValue(L"C:\\Users\\rodri\\Documents\\JANI\\build\\Release\\jani_worker.exe", process_parameters) != 0;
+#else
                         bool result = ExecuteExternalExeFileNGetReturnValue(L"C:\\Users\\rodri\\Documents\\JANI\\build\\Debug\\jani_worker.exe", process_parameters) != 0;
-
+#endif
                         Jani::Message::WorkerSpawnResponse authentication_response = { result };
                         {
                             _response_payload.PushResponse(std::move(authentication_response));

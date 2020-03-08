@@ -71,32 +71,15 @@ public: // MAIN METHODS //
     bool IsUserInstance() const;
 
     /*
-    * Returns if this worker is over its entity capacity
+    * Return a pair containing the network traffic for this worker (received/sent)
     */
-    bool IsOverCapacity() const;
-
-    /*
-    * Returns 4 optional entity ids that are on the limits of this worker area of influence
-    */
-    std::array<std::optional<EntityId>, 4> GetEntitiesOnAreaLimit() const;
-
-    /*
-    * Returns the world rect this worker currently have
-    */
-    WorldRect GetWorldRect() const;
+    std::pair<uint64_t, uint64_t> GetNetworkTrafficPerSecond() const;
 
     /*
     * This function will process a request from the counterpart worker and attempt to resolve it, returning
     * a response whenever applicable
     */
     void ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload);
-
-protected:
-
-    /*
-    * Resets the over capacity flag
-    */
-    void ResetOverCapacityFlag();
 
 ////////////////////////
 private: // VARIABLES //
@@ -107,12 +90,9 @@ private: // VARIABLES //
     Connection<>::ClientHash m_client_hash;
     bool                     m_is_user;
     bool                     m_use_spatial_area    = false;
-    WorldRect                m_area;
-    bool                     m_is_over_capacity    = false;
-    int32_t                  m_total_over_capacity = 0;
 
-    EntitiesOnAreaLimit m_entities_on_area_limit;
-    // std::unordered_map<EntityId, uint32_t> m_entities_component_count;
+    uint64_t m_total_data_received_per_second = 0;
+    uint64_t m_total_data_sent_per_second     = 0;
 };
 
 // Jani

@@ -1285,12 +1285,8 @@ struct RuntimeWorkerReportAcknowledgeRequest
 {
     Serializable();
 
-    std::optional<EntityId>  extreme_top_entity;
-    std::optional<EntityId>  extreme_right_entity;
-    std::optional<EntityId>  extreme_left_entity;
-    std::optional<EntityId>  extreme_bottom_entity;
-    uint32_t                 total_entities_over_capacity = 0;
-    std::optional<WorldRect> worker_rect;
+    uint64_t total_data_sent_per_second     = 0;
+    uint64_t total_data_received_per_second = 0;
 };
 
 struct RuntimeDefaultResponse
@@ -1337,10 +1333,12 @@ struct RuntimeGetEntitiesInfoRequest
 // RuntimeGetEntitiesInfo
 struct RuntimeGetEntitiesInfoResponse
 {
+    using EntityInfo = std::tuple<EntityId, WorldPosition, WorkerId>;
+
     Serializable();
 
-    bool                                                       succeed = false;
-    std::vector<std::tuple<EntityId, WorldPosition, WorkerId>> entities_infos;
+    bool                    succeed = false;
+    std::vector<EntityInfo> entities_infos;
 };
 
 // RuntimeGetCellsInfos
@@ -1354,19 +1352,18 @@ struct RuntimeGetCellsInfosRequest
 // RuntimeGetWorkersInfo
 struct RuntimeGetCellsInfosResponse
 {
+    using CellInfo = std::tuple<WorkerId, LayerId, WorldRect, WorldCellCoordinates, uint32_t>;
+
     Serializable();
 
-    bool                                                                           succeed = false;
-    std::vector<std::tuple<WorkerId, LayerId, WorldRect, uint32_t>> cells_infos;
+    bool                  succeed = false;
+    std::vector<CellInfo> cells_infos;
 };
 
 JaniNamespaceEnd(Message)
 
 struct WorkerCellsInfos
 {
-    // - Cada worker tem um vector com as posicoes que ele cuida, coordenadas mesmo
-    // - Cada worker tem a quantidade de entidades que ele possui no momento
-
     // The global entity count this worker has
     uint32_t entity_count = 0;
 

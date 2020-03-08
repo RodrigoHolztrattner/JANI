@@ -35,7 +35,7 @@ int main(int _argc, char* _argv[])
     };
 
     uint32_t total_npcs_alive = 0;
-    uint32_t maximum_npcs     = 40;
+    uint32_t maximum_npcs     = 200;
 
     Jani::EntityId initial_entity_id = 0;
     Jani::EntityId final_entity_id   = 0;
@@ -129,7 +129,7 @@ int main(int _argc, char* _argv[])
 
     if(is_brain)
     {
-        worker.RequestReserveEntityIdRange(100).OnResponse(
+        worker.RequestReserveEntityIdRange(5001).OnResponse(
             [&](const Jani::Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
             {
                 if (_response.succeed)
@@ -149,10 +149,11 @@ int main(int _argc, char* _argv[])
         float    time_elapsed = static_cast<float>(wait_time_ms) / 1000.0f;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_time_ms));
+        std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
 
         if (is_brain)
         {
-            if (total_npcs_alive < maximum_npcs && rand() % 100 == 1 && initial_entity_id < final_entity_id)
+            if (total_npcs_alive < maximum_npcs && rand() % 2 == 1 && initial_entity_id < final_entity_id)
             {
                 auto new_entity = s_ecs_manager.entities.create();
 
@@ -190,9 +191,14 @@ int main(int _argc, char* _argv[])
         }
         else
         {
+            std::unordered_set<entityx::Entity> updated_x_entities;
+            std::unordered_set<Jani::EntityId> updated_entities;
             worker.GetEntityManager().each<PositionComponent>(
                 [&](auto entity, PositionComponent& _position)
                 {
+                    assert(updated_x_entities.find(entity) == updated_x_entities.end());
+                    updated_x_entities.insert(entity);
+
                     auto RandomFloat = [](float _from, float _to) -> float
                     {
                         float random = ((float)rand()) / (float)RAND_MAX;
@@ -227,7 +233,8 @@ int main(int _argc, char* _argv[])
                     auto jani_entity = worker.GetJaniEntityId(entity);
                     if (jani_entity)
                     {
-                        worker.ReportEntityPosition(jani_entity.value(), Jani::WorldPosition({ static_cast<int32_t>(_position.position.x), static_cast<int32_t>(_position.position.y) }));
+                        assert(updated_entities.find(jani_entity.value()) == updated_entities.end());
+                        updated_entities.insert(jani_entity.value());
 
                         Jani::ComponentPayload component_payload;
                         component_payload.entity_owner = jani_entity.value();
@@ -238,7 +245,13 @@ int main(int _argc, char* _argv[])
                 });
         }
 
-        worker.Update(20);
+        worker.Update(wait_time_ms);
+
+        auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
+        if (process_time > 5 && !is_brain)
+        {
+            std::cout << "Worker -> Update frame is taking too long to process process_time{" << process_time << "}" << std::endl;
+        }
     }
 
     std::cout << "Worker -> Disconnected from the server!" << std::endl;

@@ -121,33 +121,12 @@ public: // MAIN METHODS //
     */
     bool IsConnected() const;
 
-    /*
-    * Reports an entity position
-    * This should be called whenever possible if this worker has access to whatever is
-    * the entity "position" component
-    * Having this information is crucial to determine the worker influence area and
-    * if it is over its capacity
-    * If this worker doesn't deal with this "position" component and it doesn't operate
-    * in a spatial area, no action is required
-    */
-    void ReportEntityPosition(EntityId _entity_id, WorldPosition _position);
-
 ///////////////////////
 public: // CALLBACKS //
 ///////////////////////
 
     void RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback);
     void RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback);
-
-private:
-
-    void CalculateWorkerProperties(
-        std::optional<EntityId>&  _extreme_top_entity,
-        std::optional<EntityId>&  _extreme_right_entity,
-        std::optional<EntityId>&  _extreme_left_entity,
-        std::optional<EntityId>&  _extreme_bottom_entity,
-        uint32_t&                 _total_entities_over_capacity,
-        std::optional<WorldRect>& _worker_rect) const;
 
 protected:
 
@@ -298,8 +277,6 @@ private: // VARIABLES //
 
     std::unordered_map<EntityId, entityx::Entity> m_server_entity_to_local_map;
     std::unordered_map<entityx::Entity, EntityId> m_local_entity_to_server_map;
-
-    std::unordered_map<EntityId, WorldPosition> m_entities_positions;
 
     std::vector<std::pair<uint32_t, ResponseCallbackType>> m_response_callbacks;
 

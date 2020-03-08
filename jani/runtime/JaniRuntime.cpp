@@ -70,6 +70,8 @@ bool Jani::Runtime::Initialize()
         {
             auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
+            std::cout << "Runtime -> Cell migration performed from worker_id{" << _current_worker.GetId() << "} to worker_id{" << _new_worker.GetId() << "}" << std::endl;
+
             for (auto& [entity_id, entity] : _entities)
             {
                 for (auto component_id : layer_info.components)
@@ -85,8 +87,6 @@ bool Jani::Runtime::Initialize()
                         std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
                         continue;
                     }
-
-                    std::cout << "Runtime -> Moving a component from an overloaded worker to another entity_id{" << entity->GetId() << "}, component_id{" << component_id << "}" << std::endl;
 
                     Message::WorkerAddComponentRequest add_component_request;
                     add_component_request.entity_id         = entity->GetId();
@@ -321,23 +321,29 @@ void Jani::Runtime::Update()
             {
                 auto get_entities_info_request = _request_payload.GetRequest<Message::RuntimeGetEntitiesInfoRequest>();
 
-
+                Message::RuntimeGetEntitiesInfoResponse get_entities_info_response;
+                get_entities_info_response.succeed = true;
 
                 auto& entity_map = m_database.GetEntities();
                 for (auto& [entity_id, entity] : entity_map)
                 {
                     auto& cell_info = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates());
                     
-                    Message::RuntimeGetEntitiesInfoResponse get_entities_info_response;
-                    get_entities_info_response.succeed = true;
+                    // Check if the message is getting too big and break it
+                    if (get_entities_info_response.entities_infos.size() * sizeof(Message::RuntimeGetEntitiesInfoResponse::EntityInfo) > 500)
+                    {
+                        _response_payload.PushResponse(std::move(get_entities_info_response));
+                        get_entities_info_response.entities_infos.clear();
+                    }
 
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
                         entity->GetWorldPosition(),
                         cell_info.GetWorkerForLayer(0).value()->GetId() });
-
-                    _response_payload.PushResponse(std::move(get_entities_info_response));
                 }
+
+                _response_payload.PushResponse(std::move(get_entities_info_response));
+                
             }
             else if (_request.type == RequestType::RuntimeGetCellsInfos)
             {
@@ -352,8 +358,14 @@ void Jani::Runtime::Update()
                 {
                     for (auto& worker_coordinate : worker_info.worker_cells_infos.coordinates_owned)
                     {
-                        auto& cell_info = m_world_controller->GetWorldCellInfo(worker_coordinate);
+                        // Check if the message is getting too big and break it
+                        if (get_cells_infos_response.cells_infos.size() * sizeof(Message::RuntimeGetCellsInfosResponse::CellInfo) > 500)
+                        {
+                            _response_payload.PushResponse(std::move(get_cells_infos_response));
+                            get_cells_infos_response.cells_infos.clear();
+                        }
 
+                        auto& cell_info           = m_world_controller->GetWorldCellInfo(worker_coordinate);
                         auto  cell_world_position = m_world_controller->ConvertCellCoordinatesIntoPosition(worker_coordinate);
                         auto  cell_rect           = WorldRect({ cell_world_position.x, cell_world_position.y, worker_length, worker_length });
 
@@ -361,13 +373,12 @@ void Jani::Runtime::Update()
                             worker_id,
                             0,
                             cell_rect,
+                            worker_coordinate, 
                             cell_info.entities.size() });
                     }
                 }
 
-                {
-                    _response_payload.PushResponse(std::move(get_cells_infos_response));
-                }
+                _response_payload.PushResponse(std::move(get_cells_infos_response));
             }
         });
     
@@ -695,6 +706,15 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
     std::optional<WorldPosition> _entity_world_position)
 {
     LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+
+    auto& cell_info = m_world_controller->GetWorldCellInfo(m_database.GetEntityById(_entity_id).value()->GetWorldCellCoordinates());
+    
+    // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
+    // it arrived before it sent an update
+    if (_worker_id != cell_info.GetWorkerForLayer(layer_id).value()->GetId())
+    {
+        return false;
+    }
 
     // Update this component on the database for the given entity
     auto entity = m_database.ComponentUpdate(

@@ -28,9 +28,21 @@ class InspectorManager
 {
     struct EntityInfo
     {
-        EntityId      id;
+        EntityId      id             = std::numeric_limits<EntityId>::max();
         WorldPosition world_position;
-        WorkerId      worker_id;
+        WorkerId      worker_id      = std::numeric_limits<WorkerId>::max();
+
+        std::chrono::time_point<std::chrono::steady_clock> last_update_received_timestamp = std::chrono::steady_clock::now();
+    };
+
+    struct CellInfo
+    {
+        WorkerId             worker_id      = std::numeric_limits<WorkerId>::max();
+        LayerId              layer_id       = std::numeric_limits<LayerId>::max();
+        WorldRect            rect;
+        WorldPosition        position;
+        WorldCellCoordinates coordinates;
+        uint32_t             total_entities = std::numeric_limits<uint32_t>::max();
 
         std::chrono::time_point<std::chrono::steady_clock> last_update_received_timestamp = std::chrono::steady_clock::now();
     };
@@ -83,9 +95,9 @@ private: // VARIABLES //
     bool m_should_disconnect = false;
 
     // Last runtime responses
-    Jani::Message::RuntimeGetCellsInfosResponse   m_cells_infos;
 
-    std::unordered_map<EntityId, EntityInfo> m_entities_infos;
+    std::unordered_map<WorldCellCoordinates, CellInfo, WorldCellCoordinatesHasher, WorldCellCoordinatesComparator> m_cell_infos;
+    std::unordered_map<EntityId, EntityInfo>                                                                       m_entities_infos;
 
     float  m_zoom_level = 5.0f;
     ImVec2 m_scroll = ImVec2(0, 0);
