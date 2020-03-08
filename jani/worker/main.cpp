@@ -149,7 +149,6 @@ int main(int _argc, char* _argv[])
         float    time_elapsed = static_cast<float>(wait_time_ms) / 1000.0f;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(wait_time_ms));
-        std::chrono::time_point<std::chrono::steady_clock> start_time = std::chrono::steady_clock::now();
 
         if (is_brain)
         {
@@ -246,12 +245,6 @@ int main(int _argc, char* _argv[])
         }
 
         worker.Update(wait_time_ms);
-
-        auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-        if (process_time > 5 && !is_brain)
-        {
-            std::cout << "Worker -> Update frame is taking too long to process process_time{" << process_time << "}" << std::endl;
-        }
     }
 
     std::cout << "Worker -> Disconnected from the server!" << std::endl;

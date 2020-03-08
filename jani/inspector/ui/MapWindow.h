@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorker.h
+// Filename: MapWindow.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
@@ -7,15 +7,8 @@
 // INCLUDES //
 //////////////
 #include "JaniConfig.h"
-
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include <stdio.h>
-//#include <GL/gl3w.h>    // This example is using gl3w to access OpenGL functions. You may freely use any other OpenGL loader such as: glew, glad, glLoadGen, etc.
-//#include <glew.h>
-#include "glad.h"
-#include <GLFW/glfw3.h>
+#include "..\InspectorCommon.h"
+#include "..\imgui_extension.h"
 
 ///////////////
 // NAMESPACE //
@@ -28,48 +21,40 @@ JaniNamespaceBegin(Jani)
 JaniNamespaceBegin(Inspector)
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: Runtime
+// Class name: MapWindow
 ////////////////////////////////////////////////////////////////////////////////
-class Renderer
+class MapWindow
 {
-
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    Renderer();
-    ~Renderer();
-    
+    MapWindow();
+    ~MapWindow();
+
 //////////////////////////
 public: // MAIN METHODS //
 //////////////////////////
 
     /*
-    * Initialize the renderer
+    * Initialize the inspector manager
     */
-    bool Initialize(uint32_t _window_width, uint32_t _window_height);
+    bool Initialize();
 
     /*
-    * Begin the render frame
+    
     */
-    bool BeginRenderFrame();
-
-    /*
-    * End the render frame
-    */
-    void EndRenderFrame();
-
-    /*
-    * Return a pair with the width and height for the current window
-    */
-    std::pair<uint32_t, uint32_t> GetWindowSize() const;
+    void Draw(
+        uint32_t             _window_width,
+        const CellsInfos&    _cell_infos,
+        const EntitiesInfos& _entities_infos);
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    GLFWwindow* m_window = nullptr;
-
+    float  m_zoom_level = 5.0f;
+    ImVec2 m_scroll     = ImVec2(0, 0);
 };
 
 // Inspector

@@ -339,7 +339,8 @@ void Jani::Runtime::Update()
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
                         entity->GetWorldPosition(),
-                        cell_info.GetWorkerForLayer(0).value()->GetId() });
+                        cell_info.GetWorkerForLayer(0).value()->GetId(),
+                        entity->GetComponentMask() });
                 }
 
                 _response_payload.PushResponse(std::move(get_entities_info_response));
@@ -379,6 +380,39 @@ void Jani::Runtime::Update()
                 }
 
                 _response_payload.PushResponse(std::move(get_cells_infos_response));
+            }
+            else if (_request.type == RequestType::RuntimeGetWorkersInfos)
+            {
+                auto get_workerss_infos_request = _request_payload.GetRequest<Message::RuntimeGetWorkersInfosRequest>();
+
+                Message::RuntimeGetWorkersInfosResponse get_workers_infos_response;
+                get_workers_infos_response.succeed = true;
+
+                for (int i = 0; i < MaximumLayers; i++)
+                {
+                    auto& workers_infos = m_world_controller->GetWorkersInfosForLayer(i);
+                    for (auto& [worker_id, worker_info] : workers_infos)
+                    {
+                        // Check if the message is getting too big and break it
+                        if (get_workers_infos_response.workers_infos.size() * sizeof(Message::RuntimeGetWorkersInfosResponse::WorkerInfo) > 500)
+                        {
+                            _response_payload.PushResponse(std::move(get_workers_infos_response));
+                            get_workers_infos_response.workers_infos.clear();
+                        }
+
+                        get_workers_infos_response.workers_infos.push_back({
+                        worker_id,
+                        worker_info.worker_cells_infos.entity_count,
+                        i,
+                        worker_info.worker_instance->GetNetworkTrafficPerSecond().first, 
+                        worker_info.worker_instance->GetNetworkTrafficPerSecond().second, 
+                        0, 
+                        0});
+                    }
+
+                }
+
+                _response_payload.PushResponse(std::move(get_workers_infos_response));
             }
         });
     

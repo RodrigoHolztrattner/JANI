@@ -416,8 +416,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         worker_report.total_data_received_per_second = Connection<>::GetTotalDataReceived();
         worker_report.total_data_sent_per_second     = Connection<>::GetTotalDataSent();
 
-        std::cout << "Worker -> total data received: {" << worker_report.total_data_received_per_second << "} total data sent: {" << worker_report.total_data_sent_per_second << "}" << std::endl;
-
         if (!m_request_manager.MakeRequest(
             *m_bridge_connection,
             RequestType::RuntimeWorkerReportAcknowledge,

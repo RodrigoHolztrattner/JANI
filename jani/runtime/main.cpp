@@ -11,32 +11,6 @@
 inline static uint64_t s_total_allocations_per_second = 0;
 inline static uint64_t s_total_allocated_per_second   = 0;
 
-std::string pretty_bytes(uint64_t _bytes)
-{
-    char out_buffer[64];
-    const char* suffixes[7];
-    suffixes[0] = "B";
-    suffixes[1] = "KB";
-    suffixes[2] = "MB";
-    suffixes[3] = "GB";
-    suffixes[4] = "TB";
-    suffixes[5] = "PB";
-    suffixes[6] = "EB";
-    uint64_t s = 0; // which suffix to use
-    double count = _bytes;
-    while (count >= 1024 && s < 7)
-    {
-        s++;
-        count /= 1024;
-    }
-    if (count - floor(count) == 0.0)
-        sprintf(out_buffer, "%d %s", (int)count, suffixes[s]);
-    else
-        sprintf(out_buffer, "%.1f %s", count, suffixes[s]);
-
-    return std::string(out_buffer);
-}
-
 void* operator new(size_t _size)
 {
     s_total_allocations_per_second++;
@@ -108,7 +82,7 @@ int main(int _argc, char* _argv[])
             elapsed_time_since_last_memory_feedback += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
             if (elapsed_time_since_last_memory_feedback > 1000)
             {
-                std::cout << "Total allocations: {" << s_total_allocations_per_second << "}, a total of: " << pretty_bytes(s_total_allocated_per_second) << std::endl;
+                std::cout << "Total allocations: {" << s_total_allocations_per_second << "}, a total of: " << Jani::pretty_bytes(s_total_allocated_per_second) << std::endl;
                 s_total_allocations_per_second = 0;
                 s_total_allocated_per_second = 0;
                 elapsed_time_since_last_memory_feedback = 0;

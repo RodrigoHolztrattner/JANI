@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorker.h
+// Filename: MainWindow.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
@@ -7,15 +7,9 @@
 // INCLUDES //
 //////////////
 #include "JaniConfig.h"
-
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include <stdio.h>
-//#include <GL/gl3w.h>    // This example is using gl3w to access OpenGL functions. You may freely use any other OpenGL loader such as: glew, glad, glLoadGen, etc.
-//#include <glew.h>
-#include "glad.h"
-#include <GLFW/glfw3.h>
+#include "..\InspectorCommon.h"
+#include "MapWindow.h"
+#include "PropertyWindow.h"
 
 ///////////////
 // NAMESPACE //
@@ -28,48 +22,45 @@ JaniNamespaceBegin(Jani)
 JaniNamespaceBegin(Inspector)
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: Runtime
+// Class name: MainWindow
 ////////////////////////////////////////////////////////////////////////////////
-class Renderer
+class MainWindow
 {
-
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    Renderer();
-    ~Renderer();
-    
+    MainWindow();
+    ~MainWindow();
+
 //////////////////////////
 public: // MAIN METHODS //
 //////////////////////////
 
     /*
-    * Initialize the renderer
+    * Initialize the inspector manager
     */
-    bool Initialize(uint32_t _window_width, uint32_t _window_height);
+    bool Initialize();
 
     /*
-    * Begin the render frame
+    
     */
-    bool BeginRenderFrame();
-
-    /*
-    * End the render frame
-    */
-    void EndRenderFrame();
-
-    /*
-    * Return a pair with the width and height for the current window
-    */
-    std::pair<uint32_t, uint32_t> GetWindowSize() const;
+    void Draw(
+        uint32_t             _window_width, 
+        uint32_t             _window_height, 
+        const CellsInfos&    _cell_infos,
+        const EntitiesInfos& _entities_infos, 
+        const WorkersInfos&  _workers_infos);
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    GLFWwindow* m_window = nullptr;
+    float m_left_panel_splitter  = 300.0f;
+    float m_right_panel_splitter = 800.0f;
 
+    MapWindow      m_map_window;
+    PropertyWindow m_property_window;
 };
 
 // Inspector

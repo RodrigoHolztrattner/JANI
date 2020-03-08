@@ -196,6 +196,14 @@ void Jani::Inspector::Renderer::EndRenderFrame()
     glfwSwapBuffers(m_window);
 }
 
+std::pair<uint32_t, uint32_t> Jani::Inspector::Renderer::GetWindowSize() const
+{
+    int width, height;
+    glfwGetWindowSize(m_window, &width, &height);
+
+    return { width, height };
+}
+
 int main2(int, char**)
 {
     bool show_demo_window = true;

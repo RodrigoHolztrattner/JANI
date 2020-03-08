@@ -126,15 +126,17 @@ void Jani::WorldController::RemoveEntity(Entity& _entity)
     SetupWorkCellEntityRemoval(cell_info);
 }
 
-void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info)
+void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityInsertion");
 
-    for (auto& layer_info : m_layer_infos)
+    if (_layer)
     {
+        auto& layer_info = m_layer_infos[_layer.value()];
+
         if (!layer_info)
         {
-            break;
+            return;
         }
 
         auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
@@ -146,23 +148,39 @@ void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_in
         }
         auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
     }
+    else
+    {
+        for (auto& layer_info : m_layer_infos)
+        {
+            if (!layer_info)
+            {
+                break;
+            }
+
+            auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
+            auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
+            {
+                extracted_worker_node.key().global_entity_count++;
+                extracted_worker_node.mapped()->worker_cells_infos.entity_count++;
+                extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(_cell_info.cell_coordinates);
+            }
+            auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+        }
+    }
+
 }
 
-void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info)
+void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityRemoval");
 
-    for (auto& layer_info : m_layer_infos)
+    if (_layer)
     {
+        auto& layer_info = m_layer_infos[_layer.value()];
+
         if (!layer_info)
         {
-            break;
-        }
-
-        // We don't care about layers that don't use spatial info
-        if (!layer_info->uses_spatial_area)
-        {
-            continue;
+            return;
         }
 
         auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
@@ -173,6 +191,31 @@ void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info
         }
         auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
     }
+    else
+    {
+        for (auto& layer_info : m_layer_infos)
+        {
+            if (!layer_info)
+            {
+                break;
+            }
+
+            // We don't care about layers that don't use spatial info
+            if (!layer_info->uses_spatial_area)
+            {
+                continue;
+            }
+
+            auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
+            auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
+            {
+                extracted_worker_node.key().global_entity_count--;
+                extracted_worker_node.mapped()->worker_cells_infos.entity_count--;
+            }
+            auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+        }
+    }
+
 }
 
 void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, WorldPosition _new_position)
@@ -241,8 +284,8 @@ void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, Wor
             continue;
         }
 
-        SetupWorkCellEntityInsertion(new_world_cell_info);
-        SetupWorkCellEntityRemoval(current_world_cell_info);
+        SetupWorkCellEntityInsertion(new_world_cell_info, layer_info->layer_id);
+        SetupWorkCellEntityRemoval(current_world_cell_info, layer_info->layer_id);
 
         assert(m_entity_layer_ownership_change_callback);
         m_entity_layer_ownership_change_callback(

@@ -209,8 +209,8 @@ private:
     /*
     
     */
-    void SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info);
-    void SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info);
+    void SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer = std::nullopt);
+    void SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer = std::nullopt);
 
 ///////////////////////
 public: // CALLBACKS //

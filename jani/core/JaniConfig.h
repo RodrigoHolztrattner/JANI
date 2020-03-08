@@ -232,6 +232,32 @@ static void from_json(const nlohmann::json& j, Jani::WorldRect& _object)
     j.at("height").get_to(_object.height);
 }
 
+static std::string pretty_bytes(uint64_t _bytes)
+{
+    char out_buffer[64];
+    const char* suffixes[7];
+    suffixes[0] = "B";
+    suffixes[1] = "KB";
+    suffixes[2] = "MB";
+    suffixes[3] = "GB";
+    suffixes[4] = "TB";
+    suffixes[5] = "PB";
+    suffixes[6] = "EB";
+    uint64_t s = 0; // which suffix to use
+    double count = _bytes;
+    while (count >= 1024 && s < 7)
+    {
+        s++;
+        count /= 1024;
+    }
+    if (count - floor(count) == 0.0)
+        sprintf(out_buffer, "%d %s", (int)count, suffixes[s]);
+    else
+        sprintf(out_buffer, "%.1f %s", count, suffixes[s]);
+
+    return std::string(out_buffer);
+}
+
 class User
 {
 public:
@@ -1333,7 +1359,7 @@ struct RuntimeGetEntitiesInfoRequest
 // RuntimeGetEntitiesInfo
 struct RuntimeGetEntitiesInfoResponse
 {
-    using EntityInfo = std::tuple<EntityId, WorldPosition, WorkerId>;
+    using EntityInfo = std::tuple<EntityId, WorldPosition, WorkerId, std::bitset<MaximumEntityComponents>>;
 
     Serializable();
 
@@ -1358,6 +1384,25 @@ struct RuntimeGetCellsInfosResponse
 
     bool                  succeed = false;
     std::vector<CellInfo> cells_infos;
+};
+
+// RuntimeGetWorkersInfos
+struct RuntimeGetWorkersInfosRequest
+{
+    Serializable();
+
+    bool dummy = false;
+};
+
+// RuntimeGetWorkersInfos
+struct RuntimeGetWorkersInfosResponse
+{
+    using WorkerInfo = std::tuple<WorkerId, uint32_t, LayerId, uint64_t, uint64_t, uint64_t, uint64_t>;
+
+    Serializable();
+
+    bool                    succeed = false;
+    std::vector<WorkerInfo> workers_infos;
 };
 
 JaniNamespaceEnd(Message)

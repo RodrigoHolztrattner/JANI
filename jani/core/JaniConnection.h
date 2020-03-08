@@ -846,6 +846,7 @@ namespace Jani
         /* Inspector -> Runtime Requests */
         RuntimeGetEntitiesInfo, 
         RuntimeGetCellsInfos,
+        RuntimeGetWorkersInfos,
     };
 
     class RequestInfo
