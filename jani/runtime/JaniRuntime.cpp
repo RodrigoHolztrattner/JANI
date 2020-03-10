@@ -74,6 +74,28 @@ bool Jani::Runtime::Initialize()
 
             for (auto& [entity_id, entity] : _entities)
             {
+                Message::WorkerLayerAuthorityLostRequest authority_lost_request;
+                authority_lost_request.entity_id = entity_id;
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    _current_worker.GetConnectionClientHash(),
+                    RequestType::WorkerLayerAuthorityLost,
+                    authority_lost_request))
+                {
+                }
+
+                Message::WorkerLayerAuthorityGainRequest authority_gain_request;
+                authority_gain_request.entity_id = entity_id;
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    _new_worker.GetConnectionClientHash(),
+                    RequestType::WorkerLayerAuthorityGain,
+                    authority_gain_request))
+                {
+                }
+
                 for (auto component_id : layer_info.components)
                 {
                     if (!entity->HasComponent(component_id))
@@ -100,18 +122,6 @@ bool Jani::Runtime::Initialize()
                         add_component_request))
                     {
                     }
-                     
-                    Message::WorkerRemoveComponentRequest remove_component_request;
-                    remove_component_request.entity_id    = entity->GetId();
-                    remove_component_request.component_id = component_id;
-
-                    if (!m_request_manager->MakeRequest(
-                        *m_worker_connections,
-                        _current_worker.GetConnectionClientHash(),
-                        RequestType::WorkerRemoveComponent,
-                        remove_component_request))
-                    {
-                    }
                 }
             }
         });
@@ -120,6 +130,28 @@ bool Jani::Runtime::Initialize()
         [&](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
             auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
+
+            Message::WorkerLayerAuthorityLostRequest authority_lost_request;
+            authority_lost_request.entity_id = _entity.GetId();
+
+            if (!m_request_manager->MakeRequest(
+                *m_worker_connections,
+                _current_worker.GetConnectionClientHash(),
+                RequestType::WorkerLayerAuthorityLost,
+                authority_lost_request))
+            {
+            }
+
+            Message::WorkerLayerAuthorityGainRequest authority_gain_request;
+            authority_gain_request.entity_id = _entity.GetId();
+
+            if (!m_request_manager->MakeRequest(
+                *m_worker_connections,
+                _new_worker.GetConnectionClientHash(),
+                RequestType::WorkerLayerAuthorityGain,
+                authority_gain_request))
+            {
+            }
 
             for (auto component_id : layer_info.components)
             {
@@ -332,7 +364,7 @@ void Jani::Runtime::Update()
                     // Check if the message is getting too big and break it
                     if (get_entities_info_response.entities_infos.size() * sizeof(Message::RuntimeGetEntitiesInfoResponse::EntityInfo) > 500)
                     {
-                        _response_payload.PushResponse(std::move(get_entities_info_response));
+                        _response_payload.PushResponse(get_entities_info_response);
                         get_entities_info_response.entities_infos.clear();
                     }
 
@@ -362,7 +394,7 @@ void Jani::Runtime::Update()
                         // Check if the message is getting too big and break it
                         if (get_cells_infos_response.cells_infos.size() * sizeof(Message::RuntimeGetCellsInfosResponse::CellInfo) > 500)
                         {
-                            _response_payload.PushResponse(std::move(get_cells_infos_response));
+                            _response_payload.PushResponse(get_cells_infos_response);
                             get_cells_infos_response.cells_infos.clear();
                         }
 
@@ -396,7 +428,7 @@ void Jani::Runtime::Update()
                         // Check if the message is getting too big and break it
                         if (get_workers_infos_response.workers_infos.size() * sizeof(Message::RuntimeGetWorkersInfosResponse::WorkerInfo) > 500)
                         {
-                            _response_payload.PushResponse(std::move(get_workers_infos_response));
+                            _response_payload.PushResponse(get_workers_infos_response);
                             get_workers_infos_response.workers_infos.clear();
                         }
 
@@ -590,6 +622,28 @@ bool Jani::Runtime::OnWorkerAddEntity(
 
     m_world_controller->InsertEntity(*entity.value(), entity.value()->GetWorldPosition());
 
+    // Setup layer workers authority gain
+    {
+        for (int i = 0; i < MaximumLayers; i++)
+        {
+            auto worker = entity.value()->GetWorldCellInfo().GetWorkerForLayer(i);
+            if (worker)
+            {
+                Message::WorkerLayerAuthorityGainRequest authority_gain_request;
+                authority_gain_request.entity_id = _entity_id;
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    worker.value()->GetConnectionClientHash(),
+                    RequestType::WorkerLayerAuthorityGain,
+                    authority_gain_request))
+                {
+                }
+            }
+        }
+    }
+
+    std::array<bool, MaximumLayers> worker_authority_control = {};
     for (auto requested_component_payload : _entity_payload.component_payloads)
     {
         LayerId layer_id = m_layer_collection.GetLayerIdForComponent(requested_component_payload.component_id);
@@ -635,6 +689,30 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
     {
         return false;
     }
+
+    /*
+    // Setup layer workers authority gain
+    {
+        for (int i = 0; i < MaximumLayers; i++)
+        {
+            LayerId layer_id = m_layer_collection.GetLayerIdForComponent(i);
+            auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
+            if (worker)
+            {
+                Message::WorkerLayerAuthorityGainRequest authority_gain_request;
+                authority_gain_request.entity_id = _entity_id;
+
+                if (!m_request_manager->MakeRequest(
+                    *m_worker_connections,
+                    worker.value()->GetConnectionClientHash(),
+                    RequestType::WorkerLayerAuthorityGain,
+                    authority_gain_request))
+                {
+                }
+            }
+        }
+    }
+    */
 
     return true;
 }
@@ -741,13 +819,26 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
 {
     LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
 
-    auto& cell_info = m_world_controller->GetWorldCellInfo(m_database.GetEntityById(_entity_id).value()->GetWorldCellCoordinates());
-    
-    // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
-    // it arrived before it sent an update
-    if (_worker_id != cell_info.GetWorkerForLayer(layer_id).value()->GetId())
     {
-        return false;
+        auto entity = m_database.GetEntityById(_entity_id);
+        if (!entity)
+        {
+            return false;
+        }
+
+        auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
+        auto cell_worker = cell_info.GetWorkerForLayer(layer_id);
+        if (!cell_worker)
+        {
+            return false;
+        }
+
+        // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
+        // it arrived before it sent an update
+        if (_worker_id != cell_worker.value()->GetId())
+        {
+            return false;
+        }
     }
 
     // Update this component on the database for the given entity
@@ -772,59 +863,131 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
     return true;
 }
 
-Jani::WorkerRequestResult Jani::Runtime::OnWorkerComponentQuery(
-    WorkerInstance&       _worker_instance,
-    WorkerId              _worker_id,
-    EntityId              _entity_id,
-    const ComponentQuery& _component_query)
+bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
+    WorkerInstance&                    _worker_instance,
+    WorkerId                           _worker_id,
+    EntityId                           _entity_id,
+    ComponentId                        _component_id,
+    const std::vector<ComponentQuery>& _component_queries)
 {
-    auto entity_opt = m_database.GetEntityById(_entity_id);
-    if (!entity_opt)
+    auto entity = m_database.GetEntityByIdMutable(_entity_id);
+    if (!entity)
     {
-        return WorkerRequestResult(false);
-
+        return false;
     }
 
-#if 0
-    // Dumb query search
-    std::vector<EntityId> selected_entities;
-    for (auto& query : _component_query.queries)
+    auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
+    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_collection.GetLayerIdForComponent(_component_id));
+    if (!cell_worker)
     {
-        for (auto& [entity_id, entity]: m_active_entities)
+        return false;
+    }
+
+    // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
+    // it arrived before it sent an update
+    if (_worker_id != cell_worker.value()->GetId())
+    {
+        return false;
+    }
+
+    entity.value()->UpdateQueriesForComponent(_component_id, _component_queries);
+
+    return true;
+}
+    
+std::vector<Jani::ComponentPayload> Jani::Runtime::OnWorkerComponentInterestQuery(
+    WorkerInstance&                    _worker_instance,
+    WorkerId                           _worker_id,
+    EntityId                           _entity_id,
+    ComponentId                        _component_id)
+{
+    std::vector<ComponentPayload> components_payloads;
+    
+    auto entity = m_database.GetEntityByIdMutable(_entity_id);
+    if (!entity)
+    {
+        return std::move(components_payloads);
+    }
+
+    auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
+    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_collection.GetLayerIdForComponent(_component_id));
+    if (!cell_worker)
+    {
+        return std::move(components_payloads);
+    }
+
+    // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
+    // it arrived before it sent an update
+    if (_worker_id != cell_worker.value()->GetId())
+    {
+        return std::move(components_payloads);
+    }
+    
+    // Get and apply the queries
+    auto component_queries = entity.value()->GetQueriesForComponent(_component_id);
+    for (auto& component_query : component_queries)
+    {
+        assert(component_query.query_owner_component == _component_id);
+
+        std::unordered_map<EntityId, Entity*> selected_entities;
+
+        int query_index = 0;
+        for (auto& query : component_query.queries)
         {
-            if (entity.HasComponents(query.component_constraints_mask))
+            // Check if this is a combination 
+            if (query.and_constraint || query.or_constraint)
             {
-                if (!query.area_constraint && !query.radius_constraint)
+                assert(query_index > 0);
+
+                if (query.and_constraint)
                 {
-                    selected_entities.push_back(entity_id);
+                    // Not implemented for now
                 }
-                else if (query.area_constraint && _component_query.query_position)
+                else
                 {
-                    WorldRect search_rect = { _component_query.query_position->x, _component_query.query_position->y, query.area_constraint->width, query.area_constraint->height };
-                    if (search_rect.ManhattanDistanceFromPosition(entity.GetWorldPosition()) == 0)
-                    {
-                        selected_entities.push_back(entity_id);
-                    }
+                    // Not implemented for now
                 }
-                else if (query.radius_constraint && _component_query.query_position) // query.area_constraint->ManhattanDistanceFromPosition(entity.GetWorldPosition()) == 0)
-                {
-                    int32_t diffY    = entity.GetWorldPosition().y - _component_query.query_position->y;
-                    int32_t diffX    = entity.GetWorldPosition().x - _component_query.query_position->x;
-                    int32_t distance = std::sqrt((diffY * diffY) + (diffX * diffX));
-                    if (distance < query.radius_constraint.value())
+            }
+            else if (query.radius_constraint)
+            {
+                m_world_controller->ForEachEntityOnRadius(
+                    entity.value()->GetWorldPosition(),
+                    query.radius_constraint.value(),
+                    [&](EntityId _selected_entity_id, Entity& _selected_entity)
                     {
-                        selected_entities.push_back(entity_id);
-                    }
+                        auto total_required_components = query.component_constraints_mask.count();
+                        auto component_mask            = _selected_entity.GetComponentMask();
+                        if ((query.component_constraints_mask & component_mask).count() == total_required_components)
+                        {
+                            selected_entities.insert({ _selected_entity_id, &_selected_entity });
+                        }
+                    });
+            }
+            else if (query.area_constraint)
+            {
+                // Not implemented for now
+            }
+            else
+            {
+                // Should not be used for now (until there is a better way to perform this type of query)
+            }
+
+            query_index++;
+        }
+
+        for (auto& [entity_id, entity] : selected_entities)
+        {
+            for (auto& requested_component_id : component_query.query_component_ids)
+            {
+                if (entity->HasComponent(requested_component_id))
+                {
+                    components_payloads.push_back(entity->GetComponentPayload(requested_component_id).value());
                 }
             }
         }
     }
-#endif
 
-    // For each selected entity, get the requested components and prepare the return data
-    // ...
-
-    return WorkerRequestResult(false);
+    return std::move(components_payloads);
 }
 
 bool Jani::Runtime::IsLayerForComponentAvailable(ComponentId _component_id) const

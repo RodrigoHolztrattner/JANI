@@ -62,6 +62,7 @@
     - Worker shutdown if unused
     - Inspector: Better info, support for sending/receiving multiple messages
     - Support for sending/receiving multiple messages
+    - Add a way to bypass kcp and send a message that doesn't require an ack (mainly for query requests/responses)
 */
 
 /////////////
@@ -123,6 +124,11 @@ struct WorldPosition
         if (lhs.y > rhs.y) return false;
 
         return false;
+    }
+
+    operator glm::vec2()
+    {
+        return glm::vec2(x, y);
     }
 
     int32_t x, y;
@@ -884,7 +890,7 @@ public:
 		assert(total_size > 0 && total_size < std::numeric_limits<size_type>::max());
 		m_buckets.resize(total_size);
 	}
-    bool IsCellEmpty(WorldCellCoordinates _cell_coordinates)
+    bool IsCellEmpty(WorldCellCoordinates _cell_coordinates) const
 	{
 		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
         uint32_t index = (bucket_y / mBucketDimSize) * m_world_dim_size + (bucket_x / mBucketDimSize);
@@ -956,12 +962,12 @@ public:
 		{
 			for (int y = start_y; y <= end_y; y++)
 			{
-				if (!IsWorldPositionValid(x, y) || 
+				if (IsCellEmpty(WorldCellCoordinates({ x, y })) ||
 					(x - _cell_coordinates.x + y - _cell_coordinates.y) * (x - _cell_coordinates.x + y - _cell_coordinates.y) > actual_radius_pow2)
 				{
 					continue;
 				}
-				auto& bucket_value = AtMutable(x, y);
+                auto& bucket_value = AtMutable(WorldCellCoordinates({ x, y }));
 				m_query_temporary_buffer.push_back(bucket_value);
 			}
 		}
@@ -1034,10 +1040,6 @@ struct ComponentQueryInstruction
     // Only one is allowed
     bool and_constraint = false;
     bool or_constraint  = false;
-
-    // If linked with multiple instructions, the frequency from the last one will be
-    // used instead
-    uint32_t frequency = 1;
 };
 
 struct ComponentQuery
@@ -1046,10 +1048,10 @@ struct ComponentQuery
 
     friend Runtime;
 
-    ComponentQuery& Begin(ComponentId _query_owner_component, std::optional<WorldPosition> _query_position)
+    ComponentQuery& Begin(ComponentId _query_owner_component)
     {
         query_owner_component =_query_owner_component;
-        query_position        = _query_position;
+        AddOrGetQuery(true);
 
         return *this;
     }
@@ -1070,7 +1072,6 @@ struct ComponentQuery
     { 
         auto& current_query = AddOrGetQuery();
 
-        assert(query_position);
         current_query.component_constraints.push_back(_component_id);
         return *this;
     }
@@ -1079,7 +1080,6 @@ struct ComponentQuery
     {
         auto& current_query = AddOrGetQuery();
 
-        assert(query_position);
         current_query.component_constraints.insert(current_query.component_constraints.end(), _component_ids.begin(), _component_ids.end());
         return *this;
     }
@@ -1088,7 +1088,6 @@ struct ComponentQuery
     {
         auto& current_query = AddOrGetQuery();
 
-        assert(query_position);
         assert(!current_query.radius_constraint);
         current_query.area_constraint = _area;
         return *this;
@@ -1098,7 +1097,6 @@ struct ComponentQuery
     {
         auto& current_query = AddOrGetQuery();
 
-        assert(query_position);
         assert(!current_query.area_constraint);
         current_query.radius_constraint = _radius;
         return *this;
@@ -1108,8 +1106,7 @@ struct ComponentQuery
     {
         auto& current_query = AddOrGetQuery();
 
-        assert(query_position);
-        current_query.frequency = _frequency;
+        frequency = std::max(frequency, _frequency);
         return *this;
     }
 
@@ -1143,19 +1140,17 @@ protected:
         {
             queries.push_back(ComponentQueryInstruction());
         }
-        else
-        {
-            return queries.back();
-        }
+        
+        return queries.back();
     }
 
 public:
 
     ComponentId                            query_owner_component;
-    std::optional<WorldPosition>           query_position;
     std::vector<ComponentId>               query_component_ids;
     ComponentMask                          component_mask = 0;
     std::vector<ComponentQueryInstruction> queries;
+    uint32_t                               frequency      = 0;
 };
 
 JaniNamespaceBegin(Message)
@@ -1290,20 +1285,40 @@ struct RuntimeComponentUpdateRequest
     std::optional<WorldPosition> entity_world_position;
 };
 
-// RuntimeComponentQuery
-struct RuntimeComponentQueryRequest
+// RuntimeComponentInterestQueryUpdate
+struct RuntimeComponentInterestQueryUpdateRequest
 {
     Serializable();
 
-    ComponentQuery query;
+    EntityId                    entity_id;
+    ComponentId                 component_id;
+    std::vector<ComponentQuery> queries;
+};
+
+// RuntimeComponentInterestQuery
+struct RuntimeComponentInterestQueryRequest
+{
+    Serializable();
+
+    EntityId    entity_id;
+    ComponentId component_id;
+};
+
+// RuntimeComponentInterestQuery
+struct RuntimeComponentInterestQueryResponse
+{
+    Serializable();
+
+    bool                          succeed = false;
+    std::vector<ComponentPayload> components_payloads;
 };
 
 struct RuntimeComponentQueryResponse
 {
     Serializable();
 
-    bool                            succeed = false;
-    std::optional<ComponentPayload> component_payload;
+    bool                          succeed = false;
+    std::vector<ComponentPayload> component_payloads;
 };
 
 // RuntimeWorkerReportAcknowledge
@@ -1320,6 +1335,22 @@ struct RuntimeDefaultResponse
     Serializable();
 
     bool succeed = false;
+};
+
+// WorkerLayerAuthorityGain
+struct WorkerLayerAuthorityGainRequest
+{
+    Serializable();
+
+    EntityId entity_id = std::numeric_limits<EntityId>::max();
+};
+
+// WorkerLayerAuthorityLost
+struct WorkerLayerAuthorityLostRequest
+{
+    Serializable();
+
+    EntityId entity_id = std::numeric_limits<EntityId>::max();
 };
 
 // WorkerAddComponent
@@ -1420,8 +1451,6 @@ struct WorkerCellsInfos
 
 struct WorldCellInfo
 {
-    // - Cada cell possui uma array com todos os layers possiveis, em cada layer tem um ponteiro pra esse worker info acima
-
     std::map<EntityId, Entity*>                  entities;
     std::array<WorkerCellsInfos*, MaximumLayers> worker_cells_infos;
     WorldCellCoordinates                         cell_coordinates;
@@ -1581,43 +1610,26 @@ public:
         // TODO: Somehow check if the entity still have enough components to justify a layer being owned by a worker
     }
 
-    void AddQueriesForLayer(uint32_t _layer_id, std::vector<ComponentQuery> _queries)
+    /*
+    * Update the queries for a given component slot
+    */
+    void UpdateQueriesForComponent(ComponentId _component_id, std::vector<ComponentQuery> _queries) // Could use a transient vector, clear the query one and copy into the already existent memory
     {
-        return UpdateQueriesForLayer(_layer_id, std::move(_queries)); // Add and update is basically the same since we will always receive the entire layer query data
+        assert(_component_id < MaximumEntityComponents);
+        m_component_queries[_component_id] = std::move(_queries);
     }
 
-    void RemoveQueriesForLayer(uint32_t _layer_id)
+    /*
+    * Return a reference to the component query vector
+    */
+    const std::vector<ComponentQuery>& GetQueriesForComponent(ComponentId _component_id) const
     {
-        assert(_layer_id < MaximumLayers);
-        m_layer_queries[_layer_id].clear();
+        assert(_component_id < MaximumEntityComponents);
+        return m_component_queries[_component_id];
     }
 
-    void UpdateQueriesForLayer(uint32_t _layer_id, std::vector<ComponentQuery> _queries) // Could use a transient vector, clear the query one and copy into the already existent memory
-    {
-        assert(_layer_id < MaximumLayers);
-        m_layer_queries[_layer_id] = std::move(_queries);
-    }
-
-    void SetLayerAuthority(LayerId _layer_id, WorkerId _worker_id, bool _deprecated)
-    {
-        assert(_layer_id < MaximumLayers);
-
-        m_worker_layer_authority_info[_layer_id] = _worker_id;
-    }
-
-    std::optional<WorkerId> GetLayerAuthority(LayerId _layer_id, bool _deprecated) const
-    {
-        assert(_layer_id < MaximumLayers);
-
-        return m_worker_layer_authority_info[_layer_id];
-    }
-
-    bool VerifyWorkerLayerAuthority(LayerId _layer_id, WorkerId _worker_id, bool _deprecated) const
-    {
-        assert(_layer_id < MaximumLayers);
-
-        return m_worker_layer_authority_info[_layer_id] ? m_worker_layer_authority_info[_layer_id].value() == _worker_id : false;
-    }
+    ComponentId    component_id;
+    ComponentQuery query;
 
 private:
 
@@ -1628,10 +1640,8 @@ private:
     const WorldCellInfo* world_cell_info = nullptr;
 
 
-    std::array<std::optional<WorkerId>, MaximumLayers> m_worker_layer_authority_info;
-    std::array<ComponentPayload, MaximumEntityComponents>                                   m_component_payloads;
-
-    std::array<std::vector<ComponentQuery>, MaximumLayers> m_layer_queries;
+    std::array<ComponentPayload, MaximumEntityComponents>            m_component_payloads;
+    std::array<std::vector<ComponentQuery>, MaximumEntityComponents> m_component_queries;
 };
 
 JaniNamespaceEnd(Jani)

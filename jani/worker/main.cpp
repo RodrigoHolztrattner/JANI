@@ -35,7 +35,7 @@ int main(int _argc, char* _argv[])
     };
 
     uint32_t total_npcs_alive = 0;
-    uint32_t maximum_npcs     = 200;
+    uint32_t maximum_npcs     = 40;
 
     Jani::EntityId initial_entity_id = 0;
     Jani::EntityId final_entity_id   = 0;
@@ -113,9 +113,36 @@ int main(int _argc, char* _argv[])
             }
         });
 
+    worker.RegisterOnAuthorityGainCallback(
+        [&](entityx::Entity& _entity)
+        {
+            if (is_brain)
+            {
+                return;
+            }
+
+            Jani::ComponentQuery component_query;
+            component_query.Begin(0)
+                .QueryComponent(0)
+                .InRadius(5)
+                .WithFrequency(1);
+
+            worker.RequestUpdateComponentInterestQuery(
+                worker.GetJaniEntityId(_entity).value(),
+                0,
+                { std::move(component_query) });
+        });
+
+    worker.RegisterOnAuthorityLostCallback(
+        [](entityx::Entity& _entity)
+        {
+
+        });
+
+    bool authenticated = false;
 
     worker.RequestAuthentication().OnResponse(
-        [](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
+        [&](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
         {
             if (!_response.succeed)
             {
@@ -124,6 +151,7 @@ int main(int _argc, char* _argv[])
             else
             {
                 std::cout << "Worker -> Authentication succeeded! uses_spatial_area{" << _response.use_spatial_area << "}, maximum_entities{" << _response.maximum_entity_limit << "}" << std::endl;
+                authenticated = true;
             }
         }).WaitResponse();
 
@@ -140,10 +168,9 @@ int main(int _argc, char* _argv[])
             }).WaitResponse();
     }
 
-
     std::cout << "Worker -> Entering main loop!" << std::endl;
 
-    while (worker.IsConnected())
+    while (worker.IsConnected() && authenticated)
     {
         uint32_t wait_time_ms = 20;
         float    time_elapsed = static_cast<float>(wait_time_ms) / 1000.0f;

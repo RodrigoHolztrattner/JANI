@@ -45,6 +45,16 @@ bool Jani::Worker::IsConnected() const
     return !m_did_server_timeout;
 }
 
+void Jani::Worker::RegisterOnAuthorityGainCallback(OnAuthorityGainCallback _callback)
+{
+    m_on_authority_gain_callback = _callback;
+}
+
+void Jani::Worker::RegisterOnAuthorityLostCallback(OnAuthorityLostCallback _callback)
+{
+    m_on_authority_lost_callback = _callback;
+}
+
 void Jani::Worker::RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback)
 {
     m_on_component_added_callback = _callback;
@@ -66,9 +76,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeAuthenticationResponse> Jan
     worker_connection_request.access_token          = -1;
     worker_connection_request.worker_authentication = -1;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAuthentication, worker_connection_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAuthentication, worker_connection_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeAuthenticationResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeAuthenticationResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeAuthenticationResponse>();
@@ -86,9 +97,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     worker_log_request.log_title   = _title;
     worker_log_request.log_message = _message;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeLogMessage, worker_log_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeLogMessage, worker_log_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -101,9 +113,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeReserveEntityIdRangeRespons
     Message::RuntimeReserveEntityIdRangeRequest reserver_entity_id_range_request;
     reserver_entity_id_range_request.total_ids = _total;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeReserveEntityIdRange, reserver_entity_id_range_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeReserveEntityIdRange, reserver_entity_id_range_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>();
@@ -119,9 +132,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     add_entity_request.entity_id      = _entity_id;
     add_entity_request.entity_payload = std::move(_entity_payload);
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddEntity, add_entity_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddEntity, add_entity_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -134,9 +148,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     Message::RuntimeRemoveEntityRequest remove_entity_request;
     remove_entity_request.entity_id = _entity_id;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveEntity, remove_entity_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveEntity, remove_entity_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -154,9 +169,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     add_component_request.component_id      = _component_id;
     add_component_request.component_payload = std::move(_component_payload);
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddComponent, add_component_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddComponent, add_component_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -172,9 +188,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     remove_component_request.entity_id    = _entity_id;
     remove_component_request.component_id = _component_id;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveComponent, remove_component_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveComponent, remove_component_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -194,9 +211,38 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     component_update_request.component_payload     = std::move(_component_payload);
     component_update_request.entity_world_position = _entity_world_position;
 
-    if (m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeComponentUpdate, component_update_request))
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeComponentUpdate, component_update_request);
+    if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(m_current_message_index++, this);
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+    }
+
+    return ResponseCallback<Message::RuntimeDefaultResponse>();
+}
+
+Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestUpdateComponentInterestQuery(
+    EntityId                     _entity_id,
+    ComponentId                  _component_id,
+    std::vector<ComponentQuery>  _queries)
+{
+    assert(m_bridge_connection);
+
+    Message::RuntimeComponentInterestQueryUpdateRequest component_update_interest_query_request;
+    component_update_interest_query_request.entity_id    = _entity_id;
+    component_update_interest_query_request.component_id = _component_id;
+    component_update_interest_query_request.queries      = _queries;
+
+    auto entity_info_iter = m_server_entity_to_local_map.find(_entity_id);
+    if (entity_info_iter != m_server_entity_to_local_map.end())
+    {
+        entity_info_iter->second.component_queries[_component_id]      = std::move(_queries);
+        entity_info_iter->second.component_queries_time[_component_id] = std::chrono::steady_clock::now();
+    }
+
+    auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeComponentInterestQueryUpdate, component_update_interest_query_request);
+    if (request_result)
+    {
+        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
     }
 
     return ResponseCallback<Message::RuntimeDefaultResponse>();
@@ -204,6 +250,51 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
 
 void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 {
+    // NON OPTIMAL ENTITY QUERY CALLBACK
+
+    auto time_now = std::chrono::steady_clock::now();
+
+    for (auto& [entity_id, entity_info] : m_server_entity_to_local_map)
+    {
+        for (int i = 0; i < entity_info.component_queries.size(); i++)
+        {
+            auto& component_queries = entity_info.component_queries[i];
+            if (component_queries.size() > 0)
+            {
+                uint32_t frequency = 0;
+                for (auto& query : component_queries)
+                {
+                    frequency = std::max(frequency, query.frequency);
+                }
+
+                if (frequency == 0)
+                {
+                    continue;
+                }
+
+                uint32_t necessary_time_diff = 1000 / frequency;
+
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(time_now - entity_info.component_queries_time[i]).count() > necessary_time_diff)
+                {
+                    Message::RuntimeComponentInterestQueryRequest component_interest_query_request;
+                    component_interest_query_request.entity_id    = entity_id;
+                    component_interest_query_request.component_id = i;
+
+                    if (!m_request_manager.MakeRequest(
+                        *m_bridge_connection,
+                        RequestType::RuntimeComponentInterestQuery,
+                        component_interest_query_request))
+                    {
+                    }
+
+                    entity_info.component_queries_time[i] = time_now;
+                }
+            }
+        }
+    }
+
+    //
+
     if (m_bridge_connection)
     {
         m_bridge_connection->Update();
@@ -227,6 +318,13 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         is_internal_response = true;
                         break;
                     }
+                    case Jani::RequestType::RuntimeComponentInterestQuery:
+                    {
+                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeComponentInterestQueryResponse>();
+
+                        is_internal_response = true;
+                        break;
+                    }
                 }
 
                 // Do not continue if this response was handled internally
@@ -236,17 +334,10 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 }
 
                 ResponseCallbackType* response_callback = nullptr;
-                uint32_t              message_index     = 0;
-
-                if (m_response_callbacks.size() > m_received_message_index)
+                auto callback_iter = m_response_callbacks.find(_request_info.request_index);
+                if (callback_iter != m_response_callbacks.end())
                 {
-                    response_callback = &m_response_callbacks[m_received_message_index].second;
-                    message_index     = m_response_callbacks[m_received_message_index].first;
-
-                    if (m_received_message_index == message_index)
-                    {
-                        m_received_message_index++;
-                    }
+                    response_callback = &callback_iter->second;
                 }
 
                 // RuntimeDefaultResponse
@@ -294,6 +385,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     case Jani::RequestType::RuntimeAddComponent:
                     case Jani::RequestType::RuntimeRemoveComponent:
                     case Jani::RequestType::RuntimeComponentUpdate:
+                    case Jani::RequestType::RuntimeComponentInterestQueryUpdate:
                     {
                         auto response = _response_payload.GetResponse<Jani::Message::RuntimeDefaultResponse>();
                         auto callback = std::get_if<ResponseCallback<Message::RuntimeDefaultResponse>>((response_callback));
@@ -310,14 +402,9 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                 }
 
-                // Check if we received all pending messages
-                if (m_current_message_index == ++m_received_message_counter)
+                if (response_callback)
                 {
-                    // We are free to reset the message indexes
-                    m_received_message_counter = 0;
-                    m_current_message_index    = 0;
-                    m_received_message_index   = 0;
-                    m_response_callbacks.clear();
+                    m_response_callbacks.erase(_request_info.request_index);
                 }
             },
             [&](auto                         _client_hash,
@@ -333,20 +420,13 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                         // Check if we already have the entity created
                         auto entity_iter = m_server_entity_to_local_map.find(add_component_request.entity_id);
-                        if (entity_iter == m_server_entity_to_local_map.end())
+                        if (entity_iter != m_server_entity_to_local_map.end())
                         {
-                            auto new_entity = m_ecs_manager.entities.create();
+                            auto& entity = entity_iter->second.entityx;
 
-                            m_entity_count++;
-
-                            entity_iter = m_server_entity_to_local_map.insert({ add_component_request.entity_id, new_entity }).first;
-                            m_local_entity_to_server_map.insert({ new_entity, add_component_request.entity_id });
+                            assert(m_on_component_added_callback);
+                            m_on_component_added_callback(entity, add_component_request.component_id, add_component_request.component_payload);
                         }
-
-                        auto& entity = entity_iter->second;
-
-                        assert(m_on_component_added_callback);
-                        m_on_component_added_callback(entity, add_component_request.component_id, add_component_request.component_payload);
 
                         break;
                     }
@@ -357,38 +437,75 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto entity_iter = m_server_entity_to_local_map.find(remove_component_request.entity_id);
                         if (entity_iter != m_server_entity_to_local_map.end())
                         {
-                            auto& entity = entity_iter->second;
+                            auto& entity = entity_iter->second.entityx;
 
                             assert(m_on_component_removed_callback);
                             m_on_component_removed_callback(entity, remove_component_request.component_id);
-
-                            if (entity.component_mask().count() == 0)
-                            {
-                                m_entity_count--;
-
-                                entity.destroy();
-
-                                m_local_entity_to_server_map.erase(entity);
-                                m_server_entity_to_local_map.erase(entity_iter);
-                            }
                         }
 
                         break;
                     }
-                    case RequestType::WorkerLayerAuthorityLossImminent:
+                    case RequestType::WorkerLayerAuthorityLostImminent:
                     {
+                        assert(false);
                         break;
                     }
-                    case RequestType::WorkerLayerAuthorityLoss:
+                    case RequestType::WorkerLayerAuthorityLost:
                     {
+                        auto authority_lost_request = _request_payload.GetRequest<Message::WorkerLayerAuthorityLostRequest>();
+
+                        auto entity_iter = m_server_entity_to_local_map.find(authority_lost_request.entity_id);
+                        if (entity_iter != m_server_entity_to_local_map.end())
+                        {
+                            auto& entity = entity_iter->second.entityx;
+
+                            assert(m_on_authority_lost_callback);
+                            m_on_authority_lost_callback(entity); // Should this be done after the erase to prevent issues?
+
+                            // Ideally we should not delete the entity but set it as a non-owned entity, this way we
+                            // still keep its data in case another entity has interest on it
+                            // In this case it would time out naturally if not received interest data in a certain
+                            // amount of time
+
+                            m_entity_count--;
+
+                            entity.destroy();
+
+                            m_local_entity_to_server_map.erase(entity);
+                            m_server_entity_to_local_map.erase(entity_iter);
+                        }
+
                         break;
                     }
                     case RequestType::WorkerLayerAuthorityGainImminent:
                     {
+                        assert(false);
                         break;
                     }
                     case RequestType::WorkerLayerAuthorityGain:
                     {
+                        auto authority_gain_request = _request_payload.GetRequest<Message::WorkerLayerAuthorityGainRequest>();
+
+                        auto entity_iter = m_server_entity_to_local_map.find(authority_gain_request.entity_id);
+                        if (entity_iter == m_server_entity_to_local_map.end())
+                        {
+                            auto new_entity = m_ecs_manager.entities.create();
+
+                            m_entity_count++;
+
+                            LocalEntityInfo local_entity_info;
+                            local_entity_info.entityx = std::move(new_entity);
+
+                            entity_iter = m_server_entity_to_local_map.insert({ authority_gain_request.entity_id, std::move(local_entity_info) }).first;
+
+                            m_local_entity_to_server_map.insert({ new_entity, authority_gain_request.entity_id });
+                        }
+
+                        auto& entity = entity_iter->second.entityx;
+
+                        assert(m_on_authority_gain_callback);
+                        m_on_authority_gain_callback(entity);
+
                         break;
                     }
                     default:
@@ -423,5 +540,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         {
             std::cout << "Worker -> Failed to send worker report" << std::endl;
         }
+
+        std::cout << "Entity count{" << m_entity_count << "}" << std::endl;
     }
 }

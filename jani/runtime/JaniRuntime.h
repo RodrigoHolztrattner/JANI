@@ -138,13 +138,23 @@ protected: // WORKER COMMUNICATION //
         std::optional<WorldPosition> _entity_world_position);
 
     /*
-    * Received when a worker request a component query
+    * Received when a worker request to update a component query
     */
-    WorkerRequestResult OnWorkerComponentQuery(
-        WorkerInstance&       _worker_instance,
-        WorkerId              _worker_id,
-        EntityId              _entity_id,
-        const ComponentQuery& _component_query);
+    bool OnWorkerComponentInterestQueryUpdate(
+        WorkerInstance&                    _worker_instance,
+        WorkerId                           _worker_id,
+        EntityId                           _entity_id,
+        ComponentId                        _component_id,
+        const std::vector<ComponentQuery>& _component_queries);
+    
+    /*
+    * Received when a worker request a component query 
+    */
+    std::vector<ComponentPayload> OnWorkerComponentInterestQuery(
+        WorkerInstance&                    _worker_instance,
+        WorkerId                           _worker_id,
+        EntityId                           _entity_id,
+        ComponentId                        _component_id);
 
 private:
 
@@ -160,9 +170,9 @@ private: // VARIABLES //
 
     Database& m_database;
 
-    std::unique_ptr<Connection<>>              m_client_connections;
-    std::unique_ptr<Connection<>>              m_worker_connections;
-    std::unique_ptr<Connection<>>              m_inspector_connections;
+    std::unique_ptr<Connection<>> m_client_connections;
+    std::unique_ptr<Connection<>> m_worker_connections;
+    std::unique_ptr<Connection<>> m_inspector_connections;
 
     std::vector<std::unique_ptr<WorkerSpawnerInstance>> m_worker_spawner_instances;
 

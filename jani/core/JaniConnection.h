@@ -825,10 +825,8 @@ namespace Jani
         RuntimeAddComponent, 
         RuntimeRemoveComponent, 
         RuntimeComponentUpdate,
-        RuntimeComponentQuery, 
-        RuntimeLayerInterestQueryUpdate, /* add/update a certain layer query */
-        RuntimeLayerInterestQueryRemove, /* remove a certain layer query */
-        RuntimeLayerInterestQuery,       /* perform a certain layer query */
+        RuntimeComponentInterestQueryUpdate, /* update a certain component query */
+        RuntimeComponentInterestQuery,       /* perform a certain component query */
         RuntimeWorkerReportAcknowledge, 
 
         /* Worker Spawner Requests */
@@ -838,8 +836,8 @@ namespace Jani
         /* Runtime -> Worker Requests */
         WorkerAddComponent, 
         WorkerRemoveComponent, 
-        WorkerLayerAuthorityLossImminent, 
-        WorkerLayerAuthorityLoss, 
+        WorkerLayerAuthorityLostImminent, 
+        WorkerLayerAuthorityLost, 
         WorkerLayerAuthorityGainImminent,
         WorkerLayerAuthorityGain, 
 
@@ -860,7 +858,7 @@ namespace Jani
             ar(request_index);
         }
 
-        using RequestIndex = uint32_t;
+        using RequestIndex = uint64_t;
 
         RequestType  type;
         RequestIndex request_index = std::numeric_limits<RequestIndex>::max();
@@ -1030,7 +1028,7 @@ namespace Jani
     public:
 
         template<typename RequestPayloadType>
-        bool MakeRequest(const Connection<>& _connection, Connection<>::ClientHash _client_hash, RequestType _request_type, const RequestPayloadType& _payload)
+        std::optional<RequestInfo::RequestIndex> MakeRequest(const Connection<>& _connection, Connection<>::ClientHash _client_hash, RequestType _request_type, const RequestPayloadType& _payload)
         {
             m_temporary_request_buffer.clear();
             m_temporary_request_buffer.resize(Connection<>::MaximumDatagramSize);
@@ -1051,11 +1049,16 @@ namespace Jani
                 archive(_payload);
             }
 
-            return _connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash);
+            if (_connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash))
+            {
+                return m_request_counter - 1;
+            }
+
+            return std::nullopt;
         }
 
         template<typename RequestPayloadType>
-        bool MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
+        std::optional<RequestInfo::RequestIndex> MakeRequest(const Connection<>& _connection, RequestType _request_type, const RequestPayloadType& _payload)
         {
             return MakeRequest(_connection, 0, _request_type, _payload);
         }

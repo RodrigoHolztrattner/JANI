@@ -38,7 +38,7 @@ bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id, uint3
         worker_spawn_request.runtime_ip                     = m_runtime_address;
         worker_spawn_request.layer_id                       = _layer_id;
 
-        bool result = m_request_manager.MakeRequest(
+        auto result = m_request_manager.MakeRequest(
             *m_connection,
             RequestType::SpawnWorkerForLayer,
             worker_spawn_request);
@@ -46,7 +46,7 @@ bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id, uint3
         {
             WorkerSpawnStatus worker_spawn_status;
             worker_spawn_status.timeout_time_ms = _timeout_ms;
-            m_worker_spawn_status[_layer_id] = std::move(worker_spawn_status);
+            m_worker_spawn_status[_layer_id]    = std::move(worker_spawn_status);
 
             return true;
         }

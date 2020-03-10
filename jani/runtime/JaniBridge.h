@@ -217,13 +217,23 @@ private: // WORKER -> BRIDGE COMMUNICATION //
         std::optional<WorldPosition> _entity_world_position);
 
     /*
+    * Received when a worker request to update a component query
+    */
+    bool OnWorkerComponentInterestQueryUpdate(
+        WorkerInstance&                    _worker_instance,
+        WorkerId                           _worker_id,
+        EntityId                           _entity_id,
+        ComponentId                        _component_id,
+        const std::vector<ComponentQuery>& _component_queries);
+    
+    /*
     * Received when a worker request a component query 
     */
-    WorkerRequestResult OnWorkerComponentQuery(
-        WorkerInstance&       _worker_instance,
-        WorkerId              _worker_id,
-        EntityId              _entity_id,
-        const ComponentQuery& _component_query);
+    std::vector<ComponentPayload> OnWorkerComponentInterestQuery(
+        WorkerInstance&                    _worker_instance,
+        WorkerId                           _worker_id,
+        EntityId                           _entity_id,
+        ComponentId                        _component_id);
 
 
     //         std::optional<bool>          _authority_loss_imminent_acknowledgement, 

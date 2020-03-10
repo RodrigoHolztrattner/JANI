@@ -243,15 +243,30 @@ bool Jani::Bridge::OnWorkerComponentUpdate(
         _entity_world_position);
 }
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerComponentQuery(
-    WorkerInstance&       _worker_instance,
-    WorkerId              _worker_id,
-    EntityId              _entity_id,
-    const ComponentQuery& _component_query)
+bool Jani::Bridge::OnWorkerComponentInterestQueryUpdate(
+    WorkerInstance&                    _worker_instance,
+    WorkerId                           _worker_id,
+    EntityId                           _entity_id,
+    ComponentId                        _component_id,
+    const std::vector<ComponentQuery>& _component_queries)
 {
-    return m_runtime.OnWorkerComponentQuery(
+    return m_runtime.OnWorkerComponentInterestQueryUpdate(
         _worker_instance,
-        _worker_id, 
-        _entity_id, 
-        _component_query);
+        _worker_id,
+        _entity_id,
+        _component_id,
+        _component_queries);
+}
+
+std::vector<Jani::ComponentPayload> Jani::Bridge::OnWorkerComponentInterestQuery(
+    WorkerInstance&                    _worker_instance,
+    WorkerId                           _worker_id,
+    EntityId                           _entity_id,
+    ComponentId                        _component_id)
+{
+    return std::move(m_runtime.OnWorkerComponentInterestQuery(
+        _worker_instance,
+        _worker_id,
+        _entity_id,
+        _component_id));
 }

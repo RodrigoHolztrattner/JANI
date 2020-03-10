@@ -22,6 +22,8 @@ class Worker
 {
 public:
 
+    using OnAuthorityGainCallback    = std::function<void(entityx::Entity&)>;
+    using OnAuthorityLostCallback    = std::function<void(entityx::Entity&)>;
     using OnComponentAddedCallback   = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
     using OnComponentRemovedCallback = std::function<void(entityx::Entity&, ComponentId)>;
 
@@ -53,7 +55,7 @@ public:
         {
             if (parent_worker)
             {
-                parent_worker.value()->WaitForNextMessage(_perform_worker_updates);
+                parent_worker.value()->WaitForNextMessage(message_index, _perform_worker_updates);
             }
         }
 
@@ -64,7 +66,7 @@ public:
 
     protected:
 
-        ResponseCallback(uint32_t _message_index, Worker* _parent_worker)
+        ResponseCallback(RequestInfo::RequestIndex _message_index, Worker* _parent_worker)
             : message_index(_message_index)
             , parent_worker(_parent_worker)
         {
@@ -79,10 +81,10 @@ public:
         }
 
         std::function<void(const ResponseType&, bool)> response_callback;
-        std::optional<Worker*>                   parent_worker;
-        uint32_t                                 message_index   = std::numeric_limits<uint32_t>::max();
-        bool                                     on_response_set = false;
-        bool                                     request_result  = false;
+        std::optional<Worker*>                         parent_worker;
+        RequestInfo::RequestIndex                      message_index   = std::numeric_limits<RequestInfo::RequestIndex>::max();
+        bool                                           on_response_set = false;
+        bool                                           request_result  = false;
     };
 
     using ResponseCallbackType = std::variant
@@ -91,6 +93,15 @@ public:
         ResponseCallback<Message::RuntimeAuthenticationResponse>,
         ResponseCallback<Message::RuntimeDefaultResponse>
         >;
+
+private:
+
+    struct LocalEntityInfo
+    {
+        entityx::Entity                                                                         entityx;
+        std::array<std::vector<ComponentQuery>, MaximumEntityComponents>                        component_queries;
+        std::array<std::chrono::time_point<std::chrono::steady_clock>, MaximumEntityComponents> component_queries_time;
+    };
 
 //////////////////////////
 public: // CONSTRUCTORS //
@@ -125,6 +136,8 @@ public: // MAIN METHODS //
 public: // CALLBACKS //
 ///////////////////////
 
+    void RegisterOnAuthorityGainCallback(OnAuthorityGainCallback _callback);
+    void RegisterOnAuthorityLostCallback(OnAuthorityLostCallback _callback);
     void RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback);
     void RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback);
 
@@ -136,16 +149,15 @@ protected:
     template<typename ResponseType>
     void RegisterResponseCallback(uint32_t _message_index, const ResponseCallback<ResponseType>& _response)
     {
-        m_response_callbacks.push_back({ _message_index, _response });
+        m_response_callbacks.insert({ _message_index, _response });
     }
 
     /*
     
     */
-    void WaitForNextMessage(bool _perform_worker_updates)
+    void WaitForNextMessage(RequestInfo::RequestIndex _message_index, bool _perform_worker_updates)
     {
-        auto current_message_index = m_current_message_index;
-        while (IsConnected() && current_message_index == m_current_message_index) // TODO: Included check for timeout
+        while (IsConnected() && m_response_callbacks.find(_message_index) != m_response_callbacks.end()) // TODO: Included check for timeout
         {
             if (_perform_worker_updates)
             {
@@ -233,6 +245,15 @@ public:
         std::optional<WorldPosition> _entity_world_position);
 
     /*
+    * Request the same server to update a component interest query
+    * This operation is dependent on the permissions of this worker
+    */
+    ResponseCallback<Message::RuntimeDefaultResponse> RequestUpdateComponentInterestQuery(
+        EntityId                     _entity_id,
+        ComponentId                  _component_id,
+        std::vector<ComponentQuery>  _queries);
+
+    /*
     * The main update function
     * Use this to process current component data
     */
@@ -261,11 +282,8 @@ private: // VARIABLES //
     std::unique_ptr<Connection<>> m_bridge_connection;
     RequestManager                m_request_manager;
 
-    uint32_t  m_current_message_index    = 0;
-    uint32_t  m_received_message_index   = 0; // From where we are reading on m_response_callbacks
-    uint32_t  m_received_message_counter = 0; // What is the next response index
-    LayerId   m_layer_id                 = std::numeric_limits<LayerId>::max();
-    bool      m_did_server_timeout       = false;
+    LayerId   m_layer_id           = std::numeric_limits<LayerId>::max();
+    bool      m_did_server_timeout = false;
 
     bool     m_use_spatial_area     = false;
     uint32_t m_maximum_entity_limit = 0;
@@ -275,12 +293,14 @@ private: // VARIABLES //
 
     entityx::EntityX m_ecs_manager;
 
-    std::unordered_map<EntityId, entityx::Entity> m_server_entity_to_local_map;
+    std::unordered_map<EntityId, LocalEntityInfo> m_server_entity_to_local_map;
     std::unordered_map<entityx::Entity, EntityId> m_local_entity_to_server_map;
 
-    std::vector<std::pair<uint32_t, ResponseCallbackType>> m_response_callbacks;
+    std::unordered_map<RequestInfo::RequestIndex, ResponseCallbackType> m_response_callbacks;
 
     // Callbacks
+    OnAuthorityGainCallback    m_on_authority_gain_callback;
+    OnAuthorityLostCallback    m_on_authority_lost_callback;
     OnComponentAddedCallback   m_on_component_added_callback;
     OnComponentRemovedCallback m_on_component_removed_callback;
 };

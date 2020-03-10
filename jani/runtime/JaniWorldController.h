@@ -198,6 +198,16 @@ public: // MAIN METHODS //
     WorldCellCoordinates ConvertPositionIntoCellCoordinates(WorldPosition _world_position) const;
     WorldPosition ConvertCellCoordinatesIntoPosition(WorldPosition _cell_coordinates) const;
 
+    /*
+    
+    */
+    float ConvertWorldScalarIntoCellScalar(float _scalar) const;
+
+    /*
+    * Perform a query around a position with a radius, calling the callback for each selected entity 
+    */
+    void ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&)> _callback) const;
+
 private:
 
     /*

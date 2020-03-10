@@ -400,6 +400,37 @@ Jani::WorldPosition Jani::WorldController::ConvertCellCoordinatesIntoPosition(Wo
     return _cell_coordinates;
 }
 
+float Jani::WorldController::ConvertWorldScalarIntoCellScalar(float _scalar) const
+{
+    auto maximum_world_length = m_deployment_config.GetMaximumWorldLength();
+
+    assert(m_deployment_config.GetMaximumWorldLength() % m_deployment_config.GetTotalGridsPerWorldLine() == 0);
+
+    uint32_t cell_unit_length = m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine();
+
+    _scalar /= static_cast<float>(cell_unit_length);
+
+    return _scalar;
+}
+
+void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&)> _callback) const
+{
+    WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
+    float                cell_radius = ConvertWorldScalarIntoCellScalar(_radius);
+
+    auto& selected_cells = m_world_grid->InsideRangeMutable(cell_coordinates, cell_radius);
+    for (auto& cell : selected_cells)
+    {
+        for (auto& [entity_id, entity] : cell.entities)
+        {
+            if (glm::distance(glm::vec2(_world_position), glm::vec2(entity->GetWorldPosition())) < _radius)
+            {
+                _callback(entity_id, *entity);
+            }
+        }
+    }
+}
+
 void Jani::WorldController::ApplySpatialBalance()
 {
     for (auto& layer_info : m_layer_infos)
