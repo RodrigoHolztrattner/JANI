@@ -34,6 +34,7 @@
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 #include "span.hpp"
+#include "bitset_iter.h"
 
 #include <ikcp.h>
 

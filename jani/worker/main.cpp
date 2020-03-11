@@ -47,7 +47,7 @@ int main(int _argc, char* _argv[])
         std::cout << "Worker -> Unable to initialize worker!" << std::endl;
     }
 
-    worker.RegisterOnComponentAddedCallback(
+    worker.RegisterOnComponentUpdateCallback(
         [](entityx::Entity& _entity, Jani::ComponentId _component_id, const Jani::ComponentPayload& _component_payload)
         {
             // Somehow I know that component id 0 translate to Position component
@@ -55,10 +55,7 @@ int main(int _argc, char* _argv[])
             {
                 case 0:
                 {
-                    // std::cout << "Worker -> Assigning Position component to entity id{" << _entity << "}" << std::endl;
-
-                    assert(!_entity.has_component<PositionComponent>());
-                    _entity.assign<PositionComponent>(_component_payload.GetPayload<PositionComponent>());
+                    _entity.replace<PositionComponent>(_component_payload.GetPayload<PositionComponent>());
 
                     break;
                 }
@@ -66,8 +63,7 @@ int main(int _argc, char* _argv[])
                 {
                     std::cout << "Worker -> Assigning NPC component to entity id{" << _entity << "}" << std::endl;
 
-                    assert(!_entity.has_component<NpcComponent>());
-                    _entity.assign<NpcComponent>(_component_payload.GetPayload<NpcComponent>());
+                    _entity.replace<NpcComponent>(_component_payload.GetPayload<NpcComponent>());
 
                     break;
                 }
@@ -124,7 +120,7 @@ int main(int _argc, char* _argv[])
             Jani::ComponentQuery component_query;
             component_query.Begin(0)
                 .QueryComponent(0)
-                .InRadius(5)
+                .InRadius(30)
                 .WithFrequency(1);
 
             worker.RequestUpdateComponentInterestQuery(

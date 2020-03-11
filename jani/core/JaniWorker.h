@@ -24,7 +24,7 @@ public:
 
     using OnAuthorityGainCallback    = std::function<void(entityx::Entity&)>;
     using OnAuthorityLostCallback    = std::function<void(entityx::Entity&)>;
-    using OnComponentAddedCallback   = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
+    using OnComponentUpdateCallback  = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
     using OnComponentRemovedCallback = std::function<void(entityx::Entity&, ComponentId)>;
 
     template<typename ResponseType>
@@ -96,11 +96,29 @@ public:
 
 private:
 
-    struct LocalEntityInfo
+    struct EntityInfo
     {
         entityx::Entity                                                                         entityx;
+        ComponentMask                                                                           component_mask;          // Indicate all the components this entity has
+        ComponentMask                                                                           owned_component_mask;    // Indicate the components that are owned by the current worker on its layer
+        ComponentMask                                                                           interest_component_mask; // Indicate the components that were filled because interest was requested
         std::array<std::vector<ComponentQuery>, MaximumEntityComponents>                        component_queries;
         std::array<std::chrono::time_point<std::chrono::steady_clock>, MaximumEntityComponents> component_queries_time;
+        bool                                                                                    is_owned = false;
+
+        // This time is used when an entity is pure interest-based (only exist because of interest queries)
+        // If the update timestamp timeout (according to this worker interest timeout settings), it will be removed
+        // This does not affect entities that have at least one component owned by this worker
+        std::chrono::time_point<std::chrono::steady_clock> last_update_received_timestamp = std::chrono::steady_clock::now();
+
+        /*
+        * Returns if this entity is interest pure (only exist because of interest queries)
+        */
+        bool IsInterestPure() const
+        {
+            // The first part is required because a worker can own an entity layer the doesn't have components
+            return owned_component_mask.count() == 0 && interest_component_mask.count() > 0;
+        }
     };
 
 //////////////////////////
@@ -138,7 +156,7 @@ public: // CALLBACKS //
 
     void RegisterOnAuthorityGainCallback(OnAuthorityGainCallback _callback);
     void RegisterOnAuthorityLostCallback(OnAuthorityLostCallback _callback);
-    void RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback);
+    void RegisterOnComponentUpdateCallback(OnComponentUpdateCallback _callback);
     void RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback);
 
 protected:
@@ -264,8 +282,8 @@ public:
     */
     std::optional<EntityId> GetJaniEntityId(entityx::Entity _entity) const
     {
-        auto entity_iter = m_local_entity_to_server_map.find(_entity);
-        if (entity_iter != m_local_entity_to_server_map.end())
+        auto entity_iter = m_ecs_entity_to_entity_id_map.find(_entity);
+        if (entity_iter != m_ecs_entity_to_entity_id_map.end())
         {
             return entity_iter->second;
         }
@@ -285,23 +303,25 @@ private: // VARIABLES //
     LayerId   m_layer_id           = std::numeric_limits<LayerId>::max();
     bool      m_did_server_timeout = false;
 
-    bool     m_use_spatial_area     = false;
-    uint32_t m_maximum_entity_limit = 0;
-    uint32_t m_entity_count         = 0;
+    bool     m_use_spatial_area      = false;
+    uint32_t m_maximum_entity_limit  = 0;
+    uint32_t m_entity_count          = 0;
+
+    uint32_t m_interest_entity_timeout = 3000;
 
     std::chrono::time_point<std::chrono::steady_clock> m_last_worker_report_timestamp = std::chrono::steady_clock::now();
 
     entityx::EntityX m_ecs_manager;
 
-    std::unordered_map<EntityId, LocalEntityInfo> m_server_entity_to_local_map;
-    std::unordered_map<entityx::Entity, EntityId> m_local_entity_to_server_map;
+    std::unordered_map<EntityId, EntityInfo>      m_entity_id_to_info_map;
+    std::unordered_map<entityx::Entity, EntityId> m_ecs_entity_to_entity_id_map;
 
     std::unordered_map<RequestInfo::RequestIndex, ResponseCallbackType> m_response_callbacks;
 
     // Callbacks
     OnAuthorityGainCallback    m_on_authority_gain_callback;
     OnAuthorityLostCallback    m_on_authority_lost_callback;
-    OnComponentAddedCallback   m_on_component_added_callback;
+    OnComponentUpdateCallback  m_on_component_update_callback;
     OnComponentRemovedCallback m_on_component_removed_callback;
 };
 

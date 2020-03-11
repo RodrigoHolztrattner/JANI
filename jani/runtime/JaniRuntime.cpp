@@ -181,18 +181,6 @@ bool Jani::Runtime::Initialize()
                     add_component_request))
                 {
                 }
-                   
-                Message::WorkerRemoveComponentRequest remove_component_request;
-                remove_component_request.entity_id    = _entity.GetId();
-                remove_component_request.component_id = component_id;
-
-                if (!m_request_manager->MakeRequest(
-                    *m_worker_connections,
-                    _current_worker.GetConnectionClientHash(),
-                    RequestType::WorkerRemoveComponent,
-                    remove_component_request))
-                {
-                }
             }
         });
 
@@ -953,7 +941,7 @@ std::vector<Jani::ComponentPayload> Jani::Runtime::OnWorkerComponentInterestQuer
                 m_world_controller->ForEachEntityOnRadius(
                     entity.value()->GetWorldPosition(),
                     query.radius_constraint.value(),
-                    [&](EntityId _selected_entity_id, Entity& _selected_entity)
+                    [&](EntityId _selected_entity_id, Entity& _selected_entity, WorldCellCoordinates _cell_coordinates)
                     {
                         auto total_required_components = query.component_constraints_mask.count();
                         auto component_mask            = _selected_entity.GetComponentMask();
@@ -979,6 +967,14 @@ std::vector<Jani::ComponentPayload> Jani::Runtime::OnWorkerComponentInterestQuer
         {
             for (auto& requested_component_id : component_query.query_component_ids)
             {
+                // Check if we should ignore this
+                LayerId component_layer             = m_layer_collection.GetLayerIdForComponent(requested_component_id);
+                auto current_component_layer_worker = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates()).GetWorkerForLayer(component_layer);
+                if (current_component_layer_worker && current_component_layer_worker.value()->GetId() == _worker_id)
+                {
+                    continue;
+                }
+
                 if (entity->HasComponent(requested_component_id))
                 {
                     components_payloads.push_back(entity->GetComponentPayload(requested_component_id).value());

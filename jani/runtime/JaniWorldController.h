@@ -206,7 +206,7 @@ public: // MAIN METHODS //
     /*
     * Perform a query around a position with a radius, calling the callback for each selected entity 
     */
-    void ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&)> _callback) const;
+    void ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&, WorldCellCoordinates)> _callback) const;
 
 private:
 

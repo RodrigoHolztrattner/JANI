@@ -55,9 +55,9 @@ void Jani::Worker::RegisterOnAuthorityLostCallback(OnAuthorityLostCallback _call
     m_on_authority_lost_callback = _callback;
 }
 
-void Jani::Worker::RegisterOnComponentAddedCallback(OnComponentAddedCallback _callback)
+void Jani::Worker::RegisterOnComponentUpdateCallback(OnComponentUpdateCallback _callback)
 {
-    m_on_component_added_callback = _callback;
+    m_on_component_update_callback = _callback;
 }
 
 void Jani::Worker::RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback)
@@ -232,8 +232,8 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     component_update_interest_query_request.component_id = _component_id;
     component_update_interest_query_request.queries      = _queries;
 
-    auto entity_info_iter = m_server_entity_to_local_map.find(_entity_id);
-    if (entity_info_iter != m_server_entity_to_local_map.end())
+    auto entity_info_iter = m_entity_id_to_info_map.find(_entity_id);
+    if (entity_info_iter != m_entity_id_to_info_map.end())
     {
         entity_info_iter->second.component_queries[_component_id]      = std::move(_queries);
         entity_info_iter->second.component_queries_time[_component_id] = std::chrono::steady_clock::now();
@@ -250,11 +250,67 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
 
 void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 {
-    // NON OPTIMAL ENTITY QUERY CALLBACK
-
     auto time_now = std::chrono::steady_clock::now();
 
-    for (auto& [entity_id, entity_info] : m_server_entity_to_local_map)
+    // Erase timed-out entities
+    {
+        auto iter = m_entity_id_to_info_map.begin();
+        while (iter != m_entity_id_to_info_map.end())
+        {
+            auto& entity_info = iter->second;
+
+            assert(!(entity_info.interest_component_mask.count() == 0 && !entity_info.is_owned));
+
+            // Don't do anything is this entity doesn't have any interest component
+            if (entity_info.interest_component_mask.count() == 0)
+            {
+                iter++;
+                continue;
+            }
+
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(time_now - entity_info.last_update_received_timestamp).count() > m_interest_entity_timeout)
+            {
+                assert(!(entity_info.IsInterestPure() && entity_info.is_owned));
+
+                if (entity_info.IsInterestPure())
+                {
+                    std::cout << "Worker -> Destroying timed-out interest pure entity" << std::endl;
+
+                    // TODO: Should we call a callback here?
+
+                    m_ecs_entity_to_entity_id_map.erase(entity_info.entityx);
+                    entity_info.entityx.destroy();
+                    iter = m_entity_id_to_info_map.erase(iter);
+
+                    m_entity_count--;
+
+                    continue;
+                }
+                else
+                {
+                    for (const auto& component_id : bitset::indices_on(entity_info.interest_component_mask))
+                    {
+                        assert(m_on_component_removed_callback);
+                        m_on_component_removed_callback(entity_info.entityx, component_id);
+
+                        entity_info.component_mask.set(component_id, false);
+                    }
+
+                    entity_info.interest_component_mask.reset();
+
+                    iter++;
+                }   
+            }
+            else
+            {
+                iter++;
+            }
+        }
+    }
+
+    // NON OPTIMAL ENTITY QUERY 
+
+    for (auto& [entity_id, entity_info] : m_entity_id_to_info_map)
     {
         for (int i = 0; i < entity_info.component_queries.size(); i++)
         {
@@ -293,7 +349,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         }
     }
 
-    //
+    // NON OPTIMAL ENTITY QUERY
 
     if (m_bridge_connection)
     {
@@ -321,6 +377,39 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     case Jani::RequestType::RuntimeComponentInterestQuery:
                     {
                         auto response = _response_payload.GetResponse<Jani::Message::RuntimeComponentInterestQueryResponse>();
+
+                        for (auto& component_payload : response.components_payloads)
+                        {
+                            // Check if the entity was already registered
+                            auto entity_iter = m_entity_id_to_info_map.find(component_payload.entity_owner);
+                            if (entity_iter == m_entity_id_to_info_map.end())
+                            {
+                                EntityInfo entity_info;
+                                entity_info.entityx = m_ecs_manager.entities.create();
+
+                                entity_iter = m_entity_id_to_info_map.insert({ component_payload.entity_owner, std::move(entity_info) }).first;
+                                m_ecs_entity_to_entity_id_map.insert({ entity_iter->second.entityx, component_payload.entity_owner });
+
+                                m_entity_count++;
+                            }
+
+                            auto& entity_info = entity_iter->second;
+
+                            // Dont update the component if this worker already owns it
+                            if (entity_info.owned_component_mask.test(component_payload.component_id))
+                            {
+                                continue;
+                            }
+
+                            // Mark this entity component as interest-based, also update the general component mask
+                            entity_info.interest_component_mask.set(component_payload.component_id, true);
+                            entity_info.component_mask.set(component_payload.component_id, true);
+
+                            entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
+
+                            assert(m_on_component_update_callback);
+                            m_on_component_update_callback(entity_info.entityx, component_payload.component_id, component_payload);
+                        }
 
                         is_internal_response = true;
                         break;
@@ -419,13 +508,22 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto add_component_request = _request_payload.GetRequest<Message::WorkerAddComponentRequest>();
 
                         // Check if we already have the entity created
-                        auto entity_iter = m_server_entity_to_local_map.find(add_component_request.entity_id);
-                        if (entity_iter != m_server_entity_to_local_map.end())
+                        auto entity_iter = m_entity_id_to_info_map.find(add_component_request.entity_id);
+                        if (entity_iter != m_entity_id_to_info_map.end())
                         {
-                            auto& entity = entity_iter->second.entityx;
+                            auto& entity_info = entity_iter->second;
 
-                            assert(m_on_component_added_callback);
-                            m_on_component_added_callback(entity, add_component_request.component_id, add_component_request.component_payload);
+                            assert(entity_info.is_owned);
+
+                            // If this entity had this component as an interest-based type, remove it from the interest mask
+                            // as it will be added into the owned one
+                            // (removed the check as it is unnecessary, just set it directly)
+                            entity_info.interest_component_mask.set(add_component_request.component_id, false);
+
+                            entity_info.owned_component_mask.set(add_component_request.component_id, true);
+
+                            assert(m_on_component_update_callback);
+                            m_on_component_update_callback(entity_info.entityx, add_component_request.component_id, add_component_request.component_payload);
                         }
 
                         break;
@@ -434,13 +532,24 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     {
                         auto remove_component_request = _request_payload.GetRequest<Message::WorkerRemoveComponentRequest>();
 
-                        auto entity_iter = m_server_entity_to_local_map.find(remove_component_request.entity_id);
-                        if (entity_iter != m_server_entity_to_local_map.end())
+                        auto entity_iter = m_entity_id_to_info_map.find(remove_component_request.entity_id);
+                        if (entity_iter != m_entity_id_to_info_map.end())
                         {
-                            auto& entity = entity_iter->second.entityx;
+                            auto& entity_info = entity_iter->second;
+                            
+                            assert(entity_info.is_owned);
+
+                            // DO NOT move the owned component to the interest-based mask, if the server requests us to remove
+                            // a component we should obey its authority
+                            // The only option where is acceptable moving the component to the interest mask is when losing 
+                            // authority over an entity, the server will not attempt to remove the components so we can
+                            // totally reuse them at the interest mask
 
                             assert(m_on_component_removed_callback);
-                            m_on_component_removed_callback(entity, remove_component_request.component_id);
+                            m_on_component_removed_callback(entity_info.entityx, remove_component_request.component_id);
+
+                            entity_info.component_mask.set(remove_component_request.component_id, false);
+                            entity_info.owned_component_mask.set(remove_component_request.component_id, false);
                         }
 
                         break;
@@ -454,25 +563,27 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     {
                         auto authority_lost_request = _request_payload.GetRequest<Message::WorkerLayerAuthorityLostRequest>();
 
-                        auto entity_iter = m_server_entity_to_local_map.find(authority_lost_request.entity_id);
-                        if (entity_iter != m_server_entity_to_local_map.end())
+                        auto entity_iter = m_entity_id_to_info_map.find(authority_lost_request.entity_id);
+                        if (entity_iter != m_entity_id_to_info_map.end())
                         {
-                            auto& entity = entity_iter->second.entityx;
+                            auto& entity_info = entity_iter->second;
 
                             assert(m_on_authority_lost_callback);
-                            m_on_authority_lost_callback(entity); // Should this be done after the erase to prevent issues?
+                            m_on_authority_lost_callback(entity_info.entityx);
 
-                            // Ideally we should not delete the entity but set it as a non-owned entity, this way we
-                            // still keep its data in case another entity has interest on it
-                            // In this case it would time out naturally if not received interest data in a certain
-                            // amount of time
+                            entity_info.is_owned = false;
 
-                            m_entity_count--;
+                            entity_info.interest_component_mask |= entity_info.owned_component_mask;
+                            entity_info.owned_component_mask.reset();
 
-                            entity.destroy();
+                            if (entity_info.component_mask.count() == 0)
+                            {
+                                m_entity_count--;
 
-                            m_local_entity_to_server_map.erase(entity);
-                            m_server_entity_to_local_map.erase(entity_iter);
+                                m_ecs_entity_to_entity_id_map.erase(entity_info.entityx);
+                                entity_info.entityx.destroy();
+                                m_entity_id_to_info_map.erase(entity_iter);
+                            }
                         }
 
                         break;
@@ -486,25 +597,26 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     {
                         auto authority_gain_request = _request_payload.GetRequest<Message::WorkerLayerAuthorityGainRequest>();
 
-                        auto entity_iter = m_server_entity_to_local_map.find(authority_gain_request.entity_id);
-                        if (entity_iter == m_server_entity_to_local_map.end())
+                        auto entity_iter = m_entity_id_to_info_map.find(authority_gain_request.entity_id);
+                        if (entity_iter == m_entity_id_to_info_map.end())
                         {
                             auto new_entity = m_ecs_manager.entities.create();
 
+                            EntityInfo new_entity_info;
+                            new_entity_info.entityx = std::move(new_entity);
+
+                            entity_iter = m_entity_id_to_info_map.insert({ authority_gain_request.entity_id, std::move(new_entity_info) }).first;
+                            m_ecs_entity_to_entity_id_map.insert({ new_entity, authority_gain_request.entity_id });
+
                             m_entity_count++;
-
-                            LocalEntityInfo local_entity_info;
-                            local_entity_info.entityx = std::move(new_entity);
-
-                            entity_iter = m_server_entity_to_local_map.insert({ authority_gain_request.entity_id, std::move(local_entity_info) }).first;
-
-                            m_local_entity_to_server_map.insert({ new_entity, authority_gain_request.entity_id });
                         }
 
-                        auto& entity = entity_iter->second.entityx;
+                        auto& entity_info = entity_iter->second;
+
+                        entity_info.is_owned = true;
 
                         assert(m_on_authority_gain_callback);
-                        m_on_authority_gain_callback(entity);
+                        m_on_authority_gain_callback(entity_info.entityx);
 
                         break;
                     }
@@ -541,6 +653,14 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
             std::cout << "Worker -> Failed to send worker report" << std::endl;
         }
 
-        std::cout << "Entity count{" << m_entity_count << "}" << std::endl;
+        uint32_t total_pure_interest_entity_count = 0;
+        for (auto& [entity_id, entity_info] : m_entity_id_to_info_map)
+        {
+            if (!entity_info.is_owned)
+            {
+                total_pure_interest_entity_count++;
+            }
+        }
+        std::cout << "Entity count{" << m_entity_count << "} | Pure interest entity count{" << total_pure_interest_entity_count << "}" << std::endl;
     }
 }

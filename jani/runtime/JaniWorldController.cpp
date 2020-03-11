@@ -413,10 +413,10 @@ float Jani::WorldController::ConvertWorldScalarIntoCellScalar(float _scalar) con
     return _scalar;
 }
 
-void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&)> _callback) const
+void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&, WorldCellCoordinates)> _callback) const
 {
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
-    float                cell_radius = ConvertWorldScalarIntoCellScalar(_radius);
+    float                cell_radius      = ConvertWorldScalarIntoCellScalar(_radius);
 
     auto& selected_cells = m_world_grid->InsideRangeMutable(cell_coordinates, cell_radius);
     for (auto& cell : selected_cells)
@@ -425,7 +425,7 @@ void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position,
         {
             if (glm::distance(glm::vec2(_world_position), glm::vec2(entity->GetWorldPosition())) < _radius)
             {
-                _callback(entity_id, *entity);
+                _callback(entity_id, *entity, cell.cell_coordinates);
             }
         }
     }
