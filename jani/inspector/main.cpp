@@ -6,10 +6,12 @@
 
 int main(int _argc, char* _argv[])
 {
+    Jani::InitializeStandardConsole();
+
     const char*   runtime_ip          = "127.0.0.1";
     uint32_t      runtime_listen_port = 14051;
 
-    std::cout << "Inspector -> Connected with Runtime at runtime_ip{" << runtime_ip << "}, runtime_listen_port{" << runtime_listen_port << "}" << std::endl;
+    Jani::MessageLog().Info("Inspector -> Connected with Runtime at runtime_ip {} , runtime_listen_port {}, layer_id {}", runtime_ip, runtime_listen_port);
 
     {
         Jani::Inspector::InspectorManager inspector_manager;
@@ -25,7 +27,7 @@ int main(int _argc, char* _argv[])
                 auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
                 if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() > 5)
                 {
-                    std::cout << "Inspector -> Update frame is taking too long to process process_time{" << process_time << "}" << std::endl;
+                    Jani::MessageLog().Warning("Inspector -> Update frame is taking too long to process process_time {}ms", process_time);
                 }
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(3));
@@ -33,7 +35,7 @@ int main(int _argc, char* _argv[])
         }
     }
 
-    std::cout << "Inspector -> Disconnected from the server!" << std::endl;
+    Jani::MessageLog().Warning("Inspector -> Disconnected from the server");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 

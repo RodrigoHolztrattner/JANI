@@ -252,7 +252,8 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
         }
         default:
         {
-            std::cout << "WorkerInstance -> Unknown request type received by worker instance" << std::endl;
+            Jani::MessageLog().Error("WorkerInstance -> Unknown request type received by worker instance");
+
             break;
         }
     }

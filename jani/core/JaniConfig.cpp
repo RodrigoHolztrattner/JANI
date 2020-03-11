@@ -3,6 +3,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniConfig.h"
 
+std::mutex Jani::MessageLog::m_log_mutex;
+
 #if 0
 
 Jani::DatagramSocket::DatagramSocket(int _receive_port, int _dst_port, const char* _dst_address, bool _broadcast, bool _reuse_socket)

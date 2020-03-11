@@ -70,7 +70,7 @@ bool Jani::Runtime::Initialize()
         {
             auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
-            std::cout << "Runtime -> Cell migration performed from worker_id{" << _current_worker.GetId() << "} to worker_id{" << _new_worker.GetId() << "}" << std::endl;
+            Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {}", _current_worker.GetId(), _new_worker.GetId());
 
             for (auto& [entity_id, entity] : _entities)
             {
@@ -106,7 +106,8 @@ bool Jani::Runtime::Initialize()
                     auto component_payload = entity->GetComponentPayload(component_id);
                     if (!component_payload)
                     {
-                        std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
+                        Jani::MessageLog().Error("Runtime -> Error retrieving component payload for ownership transfer");
+
                         continue;
                     }
 
@@ -163,11 +164,10 @@ bool Jani::Runtime::Initialize()
                 auto component_payload = _entity.GetComponentPayload(component_id);
                 if (!component_payload)
                 {
-                    std::cout << "Runtime -> Error retrieving component payload for ownership transfer!" << std::endl;
+                    Jani::MessageLog().Error("Runtime -> Error retrieving component payload for ownership transfer");
+
                     continue;
                 }
-
-                // std::cout << "Runtime -> Entity crossed cell border entity_id{" << _entity.GetId() << "}, layer_id{" << _layer_id << "}" << std::endl;
 
                 Message::WorkerAddComponentRequest add_component_request;
                 add_component_request.entity_id         = _entity.GetId();
@@ -200,7 +200,7 @@ bool Jani::Runtime::Initialize()
             if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(_layer_id))
             {
                 auto& registered_layers = m_layer_collection.GetLayers();
-                std::cout << "Unable to request a new worker from worker spawner, layer{" << registered_layers.find(_layer_id)->second.name << "}" << std::endl;
+                Jani::MessageLog().Error("Unable to request a new worker from worker spawner, layer {}", registered_layers.find(_layer_id)->second.name);
             }
         });
 
@@ -242,7 +242,7 @@ void Jani::Runtime::Update()
                 _client_hash.value(),
                 true);
 
-            std::cout << "Runtime -> New client worker connected" << std::endl;
+            Jani::MessageLog().Info("Runtime -> New client worker connected");
 
             Message::RuntimeClientAuthenticationResponse authentication_response = { worker_allocation_result };
             {
@@ -270,7 +270,7 @@ void Jani::Runtime::Update()
                 }
             }
 
-            std::cout << "Runtime -> New worker connected" << std::endl;
+            Jani::MessageLog().Info("Runtime -> New worker worker connected");
 
             Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 7 };
             {
@@ -445,6 +445,7 @@ void Jani::Runtime::Update()
         }
 
         auto* worker_instance = worker_instance_iter->second;
+        WorkerId worker_id    = worker_instance->GetId();
         auto worker_layer_id  = worker_instance->GetLayerId();
 
         m_worker_instance_mapping.erase(worker_instance_iter);
@@ -460,11 +461,11 @@ void Jani::Runtime::Update()
         bool disconnect_result = bridge->DisconnectWorker(_client_hash);
         if (!disconnect_result)
         {
-            std::cout << "Runtime -> Error trying to disconnect worker, its not registered on the bridge" << std::endl;
+            Jani::MessageLog().Error("Runtime -> Problem trying to disconnect worker, its not registered on the bridge");
         }
         else
         {
-            std::cout << "Runtime -> Worker disconnected" << std::endl;
+            Jani::MessageLog().Info("Runtime -> Worker disconnected with id {} for layer {} with client hash {}", worker_id, worker_layer_id, _client_hash);
         }
     };
 
@@ -573,8 +574,15 @@ bool Jani::Runtime::OnWorkerLogMessage(
     std::string     _log_title,
     std::string     _log_message)
 {
-    std::cout << "[" << magic_enum::enum_name(_log_level) << "] " << _log_title << ": " << _log_message << std::endl;
-
+    switch (_log_level)
+    {
+        case WorkerLogLevel::Trace: Jani::MessageLog().Trace("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
+        case WorkerLogLevel::Info: Jani::MessageLog().Info("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
+        case WorkerLogLevel::Warning: Jani::MessageLog().Warning("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
+        case WorkerLogLevel::Error: Jani::MessageLog().Error("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
+        case WorkerLogLevel::Critical: Jani::MessageLog().Critical("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
+    }
+    
     return true;
 }
 

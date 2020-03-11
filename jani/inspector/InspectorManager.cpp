@@ -86,7 +86,6 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
                             m_cell_infos[coordinates] = std::move(cell_info);
                         }
-                        // std::cout << "Inspector -> Received info about {" << m_cells_infos.cells_infos.size() << "} cells infos" << std::endl;
 
                         break;
                     }
@@ -107,7 +106,6 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
                             m_workers_infos[worker_id] = std::move(worker_info);
                         }
-                        // std::cout << "Inspector -> Received info about {" << m_cells_infos.cells_infos.size() << "} cells infos" << std::endl;
 
                         break;
                     }
@@ -129,7 +127,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             Jani::RequestType::RuntimeGetEntitiesInfo,
             get_entities_info_request))
         {
-            std::cout << "Inspector -> Failed to request entities infos" << std::endl;
+            Jani::MessageLog().Error("Inspector -> Failed to request entities infos");
         }
 
         if (!m_request_manager->MakeRequest(
@@ -137,7 +135,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             Jani::RequestType::RuntimeGetCellsInfos,
             get_cells_infos_request))
         {
-            std::cout << "Inspector -> Failed to request cells infos" << std::endl;
+            Jani::MessageLog().Error("Inspector -> Failed to request cells infos");
         }
 
         if (!m_request_manager->MakeRequest(
@@ -145,7 +143,7 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
             Jani::RequestType::RuntimeGetWorkersInfos,
             get_workers_infos_request))
         {
-            std::cout << "Inspector -> Failed to request workers infos" << std::endl;
+            Jani::MessageLog().Error("Inspector -> Failed to request workers infos");
         }
 
         m_last_runtime_request_time = time_now;

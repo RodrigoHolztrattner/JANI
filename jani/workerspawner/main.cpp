@@ -3,6 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniConfig.h"
 #include <Windows.h>
+#include <shellapi.h>
 
 HANDLE ExecuteExternalExeFileNGetReturnValue(std::wstring _path, std::wstring _parameters)
 {
@@ -34,6 +35,7 @@ static std::wstring char_to_wchar(const char* text)
 
 int main(int _argc, char* _argv[])
 {
+    Jani::InitializeStandardConsole();
 
     if (_argc != 4)
     {
@@ -43,13 +45,11 @@ int main(int _argc, char* _argv[])
     const char* dst_ip = "127.0.0.1";
     uint32_t    dst_port = 13001;
     uint32_t    local_port = 8092;
-      
-
 
     Jani::Connection<> runtime_connection(local_port);
     Jani::RequestManager request_manager;
 
-    std::cout << "WorkerSpawner -> Listening for requests on dst_ip{" << dst_ip << "}, dst_port{" << dst_port << "}, local_port{" << local_port << "}" << std::endl << std::endl;
+    Jani::MessageLog().Info("WorkerSpawner -> Listening for requests on dst_ip {}, dst_port {}, local_port {}", dst_ip, dst_port, local_port);
 
     while (true)
     {
@@ -72,7 +72,7 @@ int main(int _argc, char* _argv[])
                     {
                         auto worker_spawn_request = _request_payload.GetRequest<Jani::Message::WorkerSpawnRequest>();
 
-                        std::cout << "WorkerSpawner -> Received spawn request: runtime_ip{" << worker_spawn_request.runtime_ip << "}, runtime_listen_port{" << worker_spawn_request.runtime_worker_connection_port << "}, layer_id{" << worker_spawn_request.layer_id << "}" << std::endl;
+                        Jani::MessageLog().Info("WorkerSpawner -> Received spawn request: runtime_ip {} , runtime_listen_port {}, layer_id {}", worker_spawn_request.runtime_ip, worker_spawn_request.runtime_worker_connection_port, worker_spawn_request.layer_id);
 
                         std::wstring process_parameters;
                         process_parameters += char_to_wchar(worker_spawn_request.runtime_ip.c_str());

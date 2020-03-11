@@ -6,16 +6,18 @@
 
 int main(int _argc, char* _argv[])
 {
+    Jani::InitializeStandardConsole();
+
     const char*   runtime_ip          = _argv[1];
     uint32_t      runtime_listen_port = std::stoi(std::string(_argv[2]));
-    Jani::LayerId layer_id          = std::stoull(std::string(_argv[3]));
+    Jani::LayerId layer_id            = std::stoull(std::string(_argv[3]));
 
-    std::cout << "Worker -> Worker spawned for runtime_ip{" << runtime_ip << "}, runtime_listen_port{" << runtime_listen_port << "}, layer_id{" << layer_id << "}" << std::endl;
+    Jani::MessageLog().Info("Worker -> Worker spawned for runtime_ip {}, runtime_listen_port {}, layer_id {}", runtime_ip, runtime_listen_port, layer_id);
 
     bool is_brain = 1 == layer_id;
     entityx::EntityX s_ecs_manager;
 
-    std::cout << "Worker -> " << (is_brain ? "is brain" : "is game") << std::endl;
+    Jani::MessageLog().Info("Worker -> {}", (is_brain ? "is brain" : "is game"));
 
     struct PositionComponent
     {
@@ -44,7 +46,7 @@ int main(int _argc, char* _argv[])
 
     if (!worker.InitializeWorker(runtime_ip, runtime_listen_port))
     {
-        std::cout << "Worker -> Unable to initialize worker!" << std::endl;
+        Jani::MessageLog().Critical("Worker -> Unable to initialize worker");
     }
 
     worker.RegisterOnComponentUpdateCallback(
@@ -61,15 +63,13 @@ int main(int _argc, char* _argv[])
                 }
                 case 1:
                 {
-                    std::cout << "Worker -> Assigning NPC component to entity id{" << _entity << "}" << std::endl;
-
                     _entity.replace<NpcComponent>(_component_payload.GetPayload<NpcComponent>());
 
                     break;
                 }
                 default:
                 {
-                    std::cout << "Worker -> Trying to assign invalid component to entity" << std::endl;
+                    Jani::MessageLog().Error("Worker -> Trying to assign invalid component to entity");
 
                     break;
                 }
@@ -84,8 +84,6 @@ int main(int _argc, char* _argv[])
             {
                 case 0:
                 {
-                    // std::cout << "Worker -> Removing Position component from entity id{" << _entity << "}" << std::endl;
-
                     assert(_entity.has_component<PositionComponent>());
                     _entity.remove<PositionComponent>();
 
@@ -93,8 +91,6 @@ int main(int _argc, char* _argv[])
                 }
                 case 1:
                 {
-                    std::cout << "Worker -> Removing NPC component from entity id{" << _entity << "}" << std::endl;
-
                     assert(_entity.has_component<NpcComponent>());
                     _entity.remove<NpcComponent>();
 
@@ -102,7 +98,7 @@ int main(int _argc, char* _argv[])
                 }
                 default:
                 {
-                    std::cout << "Worker -> Trying to remove invalid component from entity" << std::endl;
+                    Jani::MessageLog().Error("Worker -> Trying to remove invalid component from entity");
 
                     break;
                 }
@@ -142,11 +138,11 @@ int main(int _argc, char* _argv[])
         {
             if (!_response.succeed)
             {
-                std::cout << "Worker -> Failed to authenticate!" << std::endl;
+                Jani::MessageLog().Critical("Worker -> Failed to authenticate");
             }
             else
             {
-                std::cout << "Worker -> Authentication succeeded! uses_spatial_area{" << _response.use_spatial_area << "}, maximum_entities{" << _response.maximum_entity_limit << "}" << std::endl;
+                Jani::MessageLog().Info("Worker -> Authentication succeeded! uses_spatial_area {}, maximum_entities {}", _response.use_spatial_area, _response.maximum_entity_limit);
                 authenticated = true;
             }
         }).WaitResponse();
@@ -164,7 +160,7 @@ int main(int _argc, char* _argv[])
             }).WaitResponse();
     }
 
-    std::cout << "Worker -> Entering main loop!" << std::endl;
+    Jani::MessageLog().Info("Worker -> Entering main loop");
 
     while (worker.IsConnected() && authenticated)
     {
@@ -188,7 +184,7 @@ int main(int _argc, char* _argv[])
 
                 new_entity.assign<PositionComponent>(position_component);
 
-                std::cout << "Worker -> Requesting to add new entity!" << std::endl;
+                Jani::MessageLog().Info("Worker -> Requesting to add new entity");
 
                 Jani::EntityPayload entity_payload;
                 entity_payload.component_payloads.push_back({ initial_entity_id , 0, {} });
@@ -199,12 +195,12 @@ int main(int _argc, char* _argv[])
                     {
                         if (!_response.succeed)
                         {
-                            std::cout << "Worker -> Problem adding new entity!" << std::endl;
+                            Jani::MessageLog().Error("Worker -> Problem adding new entity");
                             initial_entity_id--;
                         }
                         else
                         {
-                            std::cout << "Worker -> New entity added successfully!" << std::endl;
+                            Jani::MessageLog().Info("Worker -> New entity added successfully");
                         }
                     }).WaitResponse();
 
@@ -270,7 +266,7 @@ int main(int _argc, char* _argv[])
         worker.Update(wait_time_ms);
     }
 
-    std::cout << "Worker -> Disconnected from the server!" << std::endl;
+    Jani::MessageLog().Warning("Worker -> Disconnected from the server");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 

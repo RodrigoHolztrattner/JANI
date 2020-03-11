@@ -116,6 +116,18 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/g-truc/glm
 )
 
+# SPDLog (logging library)
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog
+)
+
+# docopt (beautiful command-line interfaces)
+#FetchContent_Declare(
+#  docopt
+#  GIT_REPOSITORY https://github.com/docopt/docopt.cpp
+#)
+
 FetchContent_GetProperties(ctti)
 if(NOT ctti_POPULATED)
   PrintFetchMessage("CTTI")
@@ -194,6 +206,20 @@ if(NOT glm_POPULATED)
   FetchContent_Populate(glm)
 endif()
 
+FetchContent_GetProperties(spdlog)
+if(NOT spdlog_POPULATED)
+  PrintFetchMessage("SPDLOG")
+  FetchContent_Populate(spdlog)
+  add_subdirectory(${spdlog_SOURCE_DIR} ${spdlog_BINARY_DIR})
+endif()
+
+#FetchContent_GetProperties(docopt)
+#if(NOT docopt_POPULATED)
+#  PrintFetchMessage("docopt")
+#  FetchContent_Populate(docopt)
+#  add_subdirectory(${docopt_SOURCE_DIR} ${docopt_BINARY_DIR})
+#endif()
+
 ###########
 # PROJECT #
 ###########
@@ -248,7 +274,8 @@ ${range_v3_SOURCE_DIR}/include
 ${cereal_SOURCE_DIR}/include
 ${entityx_SOURCE_DIR}
 ${glfw_SOURCE_DIR}/include
-${glm_SOURCE_DIR})
+${glm_SOURCE_DIR}
+${spdlog_SOURCE_DIR}/include)
 
 ###########
 # LIBRARY #

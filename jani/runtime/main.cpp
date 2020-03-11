@@ -21,6 +21,8 @@ void* operator new(size_t _size)
 
 int main(int _argc, char* _argv[])
 {
+    Jani::InitializeStandardConsole();
+
     std::unique_ptr<Jani::Database> database = std::make_unique<Jani::Database>();
     std::unique_ptr<Jani::Runtime>  runtime;
 
@@ -31,21 +33,21 @@ int main(int _argc, char* _argv[])
 
         if (!layer_collection->Initialize("layers_config.json"))
         {
-            std::cout << "LayerCollection -> Failed to initialize" << std::endl;
+            Jani::MessageLog().Critical("Runtime -> LayerCollection failed to initialize");
 
             return false;
         }
 
         if (!worker_spawner_collection->Initialize("worker_spawners_config.json"))
         {
-            std::cout << "WorkerSpawnerCollection -> Failed to initialize" << std::endl;
+            Jani::MessageLog().Critical("Runtime -> WorkerSpawnerCollection failed to initialize");
 
             return false;
         }
 
         if (!deployment_config->Initialize("deployment_config.json"))
         {
-            std::cout << "DeploymentConfig -> Failed to initialize" << std::endl;
+            Jani::MessageLog().Critical("Runtime -> DeploymentConfig failed to initialize");
 
             return false;
         }
@@ -58,7 +60,7 @@ int main(int _argc, char* _argv[])
 
         if (!runtime->Initialize())
         {
-            std::cout << "Runtime -> Problem initializing runtime, verify if your config file is valid" << std::endl;
+            Jani::MessageLog().Critical("Runtime -> Problem initializing runtime, verify if your config file is valid");
 
             return false;
         }
@@ -74,7 +76,7 @@ int main(int _argc, char* _argv[])
             auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() > 3)
             {
-                std::cout << "Runtime -> Update frame is taking too long to process process_time{" << process_time << "}" << std::endl;
+                Jani::MessageLog().Warning("Runtime -> Update frame is taking too long to process process_time({})", process_time);
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -82,9 +84,10 @@ int main(int _argc, char* _argv[])
             elapsed_time_since_last_memory_feedback += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
             if (elapsed_time_since_last_memory_feedback > 1000)
             {
-                std::cout << "Total allocations: {" << s_total_allocations_per_second << "}, a total of: " << Jani::pretty_bytes(s_total_allocated_per_second) << std::endl;
-                s_total_allocations_per_second = 0;
-                s_total_allocated_per_second = 0;
+                Jani::MessageLog().Info("Total allocations: ({}), a total of: ({})", s_total_allocations_per_second, Jani::pretty_bytes(s_total_allocated_per_second));
+
+                s_total_allocations_per_second          = 0;
+                s_total_allocated_per_second            = 0;
                 elapsed_time_since_last_memory_feedback = 0;
             }
         }

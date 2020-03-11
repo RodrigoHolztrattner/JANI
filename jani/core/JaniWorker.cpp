@@ -274,7 +274,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                 if (entity_info.IsInterestPure())
                 {
-                    std::cout << "Worker -> Destroying timed-out interest pure entity" << std::endl;
+                    Jani::MessageLog().Info("Worker -> Destroying timed-out interest pure entity {}", iter->first);
 
                     // TODO: Should we call a callback here?
 
@@ -486,7 +486,8 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     default:
                     {
-                        std::cout << "Worker -> Received invalid response type from server!" << std::endl;
+                        Jani::MessageLog().Error("Worker -> Received invalid response type from server");
+
                         break;
                     }
                 }
@@ -622,7 +623,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                     }
                     default:
                     {
-                        std::cout << "Worker -> Received invalid request from server" << std::endl;
+                        Jani::MessageLog().Error("Worker -> Received invalid request type from server");
 
                         break;
                     }
@@ -650,7 +651,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
             RequestType::RuntimeWorkerReportAcknowledge,
             worker_report))
         {
-            std::cout << "Worker -> Failed to send worker report" << std::endl;
+            Jani::MessageLog().Error("Worker -> Failed to send worker report");
         }
 
         uint32_t total_pure_interest_entity_count = 0;
@@ -661,6 +662,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 total_pure_interest_entity_count++;
             }
         }
-        std::cout << "Entity count{" << m_entity_count << "} | Pure interest entity count{" << total_pure_interest_entity_count << "}" << std::endl;
+
+        Jani::MessageLog().Info("Worker -> Entity count {} | Pure interest entity count {}", m_entity_count, total_pure_interest_entity_count);
     }
 }
