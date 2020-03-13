@@ -21,12 +21,19 @@
         {
             "name": "position",
             "id": 0, 
-            "layer_name": "game"
+            "layer_name": "game", 
+            "attributes": {
+               "x": "int64", 
+               "y": "int64" 
+            }
         },
         {
             "name": "npc",
             "id": 1, 
-            "layer_name": "brain"
+            "layer_name": "brain", 
+            "attributes": {
+                "alive": "boolean"
+             }
         }
     ]
 }

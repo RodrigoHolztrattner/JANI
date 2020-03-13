@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: MapWindow.h
+// Filename: QueryWindow.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
@@ -22,16 +22,18 @@ JaniNamespaceBegin(Jani)
 JaniNamespaceBegin(Inspector)
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: MapWindow
+// Class name: QueryWindow
 ////////////////////////////////////////////////////////////////////////////////
-class MapWindow : public BaseWindow
+class QueryWindow : public BaseWindow
 {
+    friend InspectorManager;
+
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    MapWindow(InspectorManager& _inspector_manager);
-    ~MapWindow();
+    QueryWindow(InspectorManager& _inspector_manager);
+    ~QueryWindow();
 
 //////////////////////////
 public: // MAIN METHODS //
@@ -68,26 +70,46 @@ public: // MAIN METHODS //
     bool CanAcceptInputConnection(const WindowInputConnection& _connection) final;
 
     /*
+    * Returns the type of data this window is able to receive
+    */
+    WindowDataType GetInputTypes() const final;
+
+    /*
+    * Returns the type of data this window is able to output
+    */
+    WindowDataType GetOutputTypes() const final;
+
+    /*
     * Request output data
     */
-    std::optional<std::unordered_map<EntityId, EntityData>>    GetOutputEntityData() const;
-    std::optional<std::vector<EntityId>>                       GetOutputEntityId()   const;
-    std::optional<std::vector<std::shared_ptr<Constraint>>>                     GetOutputConstraint() const;
-    std::optional<std::vector<WorldPosition>>                  GetOutputPosition()   const;
+    std::optional<std::unordered_map<EntityId, EntityData>> GetOutputEntityData() const final;
+    std::optional<std::vector<std::shared_ptr<Constraint>>> GetOutputConstraint() const final;
+
+protected:
+
+    /*
+    * If this window registered itself to receive query data, this is the function that
+    * will be called
+    */
+    void ReceiveEntityQueryResults(const ComponentQueryResultPayload& _query_payload);
+
+    /*
+    * Return the query payload associated with this query window
+    */
+    std::optional<std::pair<WorldPosition, ComponentQuery>> GetComponentQueryPayload() const;
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    float  m_zoom_level = 5.0f;
-    ImVec2 m_scroll     = ImVec2(0, 0);
-
-
     std::unordered_map<EntityId, EntityData> m_entity_datas;
-    std::vector<EntityId>                    m_entity_ids;
-    std::optional<VisualizationSettings>     m_visualization_settings;
+    std::shared_ptr<Constraint>              m_constraints;
+    ComponentMask                            m_constraint_required_components;
 
-    WorldRect m_map_bounding_box;
+    bool m_query_active = false;
+
+    std::optional<std::shared_ptr<Constraint>*> m_add_new_constraint_target;
+    std::optional<ComponentMask*>               m_component_mask_selector_target;
 };
 
 // Inspector

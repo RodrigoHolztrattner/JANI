@@ -7,6 +7,7 @@
 // INCLUDES //
 //////////////
 #include "JaniConfig.h"
+#include "JaniLayerCollection.h"
 #include "imgui.h"
 #include "ui/MainWindow.h"
 
@@ -27,11 +28,13 @@ class Renderer;
 ////////////////////////////////////////////////////////////////////////////////
 class InspectorManager
 {
+    friend QueryWindow;
+
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    InspectorManager();
+    InspectorManager(const Jani::LayerCollection& _layer_collection);
     ~InspectorManager();
 
 //////////////////////////
@@ -53,9 +56,28 @@ public: // MAIN METHODS //
     */
     bool ShouldDisconnect() const;
 
+    /*
+    * Return a reference to the layer collection
+    */
+    const Jani::LayerCollection& GetLayerCollection() const;
+
+protected:
+
+    /*
+    * Register a window to receive custom queries
+    */
+    void RegisterQueryWindow(QueryWindow& _window);
+
+    /*
+    * Unregister a previous registered query window
+    */
+    void UnregisterQueryWindow(QueryWindow& _window);
+
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
+
+    const Jani::LayerCollection& m_layer_collection;
 
     std::unique_ptr<Jani::Connection<>>                m_runtime_connection;
     std::unique_ptr<Jani::RequestManager>              m_request_manager;
@@ -64,6 +86,8 @@ private: // VARIABLES //
 
     std::unique_ptr<Renderer>   m_renderer;
     std::unique_ptr<MainWindow> m_main_window;
+
+    std::unordered_map<WindowId, QueryWindow*> m_query_windows;
 
     bool m_should_disconnect = false;
 

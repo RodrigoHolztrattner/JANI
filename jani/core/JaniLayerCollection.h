@@ -31,12 +31,19 @@ class LayerCollection
         std::set<ComponentId>    components;
     };
 
+    struct ComponentAttributeInfo
+    {
+        ComponentAttributeType type;
+        std::string            name;
+    };
+
     struct ComponentInfo
     {
-        std::string name;
-        std::string layer_name;
-        LayerId     layer_unique_id = std::numeric_limits<LayerId>::max();
-        ComponentId unique_id       = std::numeric_limits<ComponentId>::max();
+        std::string                         name;
+        std::string                         layer_name;
+        LayerId                             layer_unique_id = std::numeric_limits<LayerId>::max();
+        ComponentId                         unique_id       = std::numeric_limits<ComponentId>::max();
+        std::vector<ComponentAttributeInfo> component_attributes;
     };
 
 //////////////////////////

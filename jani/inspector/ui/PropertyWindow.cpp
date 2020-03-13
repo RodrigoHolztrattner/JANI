@@ -5,7 +5,7 @@
 #include "imgui.h"
 #include "..\imgui_extension.h"
 
-Jani::Inspector::PropertyWindow::PropertyWindow()
+Jani::Inspector::PropertyWindow::PropertyWindow(InspectorManager& _inspector_manager) : BaseWindow(_inspector_manager, "Property Viewer")
 {
 }
 

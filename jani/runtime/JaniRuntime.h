@@ -150,13 +150,21 @@ protected: // WORKER COMMUNICATION //
     /*
     * Received when a worker request a component query 
     */
-    std::vector<ComponentPayload> OnWorkerComponentInterestQuery(
+    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
         WorkerInstance&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,
-        ComponentId                        _component_id);
+        ComponentId                        _component_id) const;
 
 private:
+
+    /*
+    * Perform a component query, optionally it can ignore entities owned by the given worker
+    */
+    std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> PerformComponentQuery(
+        const ComponentQuery&   _query, 
+        WorldPosition           _search_center_location, 
+        std::optional<WorkerId> _ignore_worker = std::nullopt) const;
 
     /*
     * Perform a quick check if there is an active worker layer that accepts the

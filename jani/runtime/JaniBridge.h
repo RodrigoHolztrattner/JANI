@@ -229,7 +229,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     /*
     * Received when a worker request a component query 
     */
-    std::vector<ComponentPayload> OnWorkerComponentInterestQuery(
+    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
         WorkerInstance&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,

@@ -7,6 +7,7 @@
 // INCLUDES //
 //////////////
 #include "JaniConfig.h"
+#include "BaseWindow.h"
 #include "..\InspectorCommon.h"
 
 ///////////////
@@ -22,13 +23,13 @@ JaniNamespaceBegin(Inspector)
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: PropertyWindow
 ////////////////////////////////////////////////////////////////////////////////
-class PropertyWindow
+class PropertyWindow : public BaseWindow
 {
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    PropertyWindow();
+    PropertyWindow(InspectorManager& _inspector_manager);
     ~PropertyWindow();
 
 //////////////////////////
@@ -41,7 +42,7 @@ public: // MAIN METHODS //
     bool Initialize();
 
     /*
-    
+    * Render this window
     */
     void Draw(
         uint32_t             _window_width,

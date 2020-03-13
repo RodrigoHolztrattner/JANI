@@ -78,6 +78,32 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
         component_info.unique_id  = component["id"];
         component_info.layer_name = component["layer_name"];
 
+        if (component.find("attributes") != component.end())
+        {
+            auto& component_attributes = component["attributes"];
+            for (auto& [attribute_name, attribute_type] : component_attributes.items())
+            {
+                std::string name = attribute_name;
+                std::string type = attribute_type;
+
+                bool found = false;
+                for (int i = 0; i < magic_enum::enum_count<ComponentAttributeType>(); i++)
+                {
+                    if (type == magic_enum::enum_name<ComponentAttributeType>(magic_enum::enum_value<ComponentAttributeType>(i)))
+                    {
+                        component_info.component_attributes.push_back({ magic_enum::enum_value<ComponentAttributeType>(i), std::move(name) });
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+        }
+
         for (auto& layer : m_layers)
         {
             if (layer.second.name == component_info.layer_name)

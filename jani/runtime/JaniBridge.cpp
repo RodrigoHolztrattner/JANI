@@ -258,7 +258,7 @@ bool Jani::Bridge::OnWorkerComponentInterestQueryUpdate(
         _component_queries);
 }
 
-std::vector<Jani::ComponentPayload> Jani::Bridge::OnWorkerComponentInterestQuery(
+std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Bridge::OnWorkerComponentInterestQuery(
     WorkerInstance&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,

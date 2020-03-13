@@ -46,6 +46,7 @@
 #include <cereal/types/bitset.hpp>
 #include <cereal/types/tuple.hpp>
 #include <cereal/types/utility.hpp>
+#include <cereal/types/polymorphic.hpp>
 
 #include "JaniConnection.h"
 
@@ -449,6 +450,18 @@ using WorkerId = uint64_t;
 using ComponentId = uint64_t;
 
 using EntityId = uint64_t;
+
+enum class ComponentAttributeType
+{
+    boolean, 
+    int32, 
+    int64, 
+    int32u, 
+    int64u, 
+    float32, 
+    float64,
+    string
+};
 
 enum class WorkerLogLevel
 {
@@ -1197,15 +1210,55 @@ struct ComponentQueryInstruction
 {   
     Serializable();
 
-    std::vector<ComponentId> component_constraints;
-    ComponentMask            component_constraints_mask = 0;
-
-    std::optional<WorldArea> area_constraint;
-    std::optional<uint32_t>  radius_constraint;
+    std::optional<ComponentMask> component_constraints;
+    std::optional<WorldArea>     area_constraint;
+    std::optional<WorldRect>     box_constraint;
+    std::optional<uint32_t>      radius_constraint;
 
     // Only one is allowed
-    bool and_constraint = false;
-    bool or_constraint  = false;
+    std::optional<std::pair<std::unique_ptr<ComponentQueryInstruction>, std::unique_ptr<ComponentQueryInstruction>>> and_constraint;
+    std::optional<std::pair<std::unique_ptr<ComponentQueryInstruction>, std::unique_ptr<ComponentQueryInstruction>>> or_constraint;
+
+    void RequireComponent(ComponentId _component_id)
+    { 
+        component_constraints = ComponentMask();
+        component_constraints.value().set(_component_id, true);
+    }
+
+    void RequireComponents(ComponentMask _component_ids)
+    {
+        component_constraints = _component_ids;
+    }
+
+    void EntitiesInArea(WorldArea _area)
+    {
+        area_constraint = _area;
+    }
+
+    void EntitiesInRadius(uint32_t _radius)
+    {
+        radius_constraint = _radius;
+    }
+
+    std::pair<ComponentQueryInstruction*, ComponentQueryInstruction*> And()
+    {
+        and_constraint = std::pair<std::unique_ptr<ComponentQueryInstruction>, std::unique_ptr<ComponentQueryInstruction>>();
+
+        and_constraint.value().first  = std::make_unique<ComponentQueryInstruction>();
+        and_constraint.value().second = std::make_unique<ComponentQueryInstruction>();
+
+        return { and_constraint.value().first.get(), and_constraint.value().second.get()};
+    }
+
+    std::pair<ComponentQueryInstruction*, ComponentQueryInstruction*> Or()
+    {
+        or_constraint = std::pair<std::unique_ptr<ComponentQueryInstruction>, std::unique_ptr<ComponentQueryInstruction>>();
+
+        or_constraint.value().first  = std::make_unique<ComponentQueryInstruction>();
+        or_constraint.value().second = std::make_unique<ComponentQueryInstruction>();
+
+        return { or_constraint.value().first.get(), or_constraint.value().second.get()};
+    }
 };
 
 struct ComponentQuery
@@ -1214,109 +1267,109 @@ struct ComponentQuery
 
     friend Runtime;
 
-    ComponentQuery& Begin(ComponentId _query_owner_component)
+    ComponentQueryInstruction* Begin(std::optional<ComponentId> _query_owner_component = std::nullopt)
     {
         query_owner_component =_query_owner_component;
-        AddOrGetQuery(true);
+        root_query = std::make_shared<ComponentQueryInstruction>();
 
-        return *this;
+        return root_query.get();
     }
 
     ComponentQuery& QueryComponent(ComponentId _component_id)
     {
-        query_component_ids.push_back(_component_id);
+        component_mask.set(_component_id);
         return *this;
     }
 
-    ComponentQuery& QueryComponents(std::vector<ComponentId> _component_ids)
+    ComponentQuery& QueryComponents(ComponentMask _component_mask)
     {
-        query_component_ids.insert(query_component_ids.end(), _component_ids.begin(), _component_ids.end());
-        return *this;
-    }
-
-    ComponentQuery& WhereEntityOwnerHasComponent(ComponentId _component_id)
-    { 
-        auto& current_query = AddOrGetQuery();
-
-        current_query.component_constraints.push_back(_component_id);
-        return *this;
-    }
-
-    ComponentQuery& WhereEntityOwnerHasComponents(std::vector<ComponentId> _component_ids)
-    {
-        auto& current_query = AddOrGetQuery();
-
-        current_query.component_constraints.insert(current_query.component_constraints.end(), _component_ids.begin(), _component_ids.end());
-        return *this;
-    }
-
-    ComponentQuery& InArea(WorldArea _area)
-    {
-        auto& current_query = AddOrGetQuery();
-
-        assert(!current_query.radius_constraint);
-        current_query.area_constraint = _area;
-        return *this;
-    }
-
-    ComponentQuery& InRadius(uint32_t _radius)
-    {
-        auto& current_query = AddOrGetQuery();
-
-        assert(!current_query.area_constraint);
-        current_query.radius_constraint = _radius;
+        component_mask = _component_mask;
         return *this;
     }
 
     ComponentQuery& WithFrequency(uint32_t _frequency)
     {
-        auto& current_query = AddOrGetQuery();
-
         frequency = std::max(frequency, _frequency);
         return *this;
     }
 
-    ComponentQuery& And()
+    bool IsValid() const
     {
-        auto& current_query = AddOrGetQuery();
-
-        assert(!current_query.or_constraint);
-
-        current_query.and_constraint = true;
-        AddOrGetQuery(true);
-        return *this;
-    }
-
-    ComponentQuery& Or()
-    {
-        auto& current_query = AddOrGetQuery();
-
-        assert(!current_query.and_constraint);
-
-        current_query.or_constraint = true;
-        AddOrGetQuery(true);
-        return *this;
-    }
-
-protected:
-
-    ComponentQueryInstruction& AddOrGetQuery(bool _force_add = false)
-    {
-        if (queries.size() == 0 || _force_add)
+        std::function<bool(const ComponentQueryInstruction&)> ValidateQueryInstruction = [&](const ComponentQueryInstruction& _query_instruction) -> bool
         {
-            queries.push_back(ComponentQueryInstruction());
+            if (_query_instruction.box_constraint)
+            {
+                return true;
+            }
+            else if (_query_instruction.area_constraint)
+            {
+                return false; // Not supported for now
+
+                return true;
+            }
+            else if (_query_instruction.radius_constraint)
+            {
+                return _query_instruction.radius_constraint.value() >= 0.0f && _query_instruction.radius_constraint.value() < 10000000.0f;
+            }
+            else if (_query_instruction.component_constraints)
+            {
+                return true;
+            }
+            else if (_query_instruction.and_constraint && _query_instruction.and_constraint->first && _query_instruction.and_constraint->second)
+            {
+                if (!ValidateQueryInstruction(*_query_instruction.and_constraint->first))
+                {
+                    return false;
+                }
+
+                if (!ValidateQueryInstruction(*_query_instruction.and_constraint->second))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            else if (_query_instruction.or_constraint && _query_instruction.or_constraint->first && _query_instruction.or_constraint->second)
+            {
+                return false; // Not supported for now
+                if (!ValidateQueryInstruction(*_query_instruction.or_constraint->first))
+                {
+                    return false;
+                }
+
+                if (!ValidateQueryInstruction(*_query_instruction.or_constraint->second))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            return false;
+        };
+
+        if (!root_query)
+        {
+            return false;
         }
-        
-        return queries.back();
+
+        return ValidateQueryInstruction(*root_query);
     }
 
 public:
 
-    ComponentId                            query_owner_component;
-    std::vector<ComponentId>               query_component_ids;
-    ComponentMask                          component_mask = 0;
-    std::vector<ComponentQueryInstruction> queries;
-    uint32_t                               frequency      = 0;
+    std::optional<ComponentId>                 query_owner_component;
+    ComponentMask                              component_mask;
+    std::shared_ptr<ComponentQueryInstruction> root_query;
+    uint32_t                                   frequency = 0;
+};
+
+struct ComponentQueryResultPayload
+{
+    EntityId                      entity_id;
+    ComponentMask                 entity_component_mask;
+    WorldPosition                 entity_world_position;
+    std::vector<ComponentPayload> component_payloads;
 };
 
 JaniNamespaceBegin(Message)
@@ -1476,6 +1529,30 @@ struct RuntimeComponentInterestQueryResponse
     Serializable();
 
     bool                          succeed = false;
+    ComponentMask                 entity_component_mask;
+    std::vector<ComponentPayload> components_payloads;
+};
+
+// RuntimeInspectorQuery
+struct RuntimeInspectorQueryRequest
+{
+    Serializable();
+
+    uint64_t       window_id = std::numeric_limits<uint64_t>::max();
+    WorldPosition  query_center_location;
+    ComponentQuery query;
+};
+
+// RuntimeInspectorQuery
+struct RuntimeInspectorQueryResponse
+{
+    Serializable();
+
+    bool                          succeed   = false;
+    uint64_t                      window_id = std::numeric_limits<uint64_t>::max();
+    EntityId                      entity_id = std::numeric_limits<EntityId>::max();
+    ComponentMask                 entity_component_mask;
+    WorldPosition                 entity_world_position;
     std::vector<ComponentPayload> components_payloads;
 };
 

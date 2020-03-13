@@ -219,33 +219,39 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
         {
             auto component_queries_request = _request_payload.GetRequest<Message::RuntimeComponentInterestQueryRequest>();
 
-            auto components_payloads = m_bridge.OnWorkerComponentInterestQuery(
+            auto query_entries = m_bridge.OnWorkerComponentInterestQuery(
                 *this,
                 m_client_hash,
                 component_queries_request.entity_id,
                 component_queries_request.component_id);
 
-            Message::RuntimeComponentInterestQueryResponse response;
-            response.succeed = true;
-            response.components_payloads.reserve(components_payloads.size());
-
-            uint32_t total_accumulated_size = 0;
-            for (auto& component_payload : components_payloads)
+            for (auto& query_entry : query_entries)
             {
-                // Check if the message is getting too big and break it
-                if (total_accumulated_size + component_payload.component_data.size() > 500)
+                Message::RuntimeComponentInterestQueryResponse response;
+                response.succeed               = true;
+                response.entity_component_mask = query_entry.first;
+                response.components_payloads.reserve(query_entry.second.size());
+
+                uint32_t total_accumulated_size = 0;
+                for (auto& component_payload : query_entry.second)
                 {
-                    _response_payload.PushResponse(response);
-                    response.components_payloads.clear();
-                    total_accumulated_size = 0;
+                    // Check if the message is getting too big and break it
+                    if (total_accumulated_size + component_payload.component_data.size() > 500)
+                    {
+                        _response_payload.PushResponse(response);
+                        response.components_payloads.clear();
+                        total_accumulated_size = 0;
+                    }
+
+                    response.components_payloads.push_back(std::move(component_payload));
+
+                    total_accumulated_size += response.components_payloads.back().component_data.size();
                 }
 
-                response.components_payloads.push_back(std::move(component_payload));
-            }
-
-            if (response.components_payloads.size() > 0)
-            {
-                _response_payload.PushResponse(std::move(response));
+                if (response.components_payloads.size() > 0)
+                {
+                    _response_payload.PushResponse(std::move(response));
+                }
             }
 
             break;

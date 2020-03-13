@@ -114,10 +114,14 @@ int main(int _argc, char* _argv[])
             }
 
             Jani::ComponentQuery component_query;
-            component_query.Begin(0)
+            auto* query_instruction = component_query
                 .QueryComponent(0)
-                .InRadius(30)
-                .WithFrequency(1);
+                .WithFrequency(1)
+                .Begin(0);
+
+            auto and_query = query_instruction->And();
+            and_query.first->EntitiesInRadius(30.0f);
+            and_query.second->RequireComponent(0);
 
             worker.RequestUpdateComponentInterestQuery(
                 worker.GetJaniEntityId(_entity).value(),

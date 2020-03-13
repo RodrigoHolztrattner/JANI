@@ -30,7 +30,7 @@ class MainWindow
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    MainWindow();
+    MainWindow(InspectorManager& _inspector_manager);
     ~MainWindow();
 
 //////////////////////////
@@ -43,24 +43,27 @@ public: // MAIN METHODS //
     bool Initialize();
 
     /*
-    
+    * Update this and all child windows
+    */
+    void Update();
+
+    /*
+    * Render this window
     */
     void Draw(
-        uint32_t             _window_width, 
-        uint32_t             _window_height, 
-        const CellsInfos&    _cell_infos,
-        const EntitiesInfos& _entities_infos, 
-        const WorkersInfos&  _workers_infos);
+        uint32_t            _window_width, 
+        uint32_t            _window_height, 
+        const CellsInfos&   _cell_infos,
+        const WorkersInfos& _workers_infos);
 
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
 
-    float m_left_panel_splitter  = 300.0f;
-    float m_right_panel_splitter = 800.0f;
+    InspectorManager&                                         m_inspector_manager;
+    std::unordered_map<WindowId, std::unique_ptr<BaseWindow>> m_child_windows;
 
-    MapWindow      m_map_window;
-    PropertyWindow m_property_window;
+    bool m_edit_mode = false;
 };
 
 // Inspector

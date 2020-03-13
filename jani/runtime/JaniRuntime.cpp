@@ -434,6 +434,54 @@ void Jani::Runtime::Update()
 
                 _response_payload.PushResponse(std::move(get_workers_infos_response));
             }
+            else if (_request.type == RequestType::RuntimeInspectorQuery)
+            {
+                auto inspector_query_request = _request_payload.GetRequest<Message::RuntimeInspectorQueryRequest>();
+                auto query_entries           = PerformComponentQuery(inspector_query_request.query, inspector_query_request.query_center_location);
+
+                for (auto& query_entry : query_entries)
+                {
+                    if (query_entry.second.size() == 0)
+                    {
+                        continue;
+                    }
+
+                    Message::RuntimeInspectorQueryResponse response;
+                    response.succeed               = true;
+                    response.window_id             = inspector_query_request.window_id;
+                    response.entity_id             = query_entry.second.front().entity_owner;
+                    response.entity_component_mask = query_entry.first;
+                    response.entity_world_position = WorldPosition({ 0, 0 });
+                    response.components_payloads.reserve(query_entry.second.size());
+
+                    auto entity = m_database.GetEntityById(response.entity_id);
+                    if (entity)
+                    {
+                        response.entity_world_position = entity.value()->GetWorldPosition();
+                    }
+
+                    uint32_t total_accumulated_size = 0;
+                    for (auto& component_payload : query_entry.second)
+                    {
+                        // Check if the message is getting too big and break it
+                        if (total_accumulated_size + component_payload.component_data.size() > 500)
+                        {
+                            _response_payload.PushResponse(response);
+                            response.components_payloads.clear();
+                            total_accumulated_size = 0;
+                        }
+
+                        response.components_payloads.push_back(std::move(component_payload));
+
+                        total_accumulated_size += response.components_payloads.back().component_data.size();
+                    }
+
+                    if (response.components_payloads.size() > 0)
+                    {
+                        _response_payload.PushResponse(std::move(response));
+                    }
+                }
+            }
         });
     
     auto ProcessWorkerDisconnection = [&](auto _client_hash)
@@ -890,108 +938,212 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
 
     return true;
 }
-    
-std::vector<Jani::ComponentPayload> Jani::Runtime::OnWorkerComponentInterestQuery(
+
+std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::OnWorkerComponentInterestQuery(
     WorkerInstance&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
-    ComponentId                        _component_id)
+    ComponentId                        _component_id) const
 {
-    std::vector<ComponentPayload> components_payloads;
-    
+    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_results;
+
     auto entity = m_database.GetEntityByIdMutable(_entity_id);
     if (!entity)
     {
-        return std::move(components_payloads);
+        return std::move(query_results);
     }
 
     auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
     auto cell_worker = cell_info.GetWorkerForLayer(m_layer_collection.GetLayerIdForComponent(_component_id));
     if (!cell_worker)
     {
-        return std::move(components_payloads);
+        return std::move(query_results);
     }
 
     // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
     // it arrived before it sent an update
     if (_worker_id != cell_worker.value()->GetId())
     {
-        return std::move(components_payloads);
+        return std::move(query_results);
     }
     
     // Get and apply the queries
     auto component_queries = entity.value()->GetQueriesForComponent(_component_id);
     for (auto& component_query : component_queries)
     {
-        assert(component_query.query_owner_component == _component_id);
+        assert(!component_query.query_owner_component || component_query.query_owner_component.value() == _component_id);
 
-        std::unordered_map<EntityId, Entity*> selected_entities;
+        auto query_result = PerformComponentQuery(component_query, entity.value()->GetWorldPosition(), _worker_id);
+        query_results.insert(query_results.end(), std::make_move_iterator(query_result.begin()), std::make_move_iterator(query_result.end()));
+    }
 
-        int query_index = 0;
-        for (auto& query : component_query.queries)
+    return std::move(query_results);
+}
+
+std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::PerformComponentQuery(
+    const ComponentQuery&   _query, 
+    WorldPosition           _search_center_location,
+    std::optional<WorkerId> _ignore_worker) const
+{
+    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_result;
+    std::unordered_map<EntityId, Entity*>                                selected_entities;
+
+    if (!_query.IsValid())
+    {
+        return std::move(query_result);
+    }
+
+    std::function<void(const ComponentQueryInstruction&)> ProcessQueryInstruction = [&](const ComponentQueryInstruction& _current_query_instruction)
+    {
+        if (_current_query_instruction.box_constraint)
         {
-            // Check if this is a combination 
-            if (query.and_constraint || query.or_constraint)
+            if (selected_entities.size() == 0)
             {
-                assert(query_index > 0);
-
-                if (query.and_constraint)
-                {
-                    // Not implemented for now
-                }
-                else
-                {
-                    // Not implemented for now
-                }
-            }
-            else if (query.radius_constraint)
-            {
-                m_world_controller->ForEachEntityOnRadius(
-                    entity.value()->GetWorldPosition(),
-                    query.radius_constraint.value(),
-                    [&](EntityId _selected_entity_id, Entity& _selected_entity, WorldCellCoordinates _cell_coordinates)
-                    {
-                        auto total_required_components = query.component_constraints_mask.count();
-                        auto component_mask            = _selected_entity.GetComponentMask();
-                        if ((query.component_constraints_mask & component_mask).count() == total_required_components)
-                        {
-                            selected_entities.insert({ _selected_entity_id, &_selected_entity });
-                        }
-                    });
-            }
-            else if (query.area_constraint)
-            {
-                // Not implemented for now
+                // TODO: Pick in a box
             }
             else
             {
-                // Should not be used for now (until there is a better way to perform this type of query)
+                auto iter = selected_entities.begin();
+                while (iter != selected_entities.end())
+                {
+                    auto& selected_entity      = iter->second;
+                    glm::vec2 entity_position  = selected_entity->GetWorldPosition();
+                    glm::vec2 min_box_position = glm::vec2(_current_query_instruction.box_constraint->x, _current_query_instruction.box_constraint->y);
+                    glm::vec2 max_box_position = min_box_position + glm::vec2(_current_query_instruction.box_constraint->width, _current_query_instruction.box_constraint->height);
+                    if (entity_position.x < min_box_position.x 
+                        || entity_position.y < min_box_position.y
+                        || entity_position.x > max_box_position.x
+                        || entity_position.y > max_box_position.y)
+                    {
+                        iter = selected_entities.erase(iter);
+                    }
+                    else
+                    {
+                        iter++;
+                    }
+                }
             }
-
-            query_index++;
         }
-
-        for (auto& [entity_id, entity] : selected_entities)
+        else if (_current_query_instruction.area_constraint)
         {
-            for (auto& requested_component_id : component_query.query_component_ids)
+            if (selected_entities.size() == 0)
             {
-                // Check if we should ignore this
-                LayerId component_layer             = m_layer_collection.GetLayerIdForComponent(requested_component_id);
-                auto current_component_layer_worker = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates()).GetWorkerForLayer(component_layer);
-                if (current_component_layer_worker && current_component_layer_worker.value()->GetId() == _worker_id)
+                // TODO: Pick in an area
+            }
+            else
+            {
+                auto iter = selected_entities.begin();
+                while (iter != selected_entities.end())
                 {
-                    continue;
-                }
-
-                if (entity->HasComponent(requested_component_id))
-                {
-                    components_payloads.push_back(entity->GetComponentPayload(requested_component_id).value());
+                    auto& selected_entity      = iter->second;
+                    glm::vec2 half_area        = glm::vec2(_current_query_instruction.area_constraint->width, _current_query_instruction.area_constraint->height) / 2.0f;
+                    glm::vec2 entity_position  = selected_entity->GetWorldPosition();
+                    glm::vec2 min_box_position = glm::vec2(_search_center_location) - half_area;
+                    glm::vec2 max_box_position = glm::vec2(_search_center_location) + half_area;
+                    if (entity_position.x < min_box_position.x 
+                        || entity_position.y < min_box_position.y
+                        || entity_position.x > max_box_position.x
+                        || entity_position.y > max_box_position.y)
+                    {
+                        iter = selected_entities.erase(iter);
+                    }
+                    else
+                    {
+                        iter++;
+                    }
                 }
             }
         }
+        else if (_current_query_instruction.radius_constraint)
+        {
+            if (selected_entities.size() == 0)
+            {
+                m_world_controller->ForEachEntityOnRadius(
+                    _search_center_location,
+                    _current_query_instruction.radius_constraint.value(),
+                    [&](EntityId _selected_entity_id, Entity& _selected_entity, WorldCellCoordinates _cell_coordinates)
+                    {
+                        selected_entities.insert({ _selected_entity_id, &_selected_entity });
+                    });
+            }
+            else
+            {
+                auto iter = selected_entities.begin();
+                while (iter != selected_entities.end())
+                {
+                    auto& selected_entity     = iter->second;
+                    glm::vec2 entity_position = selected_entity->GetWorldPosition();
+                    glm::vec2 center_position = _search_center_location;
+                    if (glm::distance(entity_position, center_position) > _current_query_instruction.radius_constraint.value())
+                    {
+                        iter = selected_entities.erase(iter);
+                    }
+                    else
+                    {
+                        iter++;
+                    }
+                }
+            }
+        }
+        else if (_current_query_instruction.component_constraints)
+        {
+            auto iter = selected_entities.begin();
+            while (iter != selected_entities.end())
+            {
+                auto& selected_entity          = iter->second;
+                auto total_required_components = _current_query_instruction.component_constraints.value().count();
+                auto component_mask            = selected_entity->GetComponentMask();
+                if ((_current_query_instruction.component_constraints.value() & component_mask).count() != total_required_components)
+                {
+                    iter = selected_entities.erase(iter);
+                }
+                else
+                {
+                    iter++;
+                }
+            }
+        }
+        else if (_current_query_instruction.and_constraint)
+        {
+            ProcessQueryInstruction(*_current_query_instruction.and_constraint->first);
+            ProcessQueryInstruction(*_current_query_instruction.and_constraint->second);
+        }
+        else if (_current_query_instruction.or_constraint)
+        {
+            ProcessQueryInstruction(*_current_query_instruction.or_constraint->first);
+            ProcessQueryInstruction(*_current_query_instruction.or_constraint->second);
+        }
+    };
+
+    ProcessQueryInstruction(*_query.root_query);
+
+    for (auto& [entity_id, entity] : selected_entities)
+    {
+        std::pair<ComponentMask, std::vector<ComponentPayload>> entry;
+        entry.first = entity->GetComponentMask();
+
+        for (const auto& requested_component_id : bitset::indices_on(_query.component_mask))
+        {
+            // Check if we should ignore this
+            LayerId component_layer             = m_layer_collection.GetLayerIdForComponent(requested_component_id);
+            auto current_component_layer_worker = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates()).GetWorkerForLayer(component_layer);
+            if (_ignore_worker 
+                && current_component_layer_worker 
+                && current_component_layer_worker.value()->GetId() == _ignore_worker.value())
+            {
+                continue;
+            }
+
+            if (entity->HasComponent(requested_component_id))
+            {
+                entry.second.push_back(entity->GetComponentPayload(requested_component_id).value());
+            }
+        }
+
+        query_result.push_back(std::move(entry));
     }
 
-    return std::move(components_payloads);
+    return std::move(query_result);
 }
 
 bool Jani::Runtime::IsLayerForComponentAvailable(ComponentId _component_id) const

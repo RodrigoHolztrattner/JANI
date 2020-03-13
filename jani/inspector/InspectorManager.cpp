@@ -3,19 +3,22 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "InspectorManager.h"
 #include "Renderer.h"
+#include "ui/QueryWindow.h"
 
-Jani::Inspector::InspectorManager::InspectorManager()
+Jani::Inspector::InspectorManager::InspectorManager(const Jani::LayerCollection& _layer_collection) : m_layer_collection(_layer_collection)
 {
 }
 
 Jani::Inspector::InspectorManager::~InspectorManager()
 {
+    m_renderer.reset();
+    m_main_window.reset();
 }
 
 bool Jani::Inspector::InspectorManager::Initialize(std::string _runtime_ip, uint32_t _runtime_port)
 {
     m_renderer           = std::make_unique<Renderer>();
-    m_main_window        = std::make_unique<MainWindow>();
+    m_main_window        = std::make_unique<MainWindow>(*this);
     m_runtime_connection = std::make_unique<Jani::Connection<>>(0, _runtime_port, _runtime_ip.c_str());
     m_request_manager    = std::make_unique<Jani::RequestManager>();
 
@@ -109,8 +112,55 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
                         break;
                     }
+                    case Jani::RequestType::RuntimeInspectorQuery:
+                    {
+                        auto response = _resonse_payload.GetResponse<Jani::Message::RuntimeInspectorQueryResponse>();
+
+                        // Check if we still have the query window registered
+                        auto query_window_iter = m_query_windows.find(response.window_id);
+                        if (query_window_iter != m_query_windows.end())
+                        {
+                            if (response.components_payloads.size() == 0)
+                            {
+                                std::cout << "Problem!" << std::endl;
+                                break;
+                            }
+
+                            auto& query_window = query_window_iter->second;
+
+                            ComponentQueryResultPayload component_query_result_payload;
+                            component_query_result_payload.entity_component_mask = response.entity_component_mask;
+                            component_query_result_payload.entity_id             = response.components_payloads.front().entity_owner;
+                            component_query_result_payload.entity_world_position = response.entity_world_position;
+                            component_query_result_payload.component_payloads    = std::move(response.components_payloads);
+                            query_window->ReceiveEntityQueryResults(std::move(component_query_result_payload));
+                        }
+
+                        break;
+                    }
                 }
             });
+
+        // For each query window registered
+        for (auto& [window_id, query_window] : m_query_windows)
+        {
+            auto query = query_window->GetComponentQueryPayload();
+            if (query)
+            {
+                Jani::Message::RuntimeInspectorQueryRequest inspector_query_request;
+                inspector_query_request.window_id             = window_id;
+                inspector_query_request.query_center_location = query.value().first;
+                inspector_query_request.query                 = std::move(query.value().second);
+
+                if (!m_request_manager->MakeRequest(
+                    *m_runtime_connection,
+                    Jani::RequestType::RuntimeInspectorQuery,
+                    inspector_query_request))
+                {
+                    Jani::MessageLog().Error("Inspector -> Failed to request a query");
+                }
+            }
+        }
 
         m_last_update_time = time_now;
     }
@@ -161,11 +211,12 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 
     auto window_sizes = m_renderer->GetWindowSize();
 
+    m_main_window->Update();
+
     m_main_window->Draw(
         window_sizes.first, 
         window_sizes.second, 
         m_cell_infos, 
-        m_entities_infos, 
         m_workers_infos);
 
     m_renderer->EndRenderFrame();
@@ -174,4 +225,19 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
 bool Jani::Inspector::InspectorManager::ShouldDisconnect() const
 {
     return m_should_disconnect;
+}
+
+const Jani::LayerCollection& Jani::Inspector::InspectorManager::GetLayerCollection() const
+{
+    return m_layer_collection;
+}
+
+void Jani::Inspector::InspectorManager::RegisterQueryWindow(QueryWindow& _window)
+{
+    m_query_windows[_window.GetId()] = &_window;
+}
+
+void Jani::Inspector::InspectorManager::UnregisterQueryWindow(QueryWindow& _window)
+{
+    m_query_windows.erase(_window.GetId());
 }
