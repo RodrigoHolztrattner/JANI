@@ -91,7 +91,7 @@ void PushDebugCommand(std::string _command)
     //s_previous_commands.push_back(std::move(_command));
 }
 
-void Jani::WorldController::InsertEntity(Entity& _entity, WorldPosition _position)
+void Jani::WorldController::InsertEntity(ServerEntity& _entity, WorldPosition _position)
 {
     PushDebugCommand("InsertEntity");
 
@@ -112,7 +112,7 @@ void Jani::WorldController::InsertEntity(Entity& _entity, WorldPosition _positio
     SetupWorkCellEntityInsertion(cell_info);
 }
 
-void Jani::WorldController::RemoveEntity(Entity& _entity)
+void Jani::WorldController::RemoveEntity(ServerEntity& _entity)
 {
     PushDebugCommand("RemoveEntity");
 
@@ -126,7 +126,7 @@ void Jani::WorldController::RemoveEntity(Entity& _entity)
     SetupWorkCellEntityRemoval(cell_info);
 }
 
-void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer)
+void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityInsertion");
 
@@ -170,7 +170,7 @@ void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_in
 
 }
 
-void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer)
+void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityRemoval");
 
@@ -218,7 +218,7 @@ void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info
 
 }
 
-void Jani::WorldController::AcknowledgeEntityPositionChange(Entity& _entity, WorldPosition _new_position)
+void Jani::WorldController::AcknowledgeEntityPositionChange(ServerEntity& _entity, WorldPosition _new_position)
 {
     WorldCellCoordinates current_world_cell_coordinates = _entity.GetWorldCellCoordinates();
     WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(_new_position); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
@@ -413,7 +413,7 @@ float Jani::WorldController::ConvertWorldScalarIntoCellScalar(float _scalar) con
     return _scalar;
 }
 
-void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&, WorldCellCoordinates)> _callback) const
+void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
 {
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
     float                cell_radius      = ConvertWorldScalarIntoCellScalar(_radius);
@@ -424,6 +424,30 @@ void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position,
         for (auto& [entity_id, entity] : cell.entities)
         {
             if (glm::distance(glm::vec2(_world_position), glm::vec2(entity->GetWorldPosition())) < _radius)
+            {
+                _callback(entity_id, *entity, cell.cell_coordinates);
+            }
+        }
+    }
+}
+
+void Jani::WorldController::ForEachEntityOnRect(WorldRect _world_rect, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
+{
+    int32_t              cell_unit_length = m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine();
+    WorldCellCoordinates rect_begin       = ConvertPositionIntoCellCoordinates(WorldPosition({ _world_rect.x, _world_rect.y }));
+    WorldCellCoordinates rect_size        = WorldCellCoordinates({ _world_rect.width / cell_unit_length, _world_rect.height / cell_unit_length });
+    WorldCellCoordinates rect_end         = WorldCellCoordinates({ rect_begin.x + rect_size.x, rect_begin.y + rect_size.y });
+
+    auto& selected_cells = m_world_grid->InsideRectMutable(rect_begin, rect_end);
+    for (auto& cell : selected_cells)
+    {
+        for (auto& [entity_id, entity] : cell.entities)
+        {
+            WorldPosition entity_world_pos = entity->GetWorldPosition();
+            if (entity_world_pos.x > _world_rect.x
+                && entity_world_pos.y > _world_rect.y
+                && entity_world_pos.x < _world_rect.x + _world_rect.width
+                && entity_world_pos.y < _world_rect.y + _world_rect.height)
             {
                 _callback(entity_id, *entity, cell.cell_coordinates);
             }

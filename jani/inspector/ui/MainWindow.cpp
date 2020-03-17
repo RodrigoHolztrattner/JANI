@@ -111,13 +111,13 @@ void Jani::Inspector::MainWindow::Draw(
         {
             ImGui::SetNextWindowPos(child_window->GetWindowPos());
 
-            if (ImGui::BeginChild(child_window->GetUniqueName().c_str(), child_window->GetWindowSize(), false, ImGuiWindowFlags_NoScrollbar))
+            if (ImGui::BeginChild(child_window->GetUniqueName().c_str(), child_window->GetWindowSize(), false, ImGuiWindowFlags_NoDecoration))
             {
-                child_window->DrawTitleBar(creating_connection_payload);
+                child_window->DrawTitleBar(m_edit_mode, creating_connection_payload);
 
                 if (child_window->IsVisible())
                 {
-                    if (ImGui::BeginChild("Internal"), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)
+                    if (ImGui::BeginChild("Internal", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse))
                     {
                         child_window->Draw(_cell_infos, _workers_infos);
 

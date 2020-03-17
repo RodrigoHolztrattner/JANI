@@ -32,8 +32,8 @@ class WorkerInstance;
 ////////////////////////////////////////////////////////////////////////////////
 class WorldController
 {
-    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, Entity*>&, WorldCellCoordinates, LayerId, const WorkerInstance&, const WorkerInstance&)>;
-    using EntityLayerOwnershipChangeCallback = std::function<void(const Entity&, LayerId, const WorkerInstance&, const WorkerInstance&)>;
+    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, ServerEntity*>&, WorldCellCoordinates, LayerId, const WorkerInstance&, const WorkerInstance&)>;
+    using EntityLayerOwnershipChangeCallback = std::function<void(const ServerEntity&, LayerId, const WorkerInstance&, const WorkerInstance&)>;
     using WorkerLayerRequestCallback         = std::function<void(LayerId)>;
 
     struct WorkerDensityKey
@@ -180,17 +180,17 @@ public: // MAIN METHODS //
     /*
     * Insert an entity into the world grid
     */
-    void InsertEntity(Entity& _entity, WorldPosition _position);
+    void InsertEntity(ServerEntity& _entity, WorldPosition _position);
 
     /*
     
     */
-    void RemoveEntity(Entity& _entity);
+    void RemoveEntity(ServerEntity& _entity);
 
     /*
     
     */
-    void AcknowledgeEntityPositionChange(Entity& _entity, WorldPosition _new_position);
+    void AcknowledgeEntityPositionChange(ServerEntity& _entity, WorldPosition _new_position);
 
     /*
     
@@ -206,7 +206,12 @@ public: // MAIN METHODS //
     /*
     * Perform a query around a position with a radius, calling the callback for each selected entity 
     */
-    void ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, Entity&, WorldCellCoordinates)> _callback) const;
+    void ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const;
+
+    /*
+    * Perform a query in a certain rect, calling the callback for each selected entity
+    */
+    void ForEachEntityOnRect(WorldRect _world_rect, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const;
 
 private:
 
@@ -219,8 +224,8 @@ private:
     /*
     
     */
-    void SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer = std::nullopt);
-    void SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<uint32_t> _layer = std::nullopt);
+    void SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<LayerId> _layer = std::nullopt);
+    void SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<LayerId> _layer = std::nullopt);
 
 ///////////////////////
 public: // CALLBACKS //

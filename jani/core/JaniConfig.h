@@ -30,6 +30,7 @@
 #include <magic_enum.hpp>
 #include <ctti/type_id.hpp>
 #include <ctti/static_value.hpp>
+#include <ctti/detailed_nameof.hpp>
 #include <cereal/cereal.hpp>
 #include <cereal/archives/binary.hpp>
 #include <nlohmann/json.hpp>
@@ -260,7 +261,7 @@ class Runtime;
 class Database;
 class WorkerSpawnerInstance;
 class WorkerInstance; 
-class Entity;
+class ServerEntity;
 
 struct WorldPosition
 {
@@ -1123,6 +1124,39 @@ public:
 		assert(IsBucketValid(bucket_x, bucket_y));
 		return GetBucketAtBucketLocalPosition(bucket_x, bucket_y).cells[local_x][local_y].value();
 	}
+    const std::vector<mType>& InsideRect(WorldCellCoordinates _rect_coordinates_begin, WorldCellCoordinates _rect_coordinates_end) const
+    {
+        return InsideRectMutable(_rect_coordinates_begin, _rect_coordinates_end);
+    }
+    std::vector<mType>& InsideRectMutable(WorldCellCoordinates _rect_coordinates_begin, WorldCellCoordinates _rect_coordinates_end) const
+    {
+        WorldCellCoordinates central_coordinates = WorldCellCoordinates({
+            (_rect_coordinates_begin.x + _rect_coordinates_end.x) / 2,
+            (_rect_coordinates_begin.y + _rect_coordinates_end.y) / 2 });
+        WorldCellCoordinates half_size = WorldCellCoordinates({
+            static_cast<int32_t>(std::ceil((_rect_coordinates_end.x - _rect_coordinates_begin.x) / 2.0f)),
+            static_cast<int32_t>(std::ceil((_rect_coordinates_end.y - _rect_coordinates_begin.y) / 2.0f)) });
+        auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(central_coordinates.x, central_coordinates.y);
+		int start_x            = central_coordinates.x - std::max(1, half_size.x);
+		int start_y            = central_coordinates.y - std::max(1, half_size.y);
+		int end_x              = central_coordinates.x + std::max(1, half_size.x);
+		int end_y              = central_coordinates.y + std::max(1, half_size.y);
+		m_query_temporary_buffer.clear();
+		for (int x = start_x; x <= end_x; x++)
+		{
+			for (int y = start_y; y <= end_y; y++)
+			{
+				if (IsCellEmpty(WorldCellCoordinates({ x, y })))
+				{
+					continue;
+				}
+                auto& bucket_value = AtMutable(WorldCellCoordinates({ x, y }));
+				m_query_temporary_buffer.push_back(bucket_value);
+			}
+		}
+		return m_query_temporary_buffer;
+    }
+
 	const std::vector<mType>& InsideRange(WorldCellCoordinates _cell_coordinates, float _radius) const
 	{
 		return InsideRangeMutable(_cell_coordinates, _radius);
@@ -1130,12 +1164,12 @@ public:
 	std::vector<mType>& InsideRangeMutable(WorldCellCoordinates _cell_coordinates, float _radius) const
 	{
 		auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
-		int actual_radius	= std::ceil(_radius);
+		int actual_radius	   = std::ceil(_radius);
 		int actual_radius_pow2 = actual_radius * actual_radius;
-		int start_x = _cell_coordinates.x - actual_radius;
-		int start_y = _cell_coordinates.y - actual_radius;
-		int end_x   = _cell_coordinates.x + actual_radius;
-		int end_y   = _cell_coordinates.y + actual_radius;
+		int start_x            = _cell_coordinates.x - actual_radius;
+		int start_y            = _cell_coordinates.y - actual_radius;
+		int end_x              = _cell_coordinates.x + actual_radius;
+		int end_y              = _cell_coordinates.y + actual_radius;
 		m_query_temporary_buffer.clear();
 		for (int x = start_x; x <= end_x; x++)
 		{
@@ -1230,6 +1264,11 @@ struct ComponentQueryInstruction
         component_constraints = _component_ids;
     }
 
+    void EntitiesInRect(WorldRect _rect)
+    {
+        box_constraint = _rect;
+    }
+
     void EntitiesInArea(WorldArea _area)
     {
         area_constraint = _area;
@@ -1297,14 +1336,12 @@ struct ComponentQuery
     {
         std::function<bool(const ComponentQueryInstruction&)> ValidateQueryInstruction = [&](const ComponentQueryInstruction& _query_instruction) -> bool
         {
-            if (_query_instruction.box_constraint)
+            if (_query_instruction.box_constraint && _query_instruction.box_constraint->width >= 0 && _query_instruction.box_constraint->height >= 0)
             {
                 return true;
             }
-            else if (_query_instruction.area_constraint)
+            else if (_query_instruction.area_constraint && _query_instruction.area_constraint->width >= 0 && _query_instruction.area_constraint->height >= 0)
             {
-                return false; // Not supported for now
-
                 return true;
             }
             else if (_query_instruction.radius_constraint)
@@ -1694,7 +1731,7 @@ struct WorkerCellsInfos
 
 struct WorldCellInfo
 {
-    std::map<EntityId, Entity*>                  entities;
+    std::map<EntityId, ServerEntity*>                  entities;
     std::array<WorkerCellsInfos*, MaximumLayers> worker_cells_infos;
     WorldCellCoordinates                         cell_coordinates;
 
@@ -1711,13 +1748,13 @@ struct WorldCellInfo
     }
 };
 
-class Entity
+class ServerEntity
 {
-    DISABLE_COPY(Entity);
+    DISABLE_COPY(ServerEntity);
 
 public:
 
-    Entity(EntityId _unique_id) : entity_id(_unique_id) 
+    ServerEntity(EntityId _unique_id) : entity_id(_unique_id) 
     {
 
     }
@@ -1886,6 +1923,54 @@ private:
     std::array<ComponentPayload, MaximumEntityComponents>            m_component_payloads;
     std::array<std::vector<ComponentQuery>, MaximumEntityComponents> m_component_queries;
 };
+
+/*
+    => Pergunta: Ao adicionar uma entidade, ela deve ser adicionada diretamente no servidor
+    ou isso deve acontecer apenas localmente?
+
+        - O motivo dessa pergunta eh porque se eu nunca adicionar componentes que deram ser
+        replicados, nao existe motivo do servidor saber dessa entidade, afinal ela nao sera salva
+        e nem repassada para outros workers
+
+        - Talvez eu deva adicionar a entidade localmente e apenas replicar caso um desses
+        componentes seja adicionado?
+
+        - Se eu adicionar a entidade localmente, devo usar um dos IDs reservados?
+
+    -----------------------------------------------------------------------------------------------------
+
+    - Preciso de um map entre ComponentId e Component class hash, assim como o tamanho dele e a entrada na
+    component mask?!
+    - Preciso garantir que componentes replicados sejam POD
+    - Preciso criar um entity manager que permita:
+        - Criar entidades
+    - Preciso de um system manager que permita:
+        - Iterar entre um set de entidades que possuam tal componente
+
+    - A class Entity deve permitir:
+        - Adicionar componentes
+        - Remover componentes
+        - Update de componentes
+        - Verificar componentes
+        - For each component
+        - Component mask
+
+*/
+
+template <typename C, typename EM>
+using ComponentHandle = entityx::ComponentHandle<C, EM>;
+
+class ClientEntity
+{
+
+
+private:
+
+    std::optional<EntityId> m_server_entity_id; // Not having this means it's a local entity (not synchronized)
+    entityx::Entity         m_entityx;
+};
+
+using Entity = ClientEntity;
 
 JaniNamespaceEnd(Jani)
 

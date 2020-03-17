@@ -152,6 +152,17 @@ std::optional<Jani::Inspector::VisualizationSettings> Jani::Inspector::BaseWindo
     return std::nullopt;
 }
 
+void Jani::Inspector::BaseWindow::OnPositionChange(ImVec2 _current_pos, ImVec2 _new_pos, ImVec2 _delta)
+{
+    /* stub */
+}
+
+void Jani::Inspector::BaseWindow::OnSizeChange(ImVec2 _current_size, ImVec2 _new_size, ImVec2 _delta)
+{
+    /* stub */
+}
+
+
 Jani::Inspector::WindowId Jani::Inspector::BaseWindow::GetId() const
 {
     return m_unique_id;
@@ -182,7 +193,7 @@ bool Jani::Inspector::BaseWindow::IsVisible() const
     return m_is_visible;
 }
 
-void Jani::Inspector::BaseWindow::DrawTitleBar(std::optional<WindowInputConnection> _connection)
+void Jani::Inspector::BaseWindow::DrawTitleBar(bool _edit_mode, std::optional<WindowInputConnection> _connection)
 {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -214,47 +225,52 @@ void Jani::Inspector::BaseWindow::DrawTitleBar(std::optional<WindowInputConnecti
         float output_button_begin  = remaining_width - (options_button_size + output_button_size);
         float options_button_begin = remaining_width - options_button_size;
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
-        ImGui::SetWindowFontScale(0.7f);
-        ImGui::SetCursorPos(ImVec2(input_button_begin, current_cursor_pos.y + 3.0f));
-        m_inputs_position = ImGui::GetCursorScreenPos();
-        if (_connection && (_connection->window == this || !CanAcceptInputConnection(_connection.value()))) { ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true); ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f); }
-        ImGui::Button("+ INPUT");
-        if (_connection && (_connection->window == this || !CanAcceptInputConnection(_connection.value()))) { ImGui::PopItemFlag(); ImGui::PopStyleVar(); }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(0) && _connection && _connection->window != this && !ImGui::GetIO().KeyCtrl)
+        if (_edit_mode)
         {
-            m_receiving_connection = _connection;
-            ImGui::OpenPopup("Input Popup");
-        }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyCtrl)
-        {
-            RemoveAllInputWindowConnections(*this);
-        }
-        m_inputs_position = m_inputs_position + ImVec2(ImGui::GetItemRectSize().x / 2.0f, ImGui::GetItemRectSize().y / 2.0f);
-
-        ImGui::SameLine();
-        ImGui::SetCursorPos(ImVec2(output_button_begin, current_cursor_pos.y + 3.0f));
-        m_outputs_position = ImGui::GetCursorScreenPos();
-        if (_connection) { ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true); ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f); }
-        if (ImGui::Button("- OUTPUT"))
-        {
-            ImGui::OpenPopup("Output Popup");
-        }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyCtrl)
-        {
-            RemoveAllOutputWindowConnections(*this);
-        }
-        if (_connection) { ImGui::PopItemFlag(); ImGui::PopStyleVar(); }
-        m_outputs_position = m_outputs_position + ImVec2(ImGui::GetItemRectSize().x / 2.0f, ImGui::GetItemRectSize().y / 2.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+            ImGui::SetWindowFontScale(0.7f);
+            ImGui::SetCursorPos(ImVec2(input_button_begin, current_cursor_pos.y + 3.0f));
+        
+            m_inputs_position = ImGui::GetCursorScreenPos();
+            if (_connection && (_connection->window == this || !CanAcceptInputConnection(_connection.value()))) { ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true); ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f); }
+            ImGui::Button("+ INPUT");
+            if (_connection && (_connection->window == this || !CanAcceptInputConnection(_connection.value()))) { ImGui::PopItemFlag(); ImGui::PopStyleVar(); }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(0) && _connection && _connection->window != this && !ImGui::GetIO().KeyCtrl)
+            {
+                m_receiving_connection = _connection;
+                ImGui::OpenPopup("Input Popup");
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyCtrl)
+            {
+                RemoveAllInputWindowConnections(*this);
+            }
+            m_inputs_position = m_inputs_position + ImVec2(ImGui::GetItemRectSize().x / 2.0f, ImGui::GetItemRectSize().y / 2.0f);
+        
+            ImGui::SameLine();
+            ImGui::SetCursorPos(ImVec2(output_button_begin, current_cursor_pos.y + 3.0f));
+            m_outputs_position = ImGui::GetCursorScreenPos();
+            if (_connection) { ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true); ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f); }
+            if (ImGui::Button("- OUTPUT"))
+            {
+                ImGui::OpenPopup("Output Popup");
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyCtrl)
+            {
+                RemoveAllOutputWindowConnections(*this);
+            }
+            if (_connection) { ImGui::PopItemFlag(); ImGui::PopStyleVar(); }
+            m_outputs_position = m_outputs_position + ImVec2(ImGui::GetItemRectSize().x / 2.0f, ImGui::GetItemRectSize().y / 2.0f);
             
-        ImGui::SetWindowFontScale(1.0f);
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(3);
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(3);
 
-        ImGui::SameLine();
+            ImGui::SameLine();
+        }
+
         ImGui::SetCursorPos(ImVec2(options_button_begin, current_cursor_pos.y));
         if (ImGui::Button("*"))
         {
@@ -301,6 +317,7 @@ void Jani::Inspector::BaseWindow::DrawTitleBar(std::optional<WindowInputConnecti
     if (m_is_moving)
     {
         auto IO = ImGui::GetIO();
+        OnPositionChange(ImGui::GetWindowPos(), ImGui::GetWindowPos() + IO.MouseDelta, IO.MouseDelta);
         m_window_pos = ImVec2(ImGui::GetWindowPos().x + IO.MouseDelta.x, ImGui::GetWindowPos().y + IO.MouseDelta.y);
     }
 }
@@ -343,11 +360,14 @@ void Jani::Inspector::BaseWindow::ProcessResize()
         m_is_resizing[3] = false;
     }
 
+    /*
     if (m_is_resizing[0])
     {
+        OnSizeChange(m_window_size, m_window_size - ImVec2(ImGui::GetIO().MouseDelta.x, 0.0f), ImVec2(-ImGui::GetIO().MouseDelta.x, 0.0f));
         m_window_pos.x  += ImGui::GetIO().MouseDelta.x;
         m_window_size.x -= ImGui::GetIO().MouseDelta.x;
     }
+    */
 
     /*
     if (m_is_resizing[1])
@@ -359,11 +379,13 @@ void Jani::Inspector::BaseWindow::ProcessResize()
 
     if (m_is_resizing[2])
     {
+        OnSizeChange(m_window_size, m_window_size + ImVec2(ImGui::GetIO().MouseDelta.x, 0.0f), ImVec2(ImGui::GetIO().MouseDelta.x, 0.0f));
         m_window_size.x += ImGui::GetIO().MouseDelta.x;
     }
 
     if (m_is_resizing[3])
     {
+        OnSizeChange(m_window_size, m_window_size + ImVec2(0.0f, ImGui::GetIO().MouseDelta.y), ImVec2(0.0f, ImGui::GetIO().MouseDelta.y));
         m_window_size.y += ImGui::GetIO().MouseDelta.y;
     }
 }

@@ -67,6 +67,7 @@ struct EntityData
 struct Constraint
 {
     std::optional<WorldRect>     box_constraint;
+    std::optional<WorldArea>     area_constraint;
     std::optional<float>         radius_constraint;
     std::optional<ComponentMask> component_constraint;
 

@@ -32,13 +32,13 @@ public: // MAIN METHODS //
 //////////////////////////
 
     // Return an entity by its identifier
-    std::optional<const Entity*> GetEntityById(EntityId _entity_id) const;
-    std::optional<Entity*> GetEntityByIdMutable(EntityId _entity_id) const;
+    std::optional<const ServerEntity*> GetEntityById(EntityId _entity_id) const;
+    std::optional<ServerEntity*> GetEntityByIdMutable(EntityId _entity_id) const;
 
     /*
     * Return the entity map
     */
-    const std::map<EntityId, std::unique_ptr<Entity>>& GetEntities() const;
+    const std::map<EntityId, std::unique_ptr<ServerEntity>>& GetEntities() const;
 
 public:
 
@@ -48,7 +48,7 @@ public:
 
     /*
     */
-    std::optional<Entity*> AddEntity(
+    std::optional<ServerEntity*> AddEntity(
         WorkerId             _worker_id,
         EntityId             _entity_id,
         const EntityPayload& _entity_payload);
@@ -61,7 +61,7 @@ public:
 
     /*
     */
-    std::optional<Entity*> AddComponent(
+    std::optional<ServerEntity*> AddComponent(
         WorkerId                _worker_id,
         EntityId                _entity_id, 
         LayerId                 _layer_id,
@@ -70,7 +70,7 @@ public:
 
     /*
     */
-    std::optional<Entity*> RemoveComponent(
+    std::optional<ServerEntity*> RemoveComponent(
         WorkerId    _worker_id,
         EntityId    _entity_id, 
         LayerId     _layer_id,
@@ -78,7 +78,7 @@ public:
 
     /*
     */
-    std::optional<Entity*> ComponentUpdate(
+    std::optional<ServerEntity*> ComponentUpdate(
         WorkerId                     _worker_id,
         EntityId                     _entity_id, 
         LayerId                      _layer_id,
@@ -90,7 +90,7 @@ public:
 private: // VARIABLES //
 ////////////////////////
 
-    std::map<EntityId, std::unique_ptr<Entity>> m_active_entities;
+    std::map<EntityId, std::unique_ptr<ServerEntity>> m_active_entities;
 
 };
 

@@ -66,7 +66,7 @@ bool Jani::Runtime::Initialize()
     }
 
     m_world_controller->RegisterCellOwnershipChangeCallback(
-        [&](const std::map<EntityId, Entity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        [&](const std::map<EntityId, ServerEntity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
             auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
@@ -128,7 +128,7 @@ bool Jani::Runtime::Initialize()
         });
 
     m_world_controller->RegisterEntityLayerOwnershipChangeCallback(
-        [&](const Entity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        [&](const ServerEntity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
         {
             auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
 
@@ -395,7 +395,7 @@ void Jani::Runtime::Update()
                             0,
                             cell_rect,
                             worker_coordinate, 
-                            cell_info.entities.size() });
+                            static_cast<uint32_t>(cell_info.entities.size()) });
                     }
                 }
 
@@ -986,20 +986,27 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
     std::optional<WorkerId> _ignore_worker) const
 {
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_result;
-    std::unordered_map<EntityId, Entity*>                                selected_entities;
+    std::unordered_map<EntityId, ServerEntity*>                                selected_entities;
 
     if (!_query.IsValid())
     {
         return std::move(query_result);
     }
 
+    bool has_area_query = false;
     std::function<void(const ComponentQueryInstruction&)> ProcessQueryInstruction = [&](const ComponentQueryInstruction& _current_query_instruction)
     {
         if (_current_query_instruction.box_constraint)
         {
-            if (selected_entities.size() == 0)
+            if (selected_entities.size() == 0 && !has_area_query)
             {
-                // TODO: Pick in a box
+                has_area_query = true;
+                m_world_controller->ForEachEntityOnRect(
+                    _current_query_instruction.box_constraint.value(),
+                    [&](EntityId _selected_entity_id, ServerEntity& _selected_entity, WorldCellCoordinates _cell_coordinates)
+                    {
+                        selected_entities.insert({ _selected_entity_id, &_selected_entity });
+                    });
             }
             else
             {
@@ -1026,9 +1033,21 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
         }
         else if (_current_query_instruction.area_constraint)
         {
-            if (selected_entities.size() == 0)
+            if (selected_entities.size() == 0 && !has_area_query)
             {
-                // TODO: Pick in an area
+                has_area_query          = true;
+                WorldPosition half_area = WorldPosition({
+                    static_cast<int32_t>(_current_query_instruction.area_constraint->width / 2),
+                    static_cast<int32_t>(_current_query_instruction.area_constraint->height / 2) });
+                WorldRect     rect      = WorldRect({
+                    _search_center_location.x - half_area.x , _search_center_location.y - half_area.y,
+                    _search_center_location.x + half_area.x , _search_center_location.y + half_area.y });
+                m_world_controller->ForEachEntityOnRect(
+                    rect,
+                    [&](EntityId _selected_entity_id, ServerEntity& _selected_entity, WorldCellCoordinates _cell_coordinates)
+                    {
+                        selected_entities.insert({ _selected_entity_id, &_selected_entity });
+                    });
             }
             else
             {
@@ -1056,12 +1075,13 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
         }
         else if (_current_query_instruction.radius_constraint)
         {
-            if (selected_entities.size() == 0)
+            if (selected_entities.size() == 0 && !has_area_query)
             {
+                has_area_query = true;
                 m_world_controller->ForEachEntityOnRadius(
                     _search_center_location,
                     _current_query_instruction.radius_constraint.value(),
-                    [&](EntityId _selected_entity_id, Entity& _selected_entity, WorldCellCoordinates _cell_coordinates)
+                    [&](EntityId _selected_entity_id, ServerEntity& _selected_entity, WorldCellCoordinates _cell_coordinates)
                     {
                         selected_entities.insert({ _selected_entity_id, &_selected_entity });
                     });
@@ -1087,19 +1107,35 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
         }
         else if (_current_query_instruction.component_constraints)
         {
-            auto iter = selected_entities.begin();
-            while (iter != selected_entities.end())
+            if (selected_entities.size() == 0 && !has_area_query)
             {
-                auto& selected_entity          = iter->second;
-                auto total_required_components = _current_query_instruction.component_constraints.value().count();
-                auto component_mask            = selected_entity->GetComponentMask();
-                if ((_current_query_instruction.component_constraints.value() & component_mask).count() != total_required_components)
+                const auto& entities = m_database.GetEntities();
+                for (auto& [entity_id, entity] : entities)
                 {
-                    iter = selected_entities.erase(iter);
+                    auto total_required_components = _current_query_instruction.component_constraints.value().count();
+                    auto component_mask            = entity->GetComponentMask();
+                    if ((_current_query_instruction.component_constraints.value() & component_mask).count() == total_required_components)
+                    {
+                        selected_entities.insert({ entity_id, entity.get() });
+                    }
                 }
-                else
+            }
+            else
+            {
+                auto iter = selected_entities.begin();
+                while (iter != selected_entities.end())
                 {
-                    iter++;
+                    auto& selected_entity          = iter->second;
+                    auto total_required_components = _current_query_instruction.component_constraints.value().count();
+                    auto component_mask            = selected_entity->GetComponentMask();
+                    if ((_current_query_instruction.component_constraints.value() & component_mask).count() != total_required_components)
+                    {
+                        iter = selected_entities.erase(iter);
+                    }
+                    else
+                    {
+                        iter++;
+                    }
                 }
             }
         }

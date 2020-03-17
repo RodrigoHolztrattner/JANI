@@ -104,6 +104,17 @@ public: // MAIN METHODS //
     virtual std::optional<std::vector<std::shared_ptr<Constraint>>>            GetOutputConstraint()            const;
     virtual std::optional<std::vector<WorldPosition>>         GetOutputPosition()              const;
     virtual std::optional<VisualizationSettings> GetOutputVisualizationSettings() const;
+    virtual std::optional<WorldRect> GetOutputRect() const { return std::nullopt; }
+
+    /*
+    * Called when a delta is added into this window position
+    */
+    virtual void OnPositionChange(ImVec2 _current_pos, ImVec2 _new_pos, ImVec2 _delta);
+
+    /*
+    * Called when a delta is added into this window size
+    */
+    virtual void OnSizeChange(ImVec2 _current_size, ImVec2 _new_size, ImVec2 _delta);
 
     /*
     * Return this window unique id
@@ -141,7 +152,7 @@ protected:
     * Draw this window title bar
     * Only call this when inside a child window
     */
-    void DrawTitleBar(std::optional<WindowInputConnection> _connection = std::nullopt);
+    void DrawTitleBar(bool _edit_mode, std::optional<WindowInputConnection> _connection = std::nullopt);
 
     /*
     * Process any requested resize

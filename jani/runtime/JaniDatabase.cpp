@@ -11,12 +11,12 @@ Jani::Database::~Database()
 {
 }
 
-std::optional<const Jani::Entity*> Jani::Database::GetEntityById(EntityId _entity_id) const
+std::optional<const Jani::ServerEntity*> Jani::Database::GetEntityById(EntityId _entity_id) const
 {
     return GetEntityByIdMutable(_entity_id);
 }
 
-std::optional<Jani::Entity*> Jani::Database::GetEntityByIdMutable(EntityId _entity_id) const
+std::optional<Jani::ServerEntity*> Jani::Database::GetEntityByIdMutable(EntityId _entity_id) const
 {
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter != m_active_entities.end())
@@ -27,7 +27,7 @@ std::optional<Jani::Entity*> Jani::Database::GetEntityByIdMutable(EntityId _enti
     return std::nullopt;
 }
 
-const std::map< Jani::EntityId, std::unique_ptr< Jani::Entity>>& Jani::Database::GetEntities() const
+const std::map< Jani::EntityId, std::unique_ptr< Jani::ServerEntity>>& Jani::Database::GetEntities() const
 {
     return m_active_entities;
 }
@@ -39,7 +39,7 @@ std::optional<Jani::EntityId> Jani::Database::ReserveEntityIdRange(uint32_t _tot
     return current_entity_count - _total_ids;
 }
 
-std::optional<Jani::Entity*> Jani::Database::AddEntity(
+std::optional<Jani::ServerEntity*> Jani::Database::AddEntity(
     WorkerId             _worker_id,
     EntityId             _entity_id,
     const EntityPayload& _entity_payload)
@@ -51,7 +51,7 @@ std::optional<Jani::Entity*> Jani::Database::AddEntity(
     }
 
     // Create the new entity
-    auto& entity = m_active_entities.insert({ _entity_id, std::make_unique<Entity>(_entity_id) }).first->second;
+    auto& entity = m_active_entities.insert({ _entity_id, std::make_unique<ServerEntity>(_entity_id) }).first->second;
 
     // Add each component contained on the payload
     for (auto& component_payload : _entity_payload.component_payloads)
@@ -78,7 +78,7 @@ bool Jani::Database::RemoveEntity(
     return true;
 }
 
-std::optional<Jani::Entity*> Jani::Database::AddComponent(
+std::optional<Jani::ServerEntity*> Jani::Database::AddComponent(
     WorkerId                _worker_id,
     EntityId                _entity_id,
     LayerId                 _layer_id,
@@ -106,7 +106,7 @@ std::optional<Jani::Entity*> Jani::Database::AddComponent(
     return entity.get();
 }
 
-std::optional<Jani::Entity*> Jani::Database::RemoveComponent(
+std::optional<Jani::ServerEntity*> Jani::Database::RemoveComponent(
     WorkerId    _worker_id,
     EntityId    _entity_id,
     LayerId     _layer_id,
@@ -133,7 +133,7 @@ std::optional<Jani::Entity*> Jani::Database::RemoveComponent(
     return entity.get();
 }
 
-std::optional<Jani::Entity*> Jani::Database::ComponentUpdate(
+std::optional<Jani::ServerEntity*> Jani::Database::ComponentUpdate(
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     LayerId                      _layer_id,

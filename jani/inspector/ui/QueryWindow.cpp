@@ -97,6 +97,14 @@ void Jani::Inspector::QueryWindow::Draw(
             ImGui::DragInt2("###Size", &_constraint->box_constraint.value().width, 1.0f, 0, 10000000);
             ImGui::Unindent(internal_indent);
         }
+        else if (_constraint->area_constraint)
+        {
+            if (ImGui::Button("Area")) { clear = true; }
+            ImGui::Indent(internal_indent);
+            ImGui::SetNextItemWidth(100.0f);
+            ImGui::DragInt2("###Size", reinterpret_cast<int32_t*>(&_constraint->area_constraint.value().width), 1.0f, 0, 10000000);
+            ImGui::Unindent(internal_indent);
+        }
         else if (_constraint->radius_constraint)
         {
             if (ImGui::Button("Radius")) { clear = true; }
@@ -262,15 +270,23 @@ void Jani::Inspector::QueryWindow::Draw(
             ImGui::CloseCurrentPopup();
         }
 
+        if (ImGui::Button("Area", ImVec2(button_width, 0.0f)))
+        {
+            if (m_add_new_constraint_target)
+            {
+                *m_add_new_constraint_target.value() = std::make_shared<Constraint>();
+                (*m_add_new_constraint_target.value())->area_constraint = WorldArea();
+            }
+
+            ImGui::CloseCurrentPopup();
+        }
+
         if (ImGui::Button("Component", ImVec2(button_width, 0.0f)))
         {
             if (m_add_new_constraint_target)
             {
                 *m_add_new_constraint_target.value() = std::make_shared<Constraint>();
                 (*m_add_new_constraint_target.value())->component_constraint = ComponentMask();
-
-                m_component_mask_selector_target   = &(*m_add_new_constraint_target.value())->component_constraint.value();
-                should_open_select_component_popup = true;
             }
 
             ImGui::CloseCurrentPopup();
@@ -485,7 +501,7 @@ bool Jani::Inspector::QueryWindow::CanAcceptInputConnection(const WindowInputCon
         }
         case WindowDataType::Constraint:
         {
-            return true;
+            return _connection.connection_type == WindowConnectionType::ViewportRect;
         }
     }
 
@@ -550,7 +566,11 @@ std::optional<std::pair<Jani::WorldPosition, Jani::ComponentQuery>> Jani::Inspec
     {
         if (_constraint.box_constraint)
         {
-            // _query.InArea(_constraint.box_constraint.value());
+            _query.EntitiesInRect(_constraint.box_constraint.value());
+        }
+        else if (_constraint.area_constraint)
+        {
+            _query.EntitiesInArea(_constraint.area_constraint.value());
         }
         else if (_constraint.radius_constraint)
         {
@@ -559,7 +579,6 @@ std::optional<std::pair<Jani::WorldPosition, Jani::ComponentQuery>> Jani::Inspec
         else if (_constraint.component_constraint)
         {
             _query.RequireComponents(_constraint.component_constraint.value());
-            // _query.Or(_constraint.radius_constraint.value());
         }
         else if (_constraint.or_constraint && _constraint.or_constraint.value().first && _constraint.or_constraint.value().second)
         {
@@ -575,13 +594,13 @@ std::optional<std::pair<Jani::WorldPosition, Jani::ComponentQuery>> Jani::Inspec
         }
     };
 
-    bool is_first_constraint = true;
-    for (auto& constraint : constraints.value())
+    for (int i = 0; i < constraints.value().size(); i++)
     {
-        // Apply the constraint into the component query
-        // ...
+        auto& constraint  = constraints.value()[i];
+        auto and_query    = query_instruction->And();
+        query_instruction = and_query.second;
 
-        is_first_constraint = false;
+        ApplyConstraintToQuery(*constraint, *and_query.first);
     }
 
     if (m_constraints)
@@ -634,6 +653,30 @@ std::optional<std::vector<std::shared_ptr<Jani::Inspector::Constraint>>> Jani::I
                 if (constraint_input_values)
                 {
                     input_constraints.insert(input_constraints.end(), constraint_input_values.value().begin(), constraint_input_values.value().end());
+                }
+            }
+        }
+
+        // WindowDataType::Constraint
+        {
+            auto constraint_data_enum_index = magic_enum::enum_index(WindowDataType::Constraint);
+            if (m_input_connections[constraint_data_enum_index.value()] != std::nullopt 
+                && m_input_connections[constraint_data_enum_index.value()]->connection_type == WindowConnectionType::ViewportRect)
+            {
+                auto* constraint_input_window = m_input_connections[constraint_data_enum_index.value()].value().window;
+
+                if (!constraint_input_window->WasUpdated())
+                {
+                    constraint_input_window->Update();
+                }
+
+                auto output_rect = constraint_input_window->GetOutputRect();
+
+                if (output_rect)
+                {
+                    std::shared_ptr<Constraint> rect_constraint = std::make_shared<Constraint>();
+                    rect_constraint->box_constraint = output_rect.value();
+                    input_constraints.push_back(std::move(rect_constraint));
                 }
             }
         }

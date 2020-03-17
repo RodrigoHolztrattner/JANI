@@ -103,13 +103,21 @@ void Jani::Inspector::MapWindow::Draw(
         }
     }
 
-    static float LargeGridSize = 128.0f;
-    static float MinorGridSize = 8;
+    m_map_bounding_box.x = -m_pure_scroll.x;
+    m_map_bounding_box.y = -m_pure_scroll.y;
+    m_map_bounding_box.width  = ImGui::GetWindowSize().x;
+    m_map_bounding_box.height = ImGui::GetWindowSize().y;
 
-    begin_x += m_scroll.x - MinorGridSize;
-    begin_y += m_scroll.y - MinorGridSize;
-    end_x += m_scroll.x + MinorGridSize;
-    end_y += m_scroll.y + MinorGridSize;
+    m_map_bounding_box.width /= m_zoom_level;
+    m_map_bounding_box.height /= m_zoom_level;
+
+    static float LargeGridSize = 32.0f;
+    static float MinorGridSize = 8.0f;
+
+    begin_x += m_scroll.x;
+    begin_y += m_scroll.y;
+    end_x += m_scroll.x;
+    end_y += m_scroll.y;
 
     begin_x *= m_zoom_level;
     begin_y *= m_zoom_level;
@@ -125,12 +133,12 @@ void Jani::Inspector::MapWindow::Draw(
         ImColor large_grid_color      = ImColor(22, 22, 22, std::max(static_cast<int>(255 * _zoom_level), 160));
         ImColor minor_grid_color      = ImColor(52, 52, 52, std::max(static_cast<int>(255 * _zoom_level * _zoom_level), 96));
 
-        for (float x = -_size.x; x < _size.x; x += minor_grid_size)
+        for (float x = -_size.x / 2.0f + minor_grid_size * 2.0f; x <= _size.x / 2.0f + minor_grid_size * 2.0f + 1.0f; x += minor_grid_size)
         {
             _draw_list->AddLine(ImVec2(x + _scroll.x * _zoom_level, _position.y), ImVec2(x + _scroll.x * _zoom_level, _size.y + _position.y), minor_grid_color);
         }
 
-        for (float y = -_size.y; y < _size.y; y += minor_grid_size)
+        for (float y = -_size.y / 2.0f + minor_grid_size * 2.0f; y <= _size.y / 2.0f + minor_grid_size * 2.0f + 1.0f; y += minor_grid_size)
         {
             _draw_list->AddLine(ImVec2(_position.x, y + _scroll.y * _zoom_level), ImVec2(_size.x + _position.x, y + _scroll.y * _zoom_level), minor_grid_color);
         }
@@ -144,12 +152,6 @@ void Jani::Inspector::MapWindow::Draw(
         float b = std::abs(std::sin(_index / step * 3.0));
         return ImVec4(r, g, b, 1.0f);
     };
-
-
-    std::string total_entities_text = "Entities: " + std::to_string(m_entity_datas.size());
-    std::string total_workers_text =  "Cells:  " + std::to_string(_cell_infos.size());
-    ImGui::Text(total_entities_text.c_str());
-    ImGui::Text(total_workers_text.c_str());
 
     DrawBackgroundLines(
         ImGui::GetWindowDrawList(), 
@@ -222,10 +224,19 @@ void Jani::Inspector::MapWindow::Draw(
         }
     }
 
-    if (ImGui::IsMouseDown(0) && ImGui::IsMouseHoveringWindow())
+    if (ImGui::IsMouseClicked(0) && ImGui::IsMouseHoveringWindow())
     {
-        m_scroll.x += ImGui::GetIO().MouseDelta.x / m_zoom_level;
-        m_scroll.y += ImGui::GetIO().MouseDelta.y / m_zoom_level;
+        m_is_scrolling = true;
+    }
+    else if (ImGui::IsMouseReleased(0))
+    {
+        m_is_scrolling = false;
+    }
+
+    if (m_is_scrolling)
+    {
+        m_scroll      = m_scroll + ImGui::GetIO().MouseDelta / m_zoom_level;
+        m_pure_scroll = m_pure_scroll + ImGui::GetIO().MouseDelta / m_zoom_level;
     }
 
     if (ImGui::GetIO().MouseWheel && ImGui::IsMouseHoveringWindow())
@@ -295,10 +306,10 @@ std::optional<Jani::Inspector::WindowInputConnection> Jani::Inspector::MapWindow
     ImGui::BeginGroup();
     ImGui::Text("# Constraint");
     {
-        ImGui::Button("Constraint", _button_size);
+        ImGui::Button("Viewport Rect", _button_size);
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
         {
-            FinishGroupAndReturn(WindowInputConnection({ this, WindowDataType::Constraint, WindowConnectionType::Constraint }));
+            FinishGroupAndReturn(WindowInputConnection({ this, WindowDataType::Constraint, WindowConnectionType::ViewportRect }));
         }
     }
     ImGui::EndGroup();
@@ -324,12 +335,6 @@ std::optional<Jani::Inspector::WindowInputConnection> Jani::Inspector::MapWindow
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
         {
             FinishGroupAndReturn(WindowInputConnection({ this, WindowDataType::Position, WindowConnectionType::Viewport }));
-        }
-
-        ImGui::Button("Viewport Rect", _button_size);
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
-        {
-            FinishGroupAndReturn(WindowInputConnection({ this, WindowDataType::Position, WindowConnectionType::ViewportRect }));
         }
     }
     ImGui::EndGroup();
@@ -395,4 +400,14 @@ std::optional<std::vector<std::shared_ptr<Jani::Inspector::Constraint>>> Jani::I
 std::optional<std::vector<Jani::WorldPosition>> Jani::Inspector::MapWindow::GetOutputPosition() const
 {
     return std::nullopt;
+}
+
+void Jani::Inspector::MapWindow::OnPositionChange(ImVec2 _current_pos, ImVec2 _new_pos, ImVec2 _delta)
+{
+    m_scroll = m_scroll + _delta / m_zoom_level;
+}
+
+void Jani::Inspector::MapWindow::OnSizeChange(ImVec2 _current_size, ImVec2 _new_size, ImVec2 _delta)
+{
+    m_scroll = m_scroll - _delta / m_zoom_level;
 }
