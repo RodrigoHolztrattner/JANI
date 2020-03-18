@@ -291,6 +291,20 @@ public:
         return std::nullopt;
     }
 
+    /*
+    * Returns if the given entity is owned by this worker
+    */
+    bool IsEntityOwned(EntityId _entity_id) const
+    {
+        auto entity_info_iter = m_entity_id_to_info_map.find(_entity_id);
+        if (entity_info_iter != m_entity_id_to_info_map.end())
+        {
+            return entity_info_iter->second.is_owned;
+        }
+
+        return false;
+    }
+
 private:
 
 ////////////////////////

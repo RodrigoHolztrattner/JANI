@@ -1960,14 +1960,28 @@ private:
 template <typename C, typename EM>
 using ComponentHandle = entityx::ComponentHandle<C, EM>;
 
-class ClientEntity
+struct ClientEntity
 {
+protected:
 
+    ClientEntity(uint32_t _local_id) : m_local_id(_local_id)
+    {
+    }
+
+public:
+
+    /*
+    * Returns the local id associated with this entity, if it's valid
+    * This index does not represents the server-wide entity id
+    */
+    std::optional<uint32_t> GetLocalId() const // The type must match the one returned by id().index() from entityx
+    {
+        return m_local_id;
+    }
 
 private:
 
-    std::optional<EntityId> m_server_entity_id; // Not having this means it's a local entity (not synchronized)
-    entityx::Entity         m_entityx;
+    std::optional<uint32_t> m_local_id; // The type must match the one returned by id().index() from entityx
 };
 
 using Entity = ClientEntity;
