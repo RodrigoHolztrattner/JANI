@@ -22,10 +22,12 @@ class Worker
 {
 public:
 
-    using OnAuthorityGainCallback    = std::function<void(entityx::Entity&)>;
-    using OnAuthorityLostCallback    = std::function<void(entityx::Entity&)>;
-    using OnComponentUpdateCallback  = std::function<void(entityx::Entity&, ComponentId, const ComponentPayload&)>;
-    using OnComponentRemovedCallback = std::function<void(entityx::Entity&, ComponentId)>;
+    using OnAuthorityGainCallback   = std::function<void(EntityId)>;
+    using OnAuthorityLostCallback   = std::function<void(EntityId)>;
+    using OnComponentUpdateCallback = std::function<void(EntityId, ComponentId, const ComponentPayload&)>;
+    using OnComponentRemoveCallback = std::function<void(EntityId, ComponentId)>;
+    using OnEntityCreateCallback    = std::function<void(EntityId)>;
+    using OnEntityDestroyCallback   = std::function<void(EntityId)>;
 
     template<typename ResponseType>
     struct ResponseCallback
@@ -98,7 +100,6 @@ private:
 
     struct EntityInfo
     {
-        entityx::Entity                                                                         entityx;
         ComponentMask                                                                           component_mask;          // Indicate all the components this entity has
         ComponentMask                                                                           owned_component_mask;    // Indicate the components that are owned by the current worker on its layer
         ComponentMask                                                                           interest_component_mask; // Indicate the components that were filled because interest was requested
@@ -141,11 +142,6 @@ public: // MAIN METHODS //
         uint32_t    _server_port);
 
     /*
-    * Return a reference to the underlying entity manager
-    */
-    entityx::EntityManager& GetEntityManager();
-
-    /*
     * Returns if this worker is connected to the game server
     */
     bool IsConnected() const;
@@ -157,7 +153,9 @@ public: // CALLBACKS //
     void RegisterOnAuthorityGainCallback(OnAuthorityGainCallback _callback);
     void RegisterOnAuthorityLostCallback(OnAuthorityLostCallback _callback);
     void RegisterOnComponentUpdateCallback(OnComponentUpdateCallback _callback);
-    void RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback);
+    void RegisterOnComponentRemoveCallback(OnComponentRemoveCallback _callback);
+    void RegisterOnEntityCreateCallback(OnEntityCreateCallback _callback);
+    void RegisterOnEntityDestroyCallback(OnEntityDestroyCallback _callback);
 
 protected:
 
@@ -222,8 +220,9 @@ public:
     * This operation is dependent on the permissions of this worker
     */
     ResponseCallback<Message::RuntimeDefaultResponse> RequestAddEntity(
-        EntityId      _entity_id, 
-        EntityPayload _entity_payload);
+        EntityId                     _entity_id, 
+        EntityPayload                _entity_payload, 
+        std::optional<WorldPosition> _entity_world_position = std::nullopt);
 
     /*
     * Request the game server to remove a certain entity
@@ -278,20 +277,6 @@ public:
     virtual void Update(uint32_t _time_elapsed_ms);
 
     /*
-    * TEMPORARY -> Maps an entityx entity to the original server entity id
-    */
-    std::optional<EntityId> GetJaniEntityId(entityx::Entity _entity) const
-    {
-        auto entity_iter = m_ecs_entity_to_entity_id_map.find(_entity);
-        if (entity_iter != m_ecs_entity_to_entity_id_map.end())
-        {
-            return entity_iter->second;
-        }
-
-        return std::nullopt;
-    }
-
-    /*
     * Returns if the given entity is owned by this worker
     */
     bool IsEntityOwned(EntityId _entity_id) const
@@ -325,18 +310,17 @@ private: // VARIABLES //
 
     std::chrono::time_point<std::chrono::steady_clock> m_last_worker_report_timestamp = std::chrono::steady_clock::now();
 
-    entityx::EntityX m_ecs_manager;
-
     std::unordered_map<EntityId, EntityInfo>      m_entity_id_to_info_map;
-    std::unordered_map<entityx::Entity, EntityId> m_ecs_entity_to_entity_id_map;
 
     std::unordered_map<RequestInfo::RequestIndex, ResponseCallbackType> m_response_callbacks;
 
     // Callbacks
-    OnAuthorityGainCallback    m_on_authority_gain_callback;
-    OnAuthorityLostCallback    m_on_authority_lost_callback;
-    OnComponentUpdateCallback  m_on_component_update_callback;
-    OnComponentRemovedCallback m_on_component_removed_callback;
+    OnAuthorityGainCallback   m_on_authority_gain_callback;
+    OnAuthorityLostCallback   m_on_authority_lost_callback;
+    OnComponentUpdateCallback m_on_component_update_callback;
+    OnComponentRemoveCallback m_on_component_remove_callback;
+    OnEntityCreateCallback    m_on_entity_create_callback;
+    OnEntityDestroyCallback   m_on_entity_destroy_callback;
 };
 
 // Jani

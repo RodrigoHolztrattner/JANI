@@ -848,6 +848,39 @@ namespace Jani
         RuntimeInspectorQuery, 
     };
 
+    template<typename CharT, typename TraitsT = std::char_traits<CharT> >
+    class StreamVectorWrap : public std::basic_streambuf<CharT, TraitsT>
+    {
+        using Base = std::basic_streambuf<CharT, TraitsT>;
+
+    public:
+
+        StreamVectorWrap(std::vector<CharT>& vec)
+        {
+            this->setg(vec.data(), vec.data(), vec.data() + vec.size());
+            this->setp(vec.data(), vec.data() + vec.size());
+        }
+        StreamVectorWrap(nonstd::span<CharT>& vec)
+        {
+            this->setg(vec.data(), vec.data(), vec.data() + vec.size());
+            this->setp(vec.data(), vec.data() + vec.size());
+        }
+
+        Base::pos_type seekoff(
+            Base::off_type off,
+            std::ios_base::seekdir dir,
+            std::ios_base::openmode which = std::ios_base::in) override
+        {
+            if (dir == std::ios_base::cur)
+                Base::gbump(off);
+            else if (dir == std::ios_base::end)
+                Base::setg(Base::eback(), Base::egptr() + off, Base::egptr());
+            else if (dir == std::ios_base::beg)
+                Base::setg(Base::eback(), Base::eback() + off, Base::egptr());
+            return (which == std::ios_base::in ? Base::gptr() : Base::pptr()) - Base::eback();
+        }
+    };
+
     class RequestInfo
     {
     public:
@@ -869,41 +902,6 @@ namespace Jani
     {
         friend RequestMaker;
         friend RequestManager;
-
-    private:
-
-        template<typename CharT, typename TraitsT = std::char_traits<CharT> >
-        class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT>
-        {
-            using Base = std::basic_streambuf<CharT, TraitsT>;
-
-        public:
-
-            vectorwrapbuf(std::vector<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-            vectorwrapbuf(nonstd::span<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-
-            Base::pos_type seekoff(
-                Base::off_type off,
-                std::ios_base::seekdir dir,
-                std::ios_base::openmode which = std::ios_base::in) override
-            {
-                if (dir == std::ios_base::cur)
-                    Base::gbump(off);
-                else if (dir == std::ios_base::end)
-                    Base::setg(Base::eback(), Base::egptr() + off, Base::egptr());
-                else if (dir == std::ios_base::beg)
-                    Base::setg(Base::eback(), Base::eback() + off, Base::egptr());
-                return (which == std::ios_base::in ? Base::gptr() : Base::pptr()) - Base::eback();
-            }
-        };
 
     protected:
         RequestPayload(cereal::BinaryInputArchive& _archive, const RequestInfo& _original_request)
@@ -956,8 +954,8 @@ namespace Jani
             output_data->response_buffer->clear();
             output_data->response_buffer->resize(Connection<>::MaximumDatagramSize);
 
-            vectorwrapbuf<char>         out_data_buffer(*output_data->response_buffer);
-            std::ostream                out_stream(&out_data_buffer);
+            StreamVectorWrap<char> out_data_buffer(*output_data->response_buffer);
+            std::ostream           out_stream(&out_data_buffer);
 
             {
                 cereal::BinaryOutputArchive out_archive(out_stream);
@@ -990,38 +988,6 @@ namespace Jani
 
     class RequestManager
     {
-        template<typename CharT, typename TraitsT = std::char_traits<CharT> >
-        class vectorwrapbuf : public std::basic_streambuf<CharT, TraitsT>
-        {
-            using Base = std::basic_streambuf<CharT, TraitsT>;
-
-        public:
-
-            vectorwrapbuf(std::vector<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-            vectorwrapbuf(nonstd::span<CharT>& vec)
-            {
-                this->setg(vec.data(), vec.data(), vec.data() + vec.size());
-                this->setp(vec.data(), vec.data() + vec.size());
-            }
-
-            Base::pos_type seekoff(
-                Base::off_type off,
-                std::ios_base::seekdir dir,
-                std::ios_base::openmode which = std::ios_base::in) override
-            {
-                if (dir == std::ios_base::cur)
-                    Base::gbump(off);
-                else if (dir == std::ios_base::end)
-                    Base::setg(Base::eback(), Base::egptr() + off, Base::egptr());
-                else if (dir == std::ios_base::beg)
-                    Base::setg(Base::eback(), Base::eback() + off, Base::egptr());
-                return (which == std::ios_base::in ? Base::gptr() : Base::pptr()) - Base::eback();
-            }
-        };
 
         using ResponseCallback = std::function<void(std::optional<Connection<>::ClientHash>, const RequestInfo&, const ResponsePayload&)>;
         using RequestCallback  = std::function<void(std::optional<Connection<>::ClientHash>, const RequestInfo&, const RequestPayload&, ResponsePayload&)>;
@@ -1034,8 +1000,8 @@ namespace Jani
             m_temporary_request_buffer.clear();
             m_temporary_request_buffer.resize(Connection<>::MaximumDatagramSize);
 
-            vectorwrapbuf<char> data_buffer(m_temporary_request_buffer);
-            std::ostream        out_stream(&data_buffer);
+            StreamVectorWrap<char> data_buffer(m_temporary_request_buffer);
+            std::ostream           out_stream(&data_buffer);
 
             RequestInfo new_request;
             new_request.type          = _request_type;
@@ -1082,8 +1048,8 @@ namespace Jani
             _connection.Receive(
                 [&](auto _client_hash, nonstd::span<char> _data)
                 {
-                    vectorwrapbuf<char> data_buffer(_data);
-                    std::istream        in_stream(&data_buffer);
+                    StreamVectorWrap<char> data_buffer(_data);
+                    std::istream           in_stream(&data_buffer);
                     cereal::BinaryInputArchive in_archive(in_stream);
 
                     RequestInfo original_request;

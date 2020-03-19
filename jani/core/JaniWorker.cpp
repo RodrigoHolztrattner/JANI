@@ -30,11 +30,6 @@ bool Jani::Worker::InitializeWorker(
     return true;
 }
 
-entityx::EntityManager& Jani::Worker::GetEntityManager()
-{
-    return m_ecs_manager.entities;
-}
-
 bool Jani::Worker::IsConnected() const
 {
     if (!m_bridge_connection)
@@ -60,9 +55,19 @@ void Jani::Worker::RegisterOnComponentUpdateCallback(OnComponentUpdateCallback _
     m_on_component_update_callback = _callback;
 }
 
-void Jani::Worker::RegisterOnComponentRemovedCallback(OnComponentRemovedCallback _callback)
+void Jani::Worker::RegisterOnComponentRemoveCallback(OnComponentRemoveCallback _callback)
 {
-    m_on_component_removed_callback = _callback;
+    m_on_component_remove_callback = _callback;
+}
+
+void Jani::Worker::RegisterOnEntityCreateCallback(OnEntityCreateCallback _callback)
+{
+    m_on_entity_create_callback = _callback;
+}
+
+void Jani::Worker::RegisterOnEntityDestroyCallback(OnEntityDestroyCallback _callback)
+{
+    m_on_entity_destroy_callback = _callback;
 }
 
 Jani::Worker::ResponseCallback<Jani::Message::RuntimeAuthenticationResponse> Jani::Worker::RequestAuthentication()
@@ -123,14 +128,16 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeReserveEntityIdRangeRespons
 }
 
 Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestAddEntity(
-    EntityId      _entity_id,
-    EntityPayload _entity_payload)
+    EntityId                     _entity_id,
+    EntityPayload                _entity_payload,
+    std::optional<WorldPosition> _entity_world_position)
 {
     assert(m_bridge_connection);
 
     Message::RuntimeAddEntityRequest add_entity_request;
-    add_entity_request.entity_id      = _entity_id;
-    add_entity_request.entity_payload = std::move(_entity_payload);
+    add_entity_request.entity_id             = _entity_id;
+    add_entity_request.entity_payload        = std::move(_entity_payload);
+    add_entity_request.entity_world_position = _entity_world_position;
 
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddEntity, add_entity_request);
     if (request_result)
@@ -257,6 +264,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         auto iter = m_entity_id_to_info_map.begin();
         while (iter != m_entity_id_to_info_map.end())
         {
+            auto  entity_id   = iter->first;
             auto& entity_info = iter->second;
 
             assert(!(entity_info.interest_component_mask.count() == 0 && !entity_info.is_owned));
@@ -276,10 +284,9 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 {
                     Jani::MessageLog().Info("Worker -> Destroying timed-out interest pure entity {}", iter->first);
 
-                    // TODO: Should we call a callback here?
+                    assert(m_on_entity_destroy_callback);
+                    m_on_entity_destroy_callback(entity_id);
 
-                    m_ecs_entity_to_entity_id_map.erase(entity_info.entityx);
-                    entity_info.entityx.destroy();
                     iter = m_entity_id_to_info_map.erase(iter);
 
                     m_entity_count--;
@@ -290,8 +297,8 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 {
                     for (const auto& component_id : bitset::indices_on(entity_info.interest_component_mask))
                     {
-                        assert(m_on_component_removed_callback);
-                        m_on_component_removed_callback(entity_info.entityx, component_id);
+                        assert(m_on_component_remove_callback);
+                        m_on_component_remove_callback(entity_id, component_id);
 
                         entity_info.component_mask.set(component_id, false);
                     }
@@ -385,12 +392,12 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                             if (entity_iter == m_entity_id_to_info_map.end())
                             {
                                 EntityInfo entity_info;
-                                entity_info.entityx = m_ecs_manager.entities.create();
-
                                 entity_iter = m_entity_id_to_info_map.insert({ component_payload.entity_owner, std::move(entity_info) }).first;
-                                m_ecs_entity_to_entity_id_map.insert({ entity_iter->second.entityx, component_payload.entity_owner });
 
                                 m_entity_count++;
+
+                                assert(m_on_entity_create_callback);
+                                m_on_entity_create_callback(component_payload.entity_owner);
                             }
 
                             auto& entity_info = entity_iter->second;
@@ -408,7 +415,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                             entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
 
                             assert(m_on_component_update_callback);
-                            m_on_component_update_callback(entity_info.entityx, component_payload.component_id, component_payload);
+                            m_on_component_update_callback(component_payload.entity_owner, component_payload.component_id, component_payload);
                         }
 
                         is_internal_response = true;
@@ -512,6 +519,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto entity_iter = m_entity_id_to_info_map.find(add_component_request.entity_id);
                         if (entity_iter != m_entity_id_to_info_map.end())
                         {
+                            auto  entity_id   = entity_iter->first;
                             auto& entity_info = entity_iter->second;
 
                             assert(entity_info.is_owned);
@@ -524,7 +532,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                             entity_info.owned_component_mask.set(add_component_request.component_id, true);
 
                             assert(m_on_component_update_callback);
-                            m_on_component_update_callback(entity_info.entityx, add_component_request.component_id, add_component_request.component_payload);
+                            m_on_component_update_callback(entity_id, add_component_request.component_id, add_component_request.component_payload);
                         }
 
                         break;
@@ -536,6 +544,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto entity_iter = m_entity_id_to_info_map.find(remove_component_request.entity_id);
                         if (entity_iter != m_entity_id_to_info_map.end())
                         {
+                            auto  entity_id   = entity_iter->first;
                             auto& entity_info = entity_iter->second;
                             
                             assert(entity_info.is_owned);
@@ -546,8 +555,8 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                             // authority over an entity, the server will not attempt to remove the components so we can
                             // totally reuse them at the interest mask
 
-                            assert(m_on_component_removed_callback);
-                            m_on_component_removed_callback(entity_info.entityx, remove_component_request.component_id);
+                            assert(m_on_component_remove_callback);
+                            m_on_component_remove_callback(entity_id, remove_component_request.component_id);
 
                             entity_info.component_mask.set(remove_component_request.component_id, false);
                             entity_info.owned_component_mask.set(remove_component_request.component_id, false);
@@ -567,10 +576,11 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto entity_iter = m_entity_id_to_info_map.find(authority_lost_request.entity_id);
                         if (entity_iter != m_entity_id_to_info_map.end())
                         {
+                            auto  entity_id   = entity_iter->first;
                             auto& entity_info = entity_iter->second;
 
                             assert(m_on_authority_lost_callback);
-                            m_on_authority_lost_callback(entity_info.entityx);
+                            m_on_authority_lost_callback(entity_id);
 
                             entity_info.is_owned = false;
 
@@ -581,8 +591,9 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                             {
                                 m_entity_count--;
 
-                                m_ecs_entity_to_entity_id_map.erase(entity_info.entityx);
-                                entity_info.entityx.destroy();
+                                assert(m_on_entity_destroy_callback);
+                                m_on_entity_destroy_callback(entity_id);
+
                                 m_entity_id_to_info_map.erase(entity_iter);
                             }
                         }
@@ -601,13 +612,11 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         auto entity_iter = m_entity_id_to_info_map.find(authority_gain_request.entity_id);
                         if (entity_iter == m_entity_id_to_info_map.end())
                         {
-                            auto new_entity = m_ecs_manager.entities.create();
-
                             EntityInfo new_entity_info;
-                            new_entity_info.entityx = std::move(new_entity);
-
                             entity_iter = m_entity_id_to_info_map.insert({ authority_gain_request.entity_id, std::move(new_entity_info) }).first;
-                            m_ecs_entity_to_entity_id_map.insert({ new_entity, authority_gain_request.entity_id });
+
+                            assert(m_on_entity_create_callback);
+                            m_on_entity_create_callback(authority_gain_request.entity_id);
 
                             m_entity_count++;
                         }
@@ -617,7 +626,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                         entity_info.is_owned = true;
 
                         assert(m_on_authority_gain_callback);
-                        m_on_authority_gain_callback(entity_info.entityx);
+                        m_on_authority_gain_callback(authority_gain_request.entity_id);
 
                         break;
                     }

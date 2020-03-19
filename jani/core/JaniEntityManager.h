@@ -34,6 +34,7 @@ public: \
 #define TemplateMethodInexistent(T, Method) typename std::enable_if<!has_##Method##_method<ComponentClass>::value>::type* = nullptr
 
 DeclareTemplateIntrospectionMethod(serialize);
+DeclareTemplateIntrospectionMethod(GetEntityWorldPosition);
 
 // Jani
 JaniNamespaceBegin(Jani)
@@ -54,11 +55,17 @@ private:
         bool                    is_delete_hidden    = false; // True if the entity was supposed to be deleted but its not owned to complete the request
     };
 
+    using OnComponentUpdateFunction        = std::function<bool(entityx::Entity&, const ComponentPayload&)>;
+    using OnComponentRemoveFunction        = std::function<bool(entityx::Entity&)>;
+    using OnComponentSerializeFunction     = std::function<bool(entityx::Entity&, ComponentPayload&)>;
+    using OnComponentWorldPositionFunction = std::function<WorldPosition(entityx::Entity&)>;
+
     struct ComponentOperators
     {
-        std::function<void(entityx::Entity& _entity, ComponentPayload& _component_payload)> update_component_function;
-        std::function<void(entityx::Entity& _entity)>                                       remove_component_function;
-        std::function<void(entityx::Entity& _entity, ComponentPayload& _component_payload)> serialize_component_function;
+        OnComponentUpdateFunction        update_component_function;
+        OnComponentRemoveFunction        remove_component_function;
+        OnComponentSerializeFunction     serialize_component_function;
+        OnComponentWorldPositionFunction component_world_position_function;
     };
 
 //////////////////////////
@@ -72,6 +79,15 @@ public: // CONSTRUCTORS //
 public: // MAIN METHODS //
 //////////////////////////
 
+    /*
+    * Register and assign a component class to its server component id
+    *
+    * This function should be called for each component that is registered on the server, this
+    * will allow these components to be packed and/or unpacked whenever their data must be sent
+    * or received
+    *
+    * This function in particular requires that the component have a serialize() function
+    */
     template <typename ComponentClass,
         TemplateMethodExistent(ComponentClass, serialize)>
     bool RegisterComponent(ComponentId _component_id)
@@ -87,31 +103,95 @@ public: // MAIN METHODS //
         ComponentOperators component_operators;
 
         component_operators.update_component_function = 
-            [](entityx::Entity& _entity, ComponentPayload& _component_payload)
+            [](entityx::Entity& _entity, const ComponentPayload& _component_payload) -> bool
         {
+            ComponentClass raw_component;
 
+            StreamVectorWrap<char> data_buffer(nonstd::span<char>(_component_payload.component_data.data(), _component_payload.component_data.data() + _component_payload.component_data.size()));
+            std::istream           stream(&data_buffer);
+
+            try
+            {
+                cereal::BinaryInputArchive archive(stream);
+                archive(raw_component);
+            }
+            catch (...)
+            {
+                return false;
+            }
+
+            if (_entity.has_component<ComponentClass>())
+            {
+                _entity.replace<ComponentClass>(std::move(raw_component));
+            }
+            else
+            {
+                _entity.assign<ComponentClass>(std::move(raw_component));
+            }
+
+            return true;
         };
 
         component_operators.remove_component_function =
-            [](entityx::Entity& _entity)
+            [](entityx::Entity& _entity) -> bool
         {
             _entity.remove<ComponentClass>();
+
+            return true;
         };
 
         component_operators.serialize_component_function =
-            [](entityx::Entity& _entity, ComponentPayload& _component_payload)
+            [](entityx::Entity& _entity, ComponentPayload& _component_payload) -> bool
         {
-            _entity.remove<ComponentClass>();
+            if (!_entity.has_component<ComponentClass>())
+            {
+                return false;
+            }
+
+            std::array<char, 512>  temp_buffer;
+            StreamVectorWrap<char> data_buffer(nonstd::span<char>(temp_buffer.data(), temp_buffer.data() + temp_buffer.size()));
+            std::ostream           stream(&data_buffer);
+
+            auto component_handle = _entity.component<ComponentClass>();
+
+            try
+            {
+                cereal::BinaryOutputArchive archive(stream);
+                archive(*component_handle);
+            }
+            catch (...)
+            {
+                return false;
+            }
+
+            _component_payload.component_data.insert(_component_payload.component_data.end(), temp_buffer.data(), temp_buffer.data() + stream.tellp());
+
+            return true;
         };
 
-        m_component_id_to_hash[_component_id]  = ctti::detailed_nameof<ComponentClass>().name().hash();
-        MaximumEntityComponents[_component_id] = std::move(component_operators);
+        // Check if this component provide an entity world position retrieve method
+        CheckComponentWorldPosition(_component_id, component_operators);
+
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        m_hash_to_component_id.insert({ component_type_hash, _component_id });
+        m_component_id_to_hash[_component_id] = component_type_hash;
+        m_component_operators[_component_id]  = std::move(component_operators);
 
         return true;
     }
 
+    /*
+    * Register and assign a component class to its server component id
+    *
+    * This function should be called for each component that is registered on the server, this
+    * will allow these components to be packed and/or unpacked whenever their data must be sent
+    * or received
+    *
+    * This function in particular requires the component to be a POD type
+    */
     template <typename ComponentClass,
-        TemplateMethodInexistent(ComponentClass, serialize)>
+        TemplateMethodInexistent(ComponentClass, serialize)/*, 
+        typename std::enable_if<std::is_pod<ComponentClass>::value, void>::type*/>
         bool RegisterComponent(ComponentId _component_id)
     {
         if (_component_id >= MaximumEntityComponents)
@@ -124,26 +204,63 @@ public: // MAIN METHODS //
 
         ComponentOperators component_operators;
 
-        component_operators.update_component_function =
-            [](entityx::Entity& _entity, ComponentPayload& _component_payload)
+        component_operators.update_component_function = 
+            [](entityx::Entity& _entity, const ComponentPayload& _component_payload) -> bool
         {
+            ComponentClass raw_component;
 
+            if (_component_payload.component_data.size() != sizeof(ComponentClass))
+            {
+                return false;
+            }
+
+            std::memcpy(&raw_component, _component_payload.component_data.data(), _component_payload.component_data.size());
+
+            if (_entity.has_component<ComponentClass>())
+            {
+                _entity.replace<ComponentClass>(std::move(raw_component));
+            }
+            else
+            {
+                _entity.assign<ComponentClass>(std::move(raw_component));
+            }
+
+            return true;
         };
 
         component_operators.remove_component_function =
-            [](entityx::Entity& _entity)
+            [](entityx::Entity& _entity) -> bool
         {
             _entity.remove<ComponentClass>();
+
+            return true;
         };
 
         component_operators.serialize_component_function =
-            [](entityx::Entity& _entity, ComponentPayload& _component_payload)
+            [](entityx::Entity& _entity, ComponentPayload& _component_payload) -> bool
         {
-            _entity.remove<ComponentClass>();
+            if (!_entity.has_component<ComponentClass>())
+            {
+                return false;
+            }
+
+            auto    component_handle   = _entity.component<ComponentClass>();
+            int8_t* component_data_ptr = reinterpret_cast<int8_t*>(&(*component_handle));
+
+            _component_payload.component_data.insert(_component_payload.component_data.end(), component_data_ptr, component_data_ptr + sizeof(ComponentClass));
+
+            return true;
         };
 
-        m_component_id_to_hash[_component_id]  = ctti::detailed_nameof<ComponentClass>().name().hash();
-        MaximumEntityComponents[_component_id] = std::move(component_operators);
+        // Check if this component provide an entity world position retrieve method
+        CheckComponentWorldPosition<ComponentClass>(_component_id, component_operators);
+
+        auto name = ctti::nameof<ComponentClass>();
+        
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        m_hash_to_component_id.insert({ component_type_hash, _component_id });
+        m_component_id_to_hash[_component_id] = component_type_hash;
+        m_component_operators[_component_id]  = std::move(component_operators);
 
         return true;
     }
@@ -167,7 +284,7 @@ public: // MAIN METHODS //
     * rare>
     */
     template <class... Components>
-    bool CreateEntity(Components&&... _components, std::optional<WorldPosition> _position = std::nullopt)
+    bool CreateEntity(Components&&... _components)
     {
         constexpr std::size_t total_components = sizeof...(Components);
 
@@ -183,11 +300,12 @@ public: // MAIN METHODS //
         }
 
         entity_payload.component_payloads.reserve(total_components);
+        std::optional<WorldPosition> entity_world_position;
 
         // Extract each component payload
-        [](...) {}((ExtractPayloadFromComponent(new_entity_id.value(), std::forward<Components>(_components), entity_payload.component_payloads), 0)...);
+        [](...) {}((ExtractPayloadFromComponent(new_entity_id.value(), std::forward<Components>(_components), entity_payload.component_payloads, entity_world_position), 0)...);
 
-        m_worker.RequestAddEntity(new_entity_id.value(), std::move(entity_payload));
+        m_worker.RequestAddEntity(new_entity_id.value(), std::move(entity_payload), entity_world_position);
 
         return true;
     }
@@ -204,7 +322,7 @@ public: // MAIN METHODS //
     * Returns if the local entity creation was successfully
     */
     template <class... Components>
-    bool CreateLocalEntity(Components&&... _components, std::optional<WorldPosition> _position = std::nullopt)
+    bool CreateLocalEntity(Components&&... _components)
     {
         // TODO: Check permissions
 
@@ -213,8 +331,8 @@ public: // MAIN METHODS //
         
         if (new_entityx_index >= m_entity_infos.size())
         {
-            MessageLog().Info("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index);
-            m_entity_infos.resize(new_entityx_index);
+            MessageLog().Info("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index + 1);
+            m_entity_infos.resize(new_entityx_index + 1);
         }
 
         JaniCriticalOnFail(!m_entity_infos[new_entityx_index].has_value(), "EntityManager -> CreateLocalEntity() is trying to use an index that is already on use!");
@@ -270,7 +388,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -321,7 +439,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -368,7 +486,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -413,7 +531,8 @@ public: // MAIN METHODS //
             && IsEntityOwned(entity_info.value()->server_entity_id.value())
             && entity_info.value()->entityx.has_component<ComponentClass>())
         {
-            auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+            auto entity_index        = entity_info.value()->entityx.id().index();
+            auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
             auto component_iter      = m_hash_to_component_id.find(component_type_hash);
             if (component_iter == m_hash_to_component_id.end())
             {
@@ -421,13 +540,15 @@ public: // MAIN METHODS //
             }
 
             auto raw_component = entity_info.value()->entityx.component<ComponentClass>();
-            ComponentPayload component_payload;
-            if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), *raw_component, component_payload))
+            ComponentPayload             component_payload;
+            std::optional<WorldPosition> entity_world_position;
+            if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), *raw_component, component_payload, entity_world_position))
             {
                 m_worker.RequestUpdateComponent(
                     entity_info.value()->server_entity_id.value(),
                     component_iter->second,
-                    std::move(component_payload));
+                    std::move(component_payload),
+                    entity_world_position);
             }
         }
     }
@@ -447,7 +568,7 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool UpdateInterestQuery(const Entity& _entity, std::vector<ComponentQuery>&& _queries) // TODO: Use span?!
     {
-        auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
         auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
@@ -471,7 +592,7 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool ClearInterestQuery(const Entity& _entity)
     {
-        auto component_type_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
         auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
@@ -488,14 +609,53 @@ public: // MAIN METHODS //
         const Entity& _entity,
         ComponentId   _target_component_id);
 
+///////////////////////
+public: // ITERATORS //
+///////////////////////
+
+    template <typename T> struct identity { typedef T type; };
+
+    template <typename ... Components>
+    void ForEach(typename identity<std::function<void(Jani::Entity& _entity, Components&...)>>::type _f)
+    {
+        m_ecs_manager.entities.each<Components...>(
+            [&](entityx::Entity _entity, Components&... _components)
+            {
+                auto entity_id = _entity.id().index();
+                Jani::Entity client_entity(entity_id);
+
+                _f(client_entity, _components ...);
+            });
+    }
+
 private:
 
+    template <typename ComponentClass,
+        TemplateMethodExistent(ComponentClass, GetEntityWorldPosition)>
+        void CheckComponentWorldPosition(ComponentId _component_id, ComponentOperators& _component_operators)
+    {
+        _component_operators.component_world_position_function = [](entityx::Entity& _entity) -> WorldPosition
+        {
+            // TODO: Check if the entity has the component?
+            return _entity.component<ComponentClass>()->GetEntityWorldPosition();
+        };
+
+        m_total_components_with_world_position++;
+    }
+
+    template <typename ComponentClass,
+        TemplateMethodInexistent(ComponentClass, GetEntityWorldPosition)>
+        void CheckComponentWorldPosition(ComponentId _component_id, ComponentOperators& _component_operators)
+    {
+        /* do nothing */
+    }
+
     template <typename ComponentClass>
-    bool ExtractPayloadFromComponent(EntityId _entity_id, ComponentClass&& _component, std::vector<ComponentPayload>& _component_payload_container)
+    bool ExtractPayloadFromComponent(EntityId _entity_id, ComponentClass&& _component, std::vector<ComponentPayload>& _component_payload_container, std::optional<WorldPosition>& _entity_world_position)
     {
         ComponentPayload new_payload;
 
-        if (ExtractPayloadFromComponent(_entity_id, _component, new_payload))
+        if (ExtractPayloadFromComponent(_entity_id, _component, new_payload, _entity_world_position))
         {
             _component_payload_container.push_back(std::move(new_payload));
             return true;
@@ -505,27 +665,79 @@ private:
     }
 
     template <typename ComponentClass>
-    bool ExtractPayloadFromComponent(EntityId _entity_id, ComponentClass&& _component, ComponentPayload& _component_payload)
+    bool ExtractPayloadFromComponent(EntityId _entity_id, ComponentClass&& _component, ComponentPayload& _component_payload, std::optional<WorldPosition>& _entity_world_position)
     {
-        auto component_class_hash = ctti::detailed_nameof<ComponentClass>().name().hash();
+        auto component_class_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
 
         auto iter = m_hash_to_component_id.find(component_class_hash);
         if (iter == m_hash_to_component_id.end())
         {
-            MessageLog().Error("EntityManager -> Trying to transform a component data into payload but the component isn't registered, the component needs to be registered or a local entity must be used instead, component class was {}", ctti::detailed_nameof<ComponentClass>().name().cppstring());
+            MessageLog().Error("EntityManager -> Trying to transform a component data into payload but the component isn't registered, the component needs to be registered or a local entity must be used instead, component class was {}", ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().cppstring());
             return false;
+        }
+
+        if (m_component_operators[iter->second].has_value() && m_component_operators[iter->second].value().component_world_position_function)
+        {
+            auto entity_iter = m_server_id_to_local.find(_entity_id);
+            if (entity_iter != m_server_id_to_local.end())
+            {
+                _entity_world_position = m_component_operators[iter->second].value().component_world_position_function(entity_iter->second);
+            }
         }
 
         _component_payload.entity_owner = _entity_id;
         _component_payload.component_id = iter->second;
-        const int8_t* component_data = reinterpret_cast<const int8_t*>(&_component);
+        const int8_t* component_data    = reinterpret_cast<const int8_t*>(&_component);
         _component_payload.component_data.insert(_component_payload.component_data.end(), component_data, component_data + sizeof(ComponentClass));
 
         return true;
     }
 
-    std::optional<EntityId> RetrieveNextAvailableEntityId() const
+    std::optional<EntityId> RetrieveNextAvailableEntityId(bool _is_waiting_for_reserve_response = false) const
     {
+        constexpr uint32_t total_entities_to_reserve = 100;
+
+        if (m_available_entity_id_ranges.size() > 0)
+        {
+            if (m_available_entity_id_ranges[0].first == m_available_entity_id_ranges[0].second)
+            {
+                m_available_entity_id_ranges.erase(m_available_entity_id_ranges.begin());
+                return RetrieveNextAvailableEntityId();
+            }
+
+            if (m_available_entity_id_ranges.size() == 1 && m_available_entity_id_ranges[0].second - m_available_entity_id_ranges[0].first == total_entities_to_reserve / 2)
+            {
+                MessageLog().Info("EntityManager -> Requesting entity id range reserve, the response will not be waited on");
+
+                m_worker.RequestReserveEntityIdRange(total_entities_to_reserve).OnResponse(
+                    [&](const Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
+                    {
+                        if (!_timeout && _response.succeed)
+                        {
+                            m_available_entity_id_ranges.push_back({ _response.id_begin, _response.id_end });
+                        }
+                    });
+            }
+
+            return m_available_entity_id_ranges[0].first++;
+        }
+
+        if (!_is_waiting_for_reserve_response)
+        {
+            MessageLog().Warning("EntityManager -> Requesting emergency entity id range reserve, the response will be waited on");
+
+            m_worker.RequestReserveEntityIdRange(total_entities_to_reserve).OnResponse(
+                [&](const Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
+                {
+                    if (!_timeout && _response.succeed)
+                    {
+                        m_available_entity_id_ranges.push_back({ _response.id_begin, _response.id_end });
+                    }
+                }).WaitResponse();
+
+            return RetrieveNextAvailableEntityId(true);
+        }
+
         return std::nullopt;
     }
 
@@ -602,6 +814,8 @@ private: // VARIABLES //
 
     Worker& m_worker;
 
+    mutable std::vector<std::pair<EntityId, EntityId>> m_available_entity_id_ranges;
+
     bool m_apply_before_server_acknowledge = false;
 
     std::unordered_map<ctti::detail::hash_t, ComponentId>                    m_hash_to_component_id;
@@ -610,7 +824,10 @@ private: // VARIABLES //
 
     entityx::EntityX m_ecs_manager;
 
-    std::vector<std::optional<EntityInfo>> m_entity_infos;
+    std::vector<std::optional<EntityInfo>>        m_entity_infos;
+    std::unordered_map<EntityId, entityx::Entity> m_server_id_to_local;
+
+    uint32_t m_total_components_with_world_position = 0;
 };
 
 // Jani

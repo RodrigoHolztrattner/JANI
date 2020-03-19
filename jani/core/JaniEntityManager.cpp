@@ -5,70 +5,120 @@
 
 Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
 {
-#if 0
     _worker.RegisterOnComponentUpdateCallback(
-        [](entityx::Entity& _entity, Jani::ComponentId _component_id, const Jani::ComponentPayload& _component_payload)
+        [&](EntityId _entity_id, Jani::ComponentId _component_id, const Jani::ComponentPayload& _component_payload)
         {
-            // Somehow I know that component id 0 translate to Position component
-            switch (_component_id)
+            // Check if this entity is registered
+            auto entity_iter = m_server_id_to_local.find(_entity_id);
+            if (entity_iter != m_server_id_to_local.end())
             {
-                case 0:
+                if (_component_id >= m_component_operators.size())
                 {
-                    _entity.replace<PositionComponent>(_component_payload.GetPayload<PositionComponent>());
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component id is out of range, component id: {}", _component_id);
+                    return;
                 }
-                case 1:
+
+                if (!m_component_operators[_component_id].has_value())
                 {
-                    _entity.replace<NpcComponent>(_component_payload.GetPayload<NpcComponent>());
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component id isn't registered, component id: {}", _component_id);
+                    return;
                 }
-                default:
+
+                if (!m_component_operators[_component_id].value().update_component_function(entity_iter->second, _component_payload))
                 {
-                    Jani::MessageLog().Error("Worker -> Trying to assign invalid component to entity");
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to update an entity component but the update operation failed, component id: {}", _component_id);
+                    return;
                 }
+            }
+            else
+            {
+                MessageLog().Error("EntityManager -> Trying to update an entity component but entity isn't registered, entity id: {}", _entity_id);
+                return;
             }
         });
 
-    _worker.RegisterOnComponentRemovedCallback(
-        [](entityx::Entity& _entity, Jani::ComponentId _component_id)
+    _worker.RegisterOnComponentRemoveCallback(
+        [&](EntityId _entity_id, Jani::ComponentId _component_id)
         {
-            // Somehow I know that component id 0 translate to Position component
-            switch (_component_id)
+            // Check if this entity is registered
+            auto entity_iter = m_server_id_to_local.find(_entity_id);
+            if (entity_iter != m_server_id_to_local.end())
             {
-                case 0:
+                if (_component_id >= m_component_operators.size())
                 {
-                    assert(_entity.has_component<PositionComponent>());
-                    _entity.remove<PositionComponent>();
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component id is out of range, component id: {}", _component_id);
+                    return;
                 }
-                case 1:
+
+                if (!m_component_operators[_component_id].has_value())
                 {
-                    assert(_entity.has_component<NpcComponent>());
-                    _entity.remove<NpcComponent>();
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component id isn't registered, component id: {}", _component_id);
+                    return;
                 }
-                default:
+
+                if (!m_component_operators[_component_id].value().remove_component_function(entity_iter->second))
                 {
-                    Jani::MessageLog().Error("Worker -> Trying to remove invalid component from entity");
-
-                    break;
+                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the remove operation failed, component id: {}", _component_id);
+                    return;
                 }
+            }
+            else
+            {
+                MessageLog().Error("EntityManager -> Trying to remove an entity component but entity isn't registered, entity id: {}", _entity_id);
+                return;
             }
         });
 
     _worker.RegisterOnAuthorityGainCallback(
-        [&](entityx::Entity& _entity)
+        [&](EntityId _entity_id)
         {
-            if (is_brain)
+
+        });
+
+    _worker.RegisterOnAuthorityLostCallback(
+        [](EntityId _entity_id)
+        {
+
+        });
+
+    _worker.RegisterOnEntityCreateCallback(
+        [&](EntityId _entity_id)
+        {
+            // Make sure there isn't an existing entity with this id
+            auto entity_iter = m_server_id_to_local.find(_entity_id);
+            if (entity_iter != m_server_id_to_local.end())
             {
-                return;
+                MessageLog().Error("EntityManager -> OnEntityCreateCallback called but there is already a linked entity with the same id: {}", _entity_id);
+
+                if (entity_iter->second.valid() && m_entity_infos[entity_iter->second.id().index()].has_value())
+                {
+                    m_entity_infos[entity_iter->second.id().index()] = std::nullopt;
+                }
+
+                entity_iter->second.destroy();
+
+                m_server_id_to_local.erase(_entity_id);
             }
+
+            auto new_entityx       = m_ecs_manager.entities.create();
+            auto new_entityx_index = new_entityx.id().index();
+            if (new_entityx_index >= m_entity_infos.size())
+            {
+                MessageLog().Info("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index + 1);
+                m_entity_infos.resize(new_entityx_index + 1);
+            }
+
+            EntityInfo new_entity_info;
+            new_entity_info.entityx          = new_entityx;
+            new_entity_info.server_entity_id = _entity_id;
+            new_entity_info.is_pure_local    = false;
+
+            m_entity_infos[new_entityx_index] = std::move(new_entity_info);
+            m_server_id_to_local.insert({ _entity_id, new_entityx });
+
+            //
+            //
+            //
 
             Jani::ComponentQuery component_query;
             auto* query_instruction = component_query
@@ -80,18 +130,32 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             and_query.first->EntitiesInRadius(30.0f);
             and_query.second->RequireComponent(0);
 
-            worker.RequestUpdateComponentInterestQuery(
-                worker.GetJaniEntityId(_entity).value(),
+            _worker.RequestUpdateComponentInterestQuery(
+                _entity_id,
                 0,
                 { std::move(component_query) });
         });
 
-    _worker.RegisterOnAuthorityLostCallback(
-        [](entityx::Entity& _entity)
+    _worker.RegisterOnEntityDestroyCallback(
+        [&](EntityId _entity_id)
         {
+            // Make sure there is an existing entity with this id
+            auto entity_iter = m_server_id_to_local.find(_entity_id);
+            if (entity_iter == m_server_id_to_local.end())
+            {
+                MessageLog().Error("EntityManager -> OnEntityDestroyCallback called but there isn't any entity linked with this id: {}", _entity_id);
+                return;
+            }
 
+            if (entity_iter->second.valid() && m_entity_infos[entity_iter->second.id().index()].has_value())
+            {
+                m_entity_infos[entity_iter->second.id().index()] = std::nullopt;
+            }
+
+            entity_iter->second.destroy();
+
+            m_server_id_to_local.erase(_entity_id);
         });
-#endif
 }
 
 Jani::EntityManager::~EntityManager() 

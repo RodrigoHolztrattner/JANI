@@ -262,6 +262,8 @@ class Database;
 class WorkerSpawnerInstance;
 class WorkerInstance; 
 class ServerEntity;
+class ClientEntity;
+class EntityManager;
 
 struct WorldPosition
 {
@@ -1499,8 +1501,9 @@ struct RuntimeAddEntityRequest
 {
     Serializable();
 
-    EntityId      entity_id;
-    EntityPayload entity_payload;
+    EntityId                     entity_id;
+    EntityPayload                entity_payload;
+    std::optional<WorldPosition> entity_world_position;
 };
 
 // RuntimeRemoveEntity
@@ -1962,6 +1965,8 @@ using ComponentHandle = entityx::ComponentHandle<C, EM>;
 
 struct ClientEntity
 {
+    friend EntityManager;
+
 protected:
 
     ClientEntity(uint32_t _local_id) : m_local_id(_local_id)
