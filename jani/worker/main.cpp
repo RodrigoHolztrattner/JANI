@@ -4,6 +4,7 @@
 #include "JaniConfig.h"
 #include "JaniWorker.h"
 #include "JaniEntityManager.h"
+#include "JaniClientEntity.h"
 
 LONG WINAPI MyUnhandledExceptionFilter(PEXCEPTION_POINTERS exception)
 {
@@ -126,7 +127,7 @@ int main(int _argc, char* _argv[])
         else
         {
             entity_manager->ForEach<PositionComponent>(
-                [&](Jani::Entity& entity, PositionComponent& _position)
+                [&](Jani::Entity entity, PositionComponent& _position)
                 {
                     auto RandomFloat = [](float _from, float _to) -> float
                     {

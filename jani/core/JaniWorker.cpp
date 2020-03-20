@@ -70,6 +70,22 @@ void Jani::Worker::RegisterOnEntityDestroyCallback(OnEntityDestroyCallback _call
     m_on_entity_destroy_callback = _callback;
 }
 
+void Jani::Worker::WaitForNextMessage(RequestInfo::RequestIndex _message_index, bool _perform_worker_updates)
+{
+    while (IsConnected() && m_response_callbacks.find(_message_index) != m_response_callbacks.end()) // TODO: Included check for timeout
+    {
+        if (_perform_worker_updates)
+        {
+            Update(5);
+        }
+
+        // If timed out, call the callback with the timeout argument as true
+        // ...
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
 Jani::Worker::ResponseCallback<Jani::Message::RuntimeAuthenticationResponse> Jani::Worker::RequestAuthentication()
 {
     assert(m_bridge_connection);
@@ -674,4 +690,15 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
         Jani::MessageLog().Info("Worker -> Entity count {} | Pure interest entity count {}", m_entity_count, total_pure_interest_entity_count);
     }
+}
+
+bool Jani::Worker::IsEntityOwned(EntityId _entity_id) const
+{
+    auto entity_info_iter = m_entity_id_to_info_map.find(_entity_id);
+    if (entity_info_iter != m_entity_id_to_info_map.end())
+    {
+        return entity_info_iter->second.is_owned;
+    }
+
+    return false;
 }

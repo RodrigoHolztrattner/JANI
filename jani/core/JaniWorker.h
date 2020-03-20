@@ -20,6 +20,8 @@ JaniNamespaceBegin(Jani)
 ////////////////////////////////////////////////////////////////////////////////
 class Worker
 {
+    friend EntityManager;
+
 public:
 
     using OnAuthorityGainCallback   = std::function<void(EntityId)>;
@@ -146,6 +148,12 @@ public: // MAIN METHODS //
     */
     bool IsConnected() const;
 
+    /*
+    * The main update function
+    * Use this to process current component data
+    */
+    void Update(uint32_t _time_elapsed_ms);
+
 ///////////////////////
 public: // CALLBACKS //
 ///////////////////////
@@ -171,21 +179,7 @@ protected:
     /*
     
     */
-    void WaitForNextMessage(RequestInfo::RequestIndex _message_index, bool _perform_worker_updates)
-    {
-        while (IsConnected() && m_response_callbacks.find(_message_index) != m_response_callbacks.end()) // TODO: Included check for timeout
-        {
-            if (_perform_worker_updates)
-            {
-                Update(5);
-            }
-
-            // If timed out, call the callback with the timeout argument as true
-            // ...
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-    }
+    void WaitForNextMessage(RequestInfo::RequestIndex _message_index, bool _perform_worker_updates);
 
 public:
 
@@ -205,6 +199,8 @@ public:
         WorkerLogLevel     _log_level, 
         const std::string& _title, 
         const std::string& _message);
+
+protected:
 
     /*
     * Request the game server to reserve a range of entity ids for this
@@ -271,26 +267,9 @@ public:
         std::vector<ComponentQuery>  _queries);
 
     /*
-    * The main update function
-    * Use this to process current component data
-    */
-    virtual void Update(uint32_t _time_elapsed_ms);
-
-    /*
     * Returns if the given entity is owned by this worker
     */
-    bool IsEntityOwned(EntityId _entity_id) const
-    {
-        auto entity_info_iter = m_entity_id_to_info_map.find(_entity_id);
-        if (entity_info_iter != m_entity_id_to_info_map.end())
-        {
-            return entity_info_iter->second.is_owned;
-        }
-
-        return false;
-    }
-
-private:
+    bool IsEntityOwned(EntityId _entity_id) const;
 
 ////////////////////////
 private: // VARIABLES //
@@ -299,19 +278,16 @@ private: // VARIABLES //
     std::unique_ptr<Connection<>> m_bridge_connection;
     RequestManager                m_request_manager;
 
-    LayerId   m_layer_id           = std::numeric_limits<LayerId>::max();
-    bool      m_did_server_timeout = false;
-
-    bool     m_use_spatial_area      = false;
-    uint32_t m_maximum_entity_limit  = 0;
-    uint32_t m_entity_count          = 0;
-
+    LayerId  m_layer_id                = std::numeric_limits<LayerId>::max();
+    bool     m_did_server_timeout      = false;
+    bool     m_use_spatial_area        = false;
+    uint32_t m_maximum_entity_limit    = 0;
+    uint32_t m_entity_count            = 0;
     uint32_t m_interest_entity_timeout = 3000;
 
     std::chrono::time_point<std::chrono::steady_clock> m_last_worker_report_timestamp = std::chrono::steady_clock::now();
 
-    std::unordered_map<EntityId, EntityInfo>      m_entity_id_to_info_map;
-
+    std::unordered_map<EntityId, EntityInfo>                            m_entity_id_to_info_map;
     std::unordered_map<RequestInfo::RequestIndex, ResponseCallbackType> m_response_callbacks;
 
     // Callbacks

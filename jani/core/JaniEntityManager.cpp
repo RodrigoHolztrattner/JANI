@@ -1,7 +1,8 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: EntityManager.cpp
+// Filename: JaniEntityManager.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniEntityManager.h"
+#include "JaniClientEntity.h"
 
 Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
 {
@@ -209,6 +210,107 @@ bool Jani::EntityManager::UpdateInterestQuery(
 bool Jani::EntityManager::ClearInterestQuery(
     const Entity& _entity,
     ComponentId   _target_component_id)
+{
+    return false;
+}
+
+std::optional<Jani::EntityId> Jani::EntityManager::RetrieveNextAvailableEntityId(bool _is_waiting_for_reserve_response) const
+{
+    constexpr uint32_t total_entities_to_reserve = 100;
+
+    if (m_available_entity_id_ranges.size() > 0)
+    {
+        if (m_available_entity_id_ranges[0].first == m_available_entity_id_ranges[0].second)
+        {
+            m_available_entity_id_ranges.erase(m_available_entity_id_ranges.begin());
+            return RetrieveNextAvailableEntityId();
+        }
+
+        if (m_available_entity_id_ranges.size() == 1 && m_available_entity_id_ranges[0].second - m_available_entity_id_ranges[0].first == total_entities_to_reserve / 2)
+        {
+            MessageLog().Info("EntityManager -> Requesting entity id range reserve, the response will not be waited on");
+
+            m_worker.RequestReserveEntityIdRange(total_entities_to_reserve).OnResponse(
+                [&](const Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
+                {
+                    if (!_timeout && _response.succeed)
+                    {
+                        m_available_entity_id_ranges.push_back({ _response.id_begin, _response.id_end });
+                    }
+                });
+        }
+
+        return m_available_entity_id_ranges[0].first++;
+    }
+
+    if (!_is_waiting_for_reserve_response)
+    {
+        MessageLog().Warning("EntityManager -> Requesting emergency entity id range reserve, the response will be waited on");
+
+        m_worker.RequestReserveEntityIdRange(total_entities_to_reserve).OnResponse(
+            [&](const Message::RuntimeReserveEntityIdRangeResponse& _response, bool _timeout)
+            {
+                if (!_timeout && _response.succeed)
+                {
+                    m_available_entity_id_ranges.push_back({ _response.id_begin, _response.id_end });
+                }
+            }).WaitResponse();
+
+            return RetrieveNextAvailableEntityId(true);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<const Jani::EntityManager::EntityInfo*> Jani::EntityManager::GetEntityInfo(const Entity& _entity) const
+{
+    auto entity_id = _entity.GetLocalId();
+    if (entity_id && entity_id.value() < m_entity_infos.size() && m_entity_infos[entity_id.value()].has_value())
+    {
+        return &m_entity_infos[entity_id.value()].value();
+    }
+
+    return std::nullopt;
+}
+
+std::optional<Jani::EntityManager::EntityInfo*> Jani::EntityManager::GetEntityInfoMutable(const Entity& _entity)
+{
+    auto entity_id = _entity.GetLocalId();
+    if (entity_id && entity_id.value() < m_entity_infos.size() && m_entity_infos[entity_id.value()].has_value())
+    {
+        return &m_entity_infos[entity_id.value()].value();
+    }
+
+    return std::nullopt;
+}
+
+void Jani::EntityManager::DestroyEntityInfo(const Entity& _entity)
+{
+    auto entity_id = _entity.GetLocalId();
+    if (entity_id && entity_id.value() < m_entity_infos.size() && m_entity_infos[entity_id.value()].has_value())
+    {
+        m_entity_infos[entity_id.value()].value().entityx.destroy();
+        m_entity_infos[entity_id.value()] = std::nullopt;
+    }
+}
+
+bool Jani::EntityManager::IsEntityOwned(const Entity& _entity) const
+{
+    auto entity_info = GetEntityInfo(_entity);
+    if (entity_info && entity_info.value()->server_entity_id.has_value())
+    {
+        return IsEntityOwned(entity_info.value()->server_entity_id.value());
+    }
+
+    return false;
+}
+
+bool Jani::EntityManager::IsEntityOwned(EntityId _entity_id) const
+{
+    return m_worker.IsEntityOwned(_entity_id);
+}
+
+bool Jani::EntityManager::IsComponentOwned(ComponentId _component_id) const
 {
     return false;
 }
