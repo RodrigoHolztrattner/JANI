@@ -1,12 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorkerInstance.h
+// Filename: JaniRuntimeWorkerReference.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -16,9 +16,9 @@
 JaniNamespaceBegin(Jani)
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: WorkerInstance
+// Class name: RuntimeWorkerReference
 ////////////////////////////////////////////////////////////////////////////////
-class WorkerInstance
+class RuntimeWorkerReference
 {
     friend Runtime;
 
@@ -34,12 +34,12 @@ class WorkerInstance
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    WorkerInstance(
-        Bridge&                  _bridge,
+    RuntimeWorkerReference(
+        RuntimeBridge&           _bridge,
         LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash,
         bool                     _is_user);
-    ~WorkerInstance();
+    ~RuntimeWorkerReference();
 
 //////////////////////////
 public: // MAIN METHODS //
@@ -85,7 +85,7 @@ public: // MAIN METHODS //
 private: // VARIABLES //
 ////////////////////////
 
-    Bridge&                  m_bridge;
+    RuntimeBridge&           m_bridge;
     LayerId                  m_layer_id;
     Connection<>::ClientHash m_client_hash;
     bool                     m_is_user;

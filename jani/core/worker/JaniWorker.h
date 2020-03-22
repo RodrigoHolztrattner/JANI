@@ -6,7 +6,7 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "..\JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -270,6 +270,11 @@ protected:
     * Returns if the given entity is owned by this worker
     */
     bool IsEntityOwned(EntityId _entity_id) const;
+
+    /*
+    * Returns if the given component is owned by this worker layer
+    */
+    bool IsComponentOwned(ComponentId _component_id) const;
 
 ////////////////////////
 private: // VARIABLES //

@@ -1,12 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Filename: main.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniConfig.h"
-#include "JaniDatabase.h"
+#include "JaniInternal.h"
+#include "JaniRuntimeDatabase.h"
 #include "JaniRuntime.h"
-#include "JaniLayerCollection.h"
-#include "JaniWorkerSpawnerCollection.h"
-#include "JaniDeploymentConfig.h"
+#include "config/JaniLayerConfig.h"
+#include "config/JaniDeploymentConfig.h"
+#include "config/JaniWorkerSpawnerConfig.h"
 
 inline static uint64_t s_total_allocations_per_second = 0;
 inline static uint64_t s_total_allocated_per_second   = 0;
@@ -23,24 +23,24 @@ int main(int _argc, char* _argv[])
 {
     Jani::InitializeStandardConsole();
 
-    std::unique_ptr<Jani::Database> database = std::make_unique<Jani::Database>();
-    std::unique_ptr<Jani::Runtime>  runtime;
+    std::unique_ptr<Jani::RuntimeDatabase> database = std::make_unique<Jani::RuntimeDatabase>();
+    std::unique_ptr<Jani::Runtime>         runtime;
 
     {
-        std::unique_ptr<Jani::LayerCollection>         layer_collection          = std::make_unique<Jani::LayerCollection>();
-        std::unique_ptr<Jani::WorkerSpawnerCollection> worker_spawner_collection = std::make_unique<Jani::WorkerSpawnerCollection>();
+        std::unique_ptr<Jani::LayerConfig>         layer_collection          = std::make_unique<Jani::LayerConfig>();
+        std::unique_ptr<Jani::WorkerSpawnerConfig> worker_spawner_collection = std::make_unique<Jani::WorkerSpawnerConfig>();
         std::unique_ptr<Jani::DeploymentConfig>        deployment_config         = std::make_unique<Jani::DeploymentConfig>();
 
         if (!layer_collection->Initialize("layers_config.json"))
         {
-            Jani::MessageLog().Critical("Runtime -> LayerCollection failed to initialize");
+            Jani::MessageLog().Critical("Runtime -> LayerConfig failed to initialize");
 
             return false;
         }
 
         if (!worker_spawner_collection->Initialize("worker_spawners_config.json"))
         {
-            Jani::MessageLog().Critical("Runtime -> WorkerSpawnerCollection failed to initialize");
+            Jani::MessageLog().Critical("Runtime -> WorkerSpawnerConfig failed to initialize");
 
             return false;
         }

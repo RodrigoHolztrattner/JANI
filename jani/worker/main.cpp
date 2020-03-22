@@ -1,10 +1,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Filename: main.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniConfig.h"
-#include "JaniWorker.h"
-#include "JaniEntityManager.h"
-#include "JaniClientEntity.h"
+#include "JaniInternal.h"
+#include "worker/JaniWorker.h"
+#include "worker/JaniEntityManager.h"
+#include "worker/JaniClientEntity.h"
 
 LONG WINAPI MyUnhandledExceptionFilter(PEXCEPTION_POINTERS exception)
 {

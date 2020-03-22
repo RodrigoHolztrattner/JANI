@@ -1,17 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorkerSpawnerInstance.cpp
+// Filename: JaniRuntimeWorkerSpawnerReference.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniWorkerSpawnerInstance.h"
+#include "JaniRuntimeWorkerSpawnerReference.h"
 
-Jani::WorkerSpawnerInstance::WorkerSpawnerInstance()
+Jani::RuntimeWorkerSpawnerReference::RuntimeWorkerSpawnerReference()
 {
 }
 
-Jani::WorkerSpawnerInstance::~WorkerSpawnerInstance()
+Jani::RuntimeWorkerSpawnerReference::~RuntimeWorkerSpawnerReference()
 {
 }
 
-bool Jani::WorkerSpawnerInstance::Initialize(
+bool Jani::RuntimeWorkerSpawnerReference::Initialize(
     uint32_t    _local_port,
     uint32_t    _spawner_port,
     std::string _spawner_address,
@@ -29,7 +29,7 @@ bool Jani::WorkerSpawnerInstance::Initialize(
     return true;
 }
 
-bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id, uint32_t _timeout_ms)
+bool Jani::RuntimeWorkerSpawnerReference::RequestWorkerForLayer(LayerId _layer_id, uint32_t _timeout_ms)
 {
     if (m_connection && (!m_worker_spawn_status[_layer_id] || m_worker_spawn_status[_layer_id]->has_timed_out))
     {
@@ -55,12 +55,12 @@ bool Jani::WorkerSpawnerInstance::RequestWorkerForLayer(LayerId _layer_id, uint3
     return false;
 }
 
-void Jani::WorkerSpawnerInstance::AcknowledgeWorkerSpawn(LayerId _layer_id)
+void Jani::RuntimeWorkerSpawnerReference::AcknowledgeWorkerSpawn(LayerId _layer_id)
 {
     m_worker_spawn_status[_layer_id] = std::nullopt;
 }
 
-bool Jani::WorkerSpawnerInstance::IsExpectingWorkerForLayer(LayerId _layer_id) const
+bool Jani::RuntimeWorkerSpawnerReference::IsExpectingWorkerForLayer(LayerId _layer_id) const
 {
     assert(_layer_id < MaximumLayers);
 
@@ -81,7 +81,7 @@ bool Jani::WorkerSpawnerInstance::IsExpectingWorkerForLayer(LayerId _layer_id) c
     return true;
 }
 
-void Jani::WorkerSpawnerInstance::Update()
+void Jani::RuntimeWorkerSpawnerReference::Update()
 {
     if (m_connection)
     {
@@ -107,7 +107,7 @@ void Jani::WorkerSpawnerInstance::Update()
     }
 }
 
-bool Jani::WorkerSpawnerInstance::DidTimeout() const
+bool Jani::RuntimeWorkerSpawnerReference::DidTimeout() const
 {
     bool timed_out = false;
     if (m_connection)
@@ -124,7 +124,7 @@ bool Jani::WorkerSpawnerInstance::DidTimeout() const
     return true;
 }
 
-void Jani::WorkerSpawnerInstance::ResetConnection()
+void Jani::RuntimeWorkerSpawnerReference::ResetConnection()
 {
     m_connection = std::make_unique<Connection<>>(
         m_local_port,

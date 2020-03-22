@@ -6,8 +6,8 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
-#include "JaniLayerCollection.h"
+#include "JaniInternal.h"
+#include "config/JaniLayerConfig.h"
 #include "imgui.h"
 #include "ui/MainWindow.h"
 
@@ -34,7 +34,7 @@ class InspectorManager
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    InspectorManager(const Jani::LayerCollection& _layer_collection);
+    InspectorManager(const Jani::LayerConfig& _layer_collection);
     ~InspectorManager();
 
 //////////////////////////
@@ -59,7 +59,7 @@ public: // MAIN METHODS //
     /*
     * Return a reference to the layer collection
     */
-    const Jani::LayerCollection& GetLayerCollection() const;
+    const Jani::LayerConfig& GetLayerCollection() const;
 
 protected:
 
@@ -77,7 +77,7 @@ protected:
 private: // VARIABLES //
 ////////////////////////
 
-    const Jani::LayerCollection& m_layer_collection;
+    const Jani::LayerConfig& m_layer_collection;
 
     std::unique_ptr<Jani::Connection<>>                m_runtime_connection;
     std::unique_ptr<Jani::RequestManager>              m_request_manager;

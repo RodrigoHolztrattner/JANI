@@ -5,7 +5,7 @@
 #include "Renderer.h"
 #include "ui/QueryWindow.h"
 
-Jani::Inspector::InspectorManager::InspectorManager(const Jani::LayerCollection& _layer_collection) : m_layer_collection(_layer_collection)
+Jani::Inspector::InspectorManager::InspectorManager(const Jani::LayerConfig& _layer_collection) : m_layer_collection(_layer_collection)
 {
 }
 
@@ -227,7 +227,7 @@ bool Jani::Inspector::InspectorManager::ShouldDisconnect() const
     return m_should_disconnect;
 }
 
-const Jani::LayerCollection& Jani::Inspector::InspectorManager::GetLayerCollection() const
+const Jani::LayerConfig& Jani::Inspector::InspectorManager::GetLayerCollection() const
 {
     return m_layer_collection;
 }

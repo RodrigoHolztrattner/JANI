@@ -1,12 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorker.h
+// Filename: JaniRuntimeBridge.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -16,37 +16,37 @@
 JaniNamespaceBegin(Jani)
 
 class Runtime;
-class WorkerInstance;
+class RuntimeWorkerReference;
 
 /*
 
-:: Bridge:
-    - Cada worker possui uma conexao direta com o Runtime, vamos chamar a classe responsavel por gerenciar essa conexao de Bridge
-    - Essa Bridge possui conexao direta com players
+:: RuntimeBridge:
+    - Cada worker possui uma conexao direta com o Runtime, vamos chamar a classe responsavel por gerenciar essa conexao de RuntimeBridge
+    - Essa RuntimeBridge possui conexao direta com players
     - A bridge deve ser classificada de acordo com o layer do worker ao qual ela esta conectada
     - Ela deve receber dados dos players e dar forwarding para os workers relacionados
     - Ela deve receber atualizacoes dos workers e dar forwarding para os players relacionados
-    - Ela deve fazer requisicoes de escrita na Database sempre que algum componente for modificado
+    - Ela deve fazer requisicoes de escrita na RuntimeDatabase sempre que algum componente for modificado
     - Caso o worker conectado a ela caia, ela deve avisar o Runtime para que um novo worker seja criado no lugar
     - Caso um jogador perca a conexao com a bridge, ele eh desconectado
 
 */
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: Bridge
+// Class name: RuntimeBridge
 ////////////////////////////////////////////////////////////////////////////////
-class Bridge
+class RuntimeBridge
 {
-    friend WorkerInstance;
+    friend RuntimeWorkerReference;
 
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    Bridge(
+    RuntimeBridge(
         Runtime& _runtime,
         LayerId _layer_id);
-    ~Bridge();
+    ~RuntimeBridge();
 
 //////////////////////////
 public: // MAIN METHODS //
@@ -57,7 +57,7 @@ public: // MAIN METHODS //
     * This operation is susceptible to the feasibility of creating a new one according
     * to the limits imposed by the layer itself
     */
-    std::optional<WorkerInstance*> TryAllocateNewWorker(
+    std::optional<RuntimeWorkerReference*> TryAllocateNewWorker(
         LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash,
         bool                     _is_user, bool _deprecated);
@@ -81,22 +81,6 @@ public: // MAIN METHODS //
     * Return the assigned layer ID
     */
     uint32_t GetLayerId() const;
-
-    /*
-    * Return the load balance strategy for this bridge
-    */
-    const LayerLoadBalanceStrategy& GetLoadBalanceStrategy() const;
-
-    /*
-    * Return the load balance strategy flags for this bridge
-    */
-    LayerLoadBalanceStrategyTypeFlags GetLoadBalanceStrategyFlags() const;
-
-    /*
-    * Returns if a worker for this bridge accepts the given load balance
-    * strategy
-    */
-    bool AcceptLoadBalanceStrategy(LayerLoadBalanceStrategyBits _load_balance_strategy) const;
 
     /*
     * Return the total number of workers connected through this bridge
@@ -137,23 +121,18 @@ public:
     /*
     * Returns a reference to the underlying workers
     */
-    const std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>>& GetWorkers() const;
-    std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>>& GetWorkersMutable();
+    const std::unordered_map<WorkerId, std::unique_ptr<RuntimeWorkerReference>>& GetWorkers() const;
+    std::unordered_map<WorkerId, std::unique_ptr<RuntimeWorkerReference>>& GetWorkersMutable();
 
 /////////////////////////////////////////////
 private: // WORKER -> BRIDGE COMMUNICATION //
 /////////////////////////////////////////////
 
     /*
-    * Received when a worker successfully connects to this bridge
-    */
-    WorkerRequestResult OnWorkerConnect(WorkerId _worker_id);
-
-    /*
     * Received when a worker sends a log message
     */
     bool OnWorkerLogMessage(
-        WorkerInstance& _worker_instance, 
+        RuntimeWorkerReference& _worker_instance, 
         WorkerId        _worker_id, 
         WorkerLogLevel  _log_level, 
         std::string     _log_title, 
@@ -163,7 +142,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker sends a request to reserve a range of entity ids
     */
     std::optional<Jani::EntityId> OnWorkerReserveEntityIdRange(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id, 
         uint32_t        _total_ids);
 
@@ -171,7 +150,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
-        WorkerInstance&      _worker_instance,
+        RuntimeWorkerReference&      _worker_instance,
         WorkerId             _worker_id, 
         EntityId             _entity_id, 
         const EntityPayload& _entity_payload);
@@ -180,7 +159,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to remove an existing entity
     */
     bool OnWorkerRemoveEntity(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id, 
         EntityId        _entity_id);
 
@@ -188,7 +167,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
-        WorkerInstance&         _worker_instance,
+        RuntimeWorkerReference&         _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
@@ -198,7 +177,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to remove an existing component for the given entity
     */
     bool OnWorkerRemoveComponent(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id,
         EntityId        _entity_id, 
         ComponentId     _component_id);
@@ -209,7 +188,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
-        WorkerInstance&              _worker_instance,
+        RuntimeWorkerReference&              _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
@@ -220,7 +199,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker request to update a component query
     */
     bool OnWorkerComponentInterestQueryUpdate(
-        WorkerInstance&                    _worker_instance,
+        RuntimeWorkerReference&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,
         ComponentId                        _component_id,
@@ -230,7 +209,7 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker request a component query 
     */
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
-        WorkerInstance&                    _worker_instance,
+        RuntimeWorkerReference&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,
         ComponentId                        _component_id);
@@ -263,10 +242,7 @@ private: // VARIABLES //
     Hash        m_layer_hash;
     LayerId     m_layer_id = std::numeric_limits<LayerId>::max();
 
-    LayerLoadBalanceStrategy          m_load_balance_strategy;
-    LayerLoadBalanceStrategyTypeFlags m_load_balance_strategy_flags;
-
-    std::unordered_map<WorkerId, std::unique_ptr<WorkerInstance>> m_worker_instances;
+    std::unordered_map<WorkerId, std::unique_ptr<RuntimeWorkerReference>> m_worker_instances;
 };
 
 // Jani

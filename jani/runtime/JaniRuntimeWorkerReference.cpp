@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorkerInstance.cpp
+// Filename: JaniRuntimeWorkerReference.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniWorkerInstance.h"
-#include "JaniBridge.h"
+#include "JaniRuntimeWorkerReference.h"
+#include "JaniRuntimeBridge.h"
 
-Jani::WorkerInstance::WorkerInstance(
-    Bridge&                  _bridge,
+Jani::RuntimeWorkerReference::RuntimeWorkerReference(
+    RuntimeBridge&           _bridge,
     LayerId                  _layer_id,
     Connection<>::ClientHash _client_hash,
     bool                     _is_user)
@@ -18,42 +18,42 @@ Jani::WorkerInstance::WorkerInstance(
     // ...
 }
 
-Jani::WorkerInstance::~WorkerInstance()
+Jani::RuntimeWorkerReference::~RuntimeWorkerReference()
 {
 
 }
 
-Jani::LayerId Jani::WorkerInstance::GetLayerId() const
+Jani::LayerId Jani::RuntimeWorkerReference::GetLayerId() const
 {
     return m_layer_id;
 }
 
-Jani::WorkerId Jani::WorkerInstance::GetId() const
+Jani::WorkerId Jani::RuntimeWorkerReference::GetId() const
 {
     return m_client_hash;
 }
 
-Jani::Connection<>::ClientHash Jani::WorkerInstance::GetConnectionClientHash() const
+Jani::Connection<>::ClientHash Jani::RuntimeWorkerReference::GetConnectionClientHash() const
 {
     return m_client_hash;
 }
 
-bool Jani::WorkerInstance::UseSpatialArea() const
+bool Jani::RuntimeWorkerReference::UseSpatialArea() const
 {
     return m_use_spatial_area;
 }
 
-bool Jani::WorkerInstance::IsUserInstance() const
+bool Jani::RuntimeWorkerReference::IsUserInstance() const
 {
     return m_is_user;
 }
 
-std::pair<uint64_t, uint64_t> Jani::WorkerInstance::GetNetworkTrafficPerSecond() const
+std::pair<uint64_t, uint64_t> Jani::RuntimeWorkerReference::GetNetworkTrafficPerSecond() const
 {
     return { m_total_data_received_per_second, m_total_data_sent_per_second };
 }
 
-void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
+void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
 {
     switch (_request.type)
     {
@@ -258,7 +258,7 @@ void Jani::WorkerInstance::ProcessRequest(const RequestInfo& _request, const Req
         }
         default:
         {
-            Jani::MessageLog().Error("WorkerInstance -> Unknown request type received by worker instance");
+            Jani::MessageLog().Error("RuntimeWorkerReference -> Unknown request type received by worker instance");
 
             break;
         }

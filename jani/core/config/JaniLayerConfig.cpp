@@ -1,17 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniLayerCollection.cpp
+// Filename: JaniLayerConfig.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniLayerCollection.h"
+#include "JaniLayerConfig.h"
 
-Jani::LayerCollection::LayerCollection()
+Jani::LayerConfig::LayerConfig()
 {
 }
 
-Jani::LayerCollection::~LayerCollection()
+Jani::LayerConfig::~LayerConfig()
 {
 }
 
-bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
+bool Jani::LayerConfig::Initialize(const std::string& _config_file_path)
 {
     std::ifstream file(_config_file_path);
     if (!file.is_open())
@@ -136,44 +136,44 @@ bool Jani::LayerCollection::Initialize(const std::string& _config_file_path)
     return m_is_valid;
 }
 
-bool Jani::LayerCollection::IsValid() const
+bool Jani::LayerConfig::IsValid() const
 {
     return m_is_valid;
 }
 
-const std::map<Jani::LayerId, Jani::LayerCollection::LayerInfo>& Jani::LayerCollection::GetLayers() const
+const std::map<Jani::LayerId, Jani::LayerConfig::LayerInfo>& Jani::LayerConfig::GetLayers() const
 {
     return m_layers;
 }
 
-const std::map<Jani::ComponentId, Jani::LayerCollection::ComponentInfo> Jani::LayerCollection::GetComponents() const
+const std::map<Jani::ComponentId, Jani::LayerConfig::ComponentInfo> Jani::LayerConfig::GetComponents() const
 {
     return m_components;
 }
 
-Jani::LayerId Jani::LayerCollection::GetLayerIdForComponent(ComponentId _component_id) const
+Jani::LayerId Jani::LayerConfig::GetLayerIdForComponent(ComponentId _component_id) const
 {
     assert(m_components.find(_component_id) != m_components.end());
     return m_components.find(_component_id)->second.layer_unique_id;
 }
 
-bool Jani::LayerCollection::HasLayer(const std::string& _layer_name) const
+bool Jani::LayerConfig::HasLayer(const std::string& _layer_name) const
 {
     return m_layers.find(Hasher(_layer_name)) != m_layers.end();
 }
 
-bool Jani::LayerCollection::HasLayer(LayerId _layer_id) const
+bool Jani::LayerConfig::HasLayer(LayerId _layer_id) const
 {
     return m_layers.find(_layer_id) != m_layers.end();
 }
 
-const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(const std::string& _layer_name) const
+const Jani::LayerConfig::LayerInfo& Jani::LayerConfig::GetLayerInfo(const std::string& _layer_name) const
 {
     assert(m_layers.find(Hasher(_layer_name)) != m_layers.end());
     return m_layers.find(Hasher(_layer_name))->second;
 }
 
-const Jani::LayerCollection::LayerInfo& Jani::LayerCollection::GetLayerInfo(LayerId _layer_id) const
+const Jani::LayerConfig::LayerInfo& Jani::LayerConfig::GetLayerInfo(LayerId _layer_id) const
 {
     assert(m_layers.find(_layer_id) != m_layers.end());
     return m_layers.find(_layer_id)->second;

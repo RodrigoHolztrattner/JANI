@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniConfig.h
+// Filename: JaniConnection.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
@@ -14,6 +14,8 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <chrono>
+#include <map>
 #include <entityx/entityx.h>
 #include <boost/pfr.hpp>
 #include <magic_enum.hpp>
@@ -21,7 +23,7 @@
 #include <ctti/static_value.hpp>
 #include <cereal/cereal.hpp>
 #include <cereal/archives/binary.hpp>
-#include "span.hpp"
+#include "..\nonstd\span.hpp"
 
 #include <ikcp.h>
 
@@ -51,7 +53,6 @@
 
 namespace Jani
 {
-
     class RequestMaker;
     class RequestManager;
 
@@ -714,9 +715,6 @@ namespace Jani
 
             retval                 = setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, (char*)&msg_buffer, msg_buffer_sizeof);
             assert(retval == 0);
-
-            // retval = getsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&send_buffer, &send_buffer_sizeof);
-            // assert(retval == 0);
 
             if (true)
             {

@@ -6,7 +6,7 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "..\JaniInternal.h"
 #include "JaniWorker.h" // Necessary since we use templated functions
 
 ///////////////
@@ -710,6 +710,13 @@ private:
     template<typename ComponentClass>
     bool IsComponentOwned() const
     {
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_id_iter = m_hash_to_component_id.find(component_type_hash);
+        if (component_id_iter != m_hash_to_component_id.end())
+        {
+            return IsComponentOwned(component_id_iter->second);
+        }
+
         return false;
     }
 

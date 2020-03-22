@@ -1,32 +1,32 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorldController.cpp
+// Filename: JaniRuntimeWorldController.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniWorldController.h"
-#include "JaniDeploymentConfig.h"
-#include "JaniLayerCollection.h"
+#include "JaniRuntimeWorldController.h"
+#include "config/JaniDeploymentConfig.h"
+#include "config/JaniLayerConfig.h"
 
-Jani::WorldController::WorldController(
+Jani::RuntimeWorldController::RuntimeWorldController(
     const DeploymentConfig& _deployment_config,
-    const LayerCollection&  _layer_collection) 
+    const LayerConfig&  _layer_config) 
     : m_deployment_config(_deployment_config)
-    , m_layer_collection(_layer_collection)
+    , m_layer_config(_layer_config)
 {
 
 }
 
-Jani::WorldController::~WorldController()
+Jani::RuntimeWorldController::~RuntimeWorldController()
 {
 }
 
-bool Jani::WorldController::Initialize()
+bool Jani::RuntimeWorldController::Initialize()
 {
     if (!m_deployment_config.IsValid()
-        || !m_layer_collection.IsValid())
+        || !m_layer_config.IsValid())
     {
         return false;
     }
 
-    auto& layer_collection_infos = m_layer_collection.GetLayers();
+    auto& layer_collection_infos = m_layer_config.GetLayers();
     LayerId layer_id_count = 0;
     for (auto& [layer_id, layer_collection_info] : layer_collection_infos)
     {
@@ -46,7 +46,7 @@ bool Jani::WorldController::Initialize()
     return true;
 }
 
-void Jani::WorldController::Update()
+void Jani::RuntimeWorldController::Update()
 {
     ValidateLayersWithoutWorkers();
 
@@ -68,7 +68,7 @@ void Jani::WorldController::Update()
     }
 }
 
-void Jani::WorldController::ValidateLayersWithoutWorkers() const
+void Jani::RuntimeWorldController::ValidateLayersWithoutWorkers() const
 {
     for (auto& layer_info : m_layer_infos)
     {
@@ -91,7 +91,7 @@ void PushDebugCommand(std::string _command)
     //s_previous_commands.push_back(std::move(_command));
 }
 
-void Jani::WorldController::InsertEntity(ServerEntity& _entity, WorldPosition _position)
+void Jani::RuntimeWorldController::InsertEntity(ServerEntity& _entity, WorldPosition _position)
 {
     PushDebugCommand("InsertEntity");
 
@@ -112,7 +112,7 @@ void Jani::WorldController::InsertEntity(ServerEntity& _entity, WorldPosition _p
     SetupWorkCellEntityInsertion(cell_info);
 }
 
-void Jani::WorldController::RemoveEntity(ServerEntity& _entity)
+void Jani::RuntimeWorldController::RemoveEntity(ServerEntity& _entity)
 {
     PushDebugCommand("RemoveEntity");
 
@@ -126,7 +126,7 @@ void Jani::WorldController::RemoveEntity(ServerEntity& _entity)
     SetupWorkCellEntityRemoval(cell_info);
 }
 
-void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
+void Jani::RuntimeWorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityInsertion");
 
@@ -170,7 +170,7 @@ void Jani::WorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _cell_in
 
 }
 
-void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
+void Jani::RuntimeWorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<LayerId> _layer)
 {
     PushDebugCommand("SetupWorkCellEntityRemoval");
 
@@ -218,7 +218,7 @@ void Jani::WorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info
 
 }
 
-void Jani::WorldController::AcknowledgeEntityPositionChange(ServerEntity& _entity, WorldPosition _new_position)
+void Jani::RuntimeWorldController::AcknowledgeEntityPositionChange(ServerEntity& _entity, WorldPosition _new_position)
 {
     WorldCellCoordinates current_world_cell_coordinates = _entity.GetWorldCellCoordinates();
     WorldCellCoordinates new_world_cell_coordinates     = ConvertPositionIntoCellCoordinates(_new_position); // TODO: Fill this and remember to add a little padding so entities won't be moving between workers all the time
@@ -296,7 +296,7 @@ void Jani::WorldController::AcknowledgeEntityPositionChange(ServerEntity& _entit
     }
 }
 
-void Jani::WorldController::SetupCell(WorldCellCoordinates _cell_coordinates)
+void Jani::RuntimeWorldController::SetupCell(WorldCellCoordinates _cell_coordinates)
 {
     if (m_world_grid->IsCellEmpty(_cell_coordinates))
     {
@@ -340,22 +340,22 @@ void Jani::WorldController::SetupCell(WorldCellCoordinates _cell_coordinates)
     }
 }
 
-void Jani::WorldController::RegisterCellOwnershipChangeCallback(CellOwnershipChangeCallback _callback)
+void Jani::RuntimeWorldController::RegisterCellOwnershipChangeCallback(CellOwnershipChangeCallback _callback)
 {
     m_cell_ownership_change_callback = _callback;
 }
 
-void Jani::WorldController::RegisterEntityLayerOwnershipChangeCallback(EntityLayerOwnershipChangeCallback _callback)
+void Jani::RuntimeWorldController::RegisterEntityLayerOwnershipChangeCallback(EntityLayerOwnershipChangeCallback _callback)
 {
     m_entity_layer_ownership_change_callback = _callback;
 }
 
-void Jani::WorldController::RegisterWorkerLayerRequestCallback(WorkerLayerRequestCallback _callback)
+void Jani::RuntimeWorldController::RegisterWorkerLayerRequestCallback(WorkerLayerRequestCallback _callback)
 {
     m_worker_layer_request_callback = _callback;
 }
 
-Jani::WorldCellCoordinates Jani::WorldController::ConvertPositionIntoCellCoordinates(WorldPosition _world_position) const
+Jani::WorldCellCoordinates Jani::RuntimeWorldController::ConvertPositionIntoCellCoordinates(WorldPosition _world_position) const
 {
     auto maximum_world_length = m_deployment_config.GetMaximumWorldLength();
 
@@ -380,7 +380,7 @@ Jani::WorldCellCoordinates Jani::WorldController::ConvertPositionIntoCellCoordin
     return _world_position;
 }
 
-Jani::WorldPosition Jani::WorldController::ConvertCellCoordinatesIntoPosition(WorldPosition _cell_coordinates) const
+Jani::WorldPosition Jani::RuntimeWorldController::ConvertCellCoordinatesIntoPosition(WorldPosition _cell_coordinates) const
 {
     assert(m_deployment_config.GetMaximumWorldLength() % m_deployment_config.GetTotalGridsPerWorldLine() == 0);
 
@@ -400,7 +400,7 @@ Jani::WorldPosition Jani::WorldController::ConvertCellCoordinatesIntoPosition(Wo
     return _cell_coordinates;
 }
 
-float Jani::WorldController::ConvertWorldScalarIntoCellScalar(float _scalar) const
+float Jani::RuntimeWorldController::ConvertWorldScalarIntoCellScalar(float _scalar) const
 {
     auto maximum_world_length = m_deployment_config.GetMaximumWorldLength();
 
@@ -413,7 +413,7 @@ float Jani::WorldController::ConvertWorldScalarIntoCellScalar(float _scalar) con
     return _scalar;
 }
 
-void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
+void Jani::RuntimeWorldController::ForEachEntityOnRadius(WorldPosition _world_position, float _radius, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
 {
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
     float                cell_radius      = ConvertWorldScalarIntoCellScalar(_radius);
@@ -431,7 +431,7 @@ void Jani::WorldController::ForEachEntityOnRadius(WorldPosition _world_position,
     }
 }
 
-void Jani::WorldController::ForEachEntityOnRect(WorldRect _world_rect, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
+void Jani::RuntimeWorldController::ForEachEntityOnRect(WorldRect _world_rect, std::function<void(EntityId, ServerEntity&, WorldCellCoordinates)> _callback) const
 {
     int32_t              cell_unit_length = m_deployment_config.GetMaximumWorldLength() / m_deployment_config.GetTotalGridsPerWorldLine();
     WorldCellCoordinates rect_begin       = ConvertPositionIntoCellCoordinates(WorldPosition({ _world_rect.x, _world_rect.y }));
@@ -455,7 +455,7 @@ void Jani::WorldController::ForEachEntityOnRect(WorldRect _world_rect, std::func
     }
 }
 
-void Jani::WorldController::ApplySpatialBalance()
+void Jani::RuntimeWorldController::ApplySpatialBalance()
 {
     for (auto& layer_info : m_layer_infos)
     {

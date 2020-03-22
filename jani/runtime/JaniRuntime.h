@@ -6,7 +6,7 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -15,28 +15,25 @@
 // Jani
 JaniNamespaceBegin(Jani)
 
-class WorkerInstance;
-class LayerCollection;
-class WorkerSpawnerCollection;
-class DeploymentConfig;
-class WorldController;
+class RuntimeWorldController;
+class RuntimeWorkerReference;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: Runtime
 ////////////////////////////////////////////////////////////////////////////////
 class Runtime
 {
-    friend Bridge;
+    friend RuntimeBridge;
 
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
 
     Runtime(
-        Database&                      _database, 
-        const DeploymentConfig&        _deployment_config, 
-        const LayerCollection&         _layer_collection,
-        const WorkerSpawnerCollection& _worker_spawner_collection);
+        RuntimeDatabase&           _database, 
+        const DeploymentConfig&    _deployment_config, 
+        const LayerConfig&         _layer_config,
+        const WorkerSpawnerConfig& _worker_spawner_config);
     ~Runtime();
 
 //////////////////////////
@@ -74,7 +71,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker sends a log message
     */
     bool OnWorkerLogMessage(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id,
         WorkerLogLevel  _log_level,
         std::string     _log_title,
@@ -84,7 +81,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker sends a request to reserve a range of entity ids
     */
     std::optional<Jani::EntityId> OnWorkerReserveEntityIdRange(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id, 
         uint32_t        _total_ids);
 
@@ -92,7 +89,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
-        WorkerInstance&      _worker_instance,
+        RuntimeWorkerReference&      _worker_instance,
         WorkerId             _worker_id,
         EntityId             _entity_id,
         const EntityPayload& _entity_payload);
@@ -101,7 +98,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to remove an existing entity
     */
     bool OnWorkerRemoveEntity(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id, 
         EntityId        _entity_id);
 
@@ -109,7 +106,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
-        WorkerInstance&         _worker_instance,
+        RuntimeWorkerReference&         _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
@@ -119,7 +116,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to remove an existing component for the given entity
     */
     bool OnWorkerRemoveComponent(
-        WorkerInstance& _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId        _worker_id,
         EntityId        _entity_id, 
         ComponentId     _component_id);
@@ -130,7 +127,7 @@ protected: // WORKER COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
-        WorkerInstance&              _worker_instance,
+        RuntimeWorkerReference&              _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
@@ -141,7 +138,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker request to update a component query
     */
     bool OnWorkerComponentInterestQueryUpdate(
-        WorkerInstance&                    _worker_instance,
+        RuntimeWorkerReference&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,
         ComponentId                        _component_id,
@@ -151,7 +148,7 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker request a component query 
     */
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
-        WorkerInstance&                    _worker_instance,
+        RuntimeWorkerReference&                    _worker_instance,
         WorkerId                           _worker_id,
         EntityId                           _entity_id,
         ComponentId                        _component_id) const;
@@ -176,24 +173,24 @@ private:
 private: // VARIABLES //
 ////////////////////////
 
-    Database& m_database;
+    RuntimeDatabase& m_database;
 
     std::unique_ptr<Connection<>> m_client_connections;
     std::unique_ptr<Connection<>> m_worker_connections;
     std::unique_ptr<Connection<>> m_inspector_connections;
 
-    std::vector<std::unique_ptr<WorkerSpawnerInstance>> m_worker_spawner_instances;
+    std::vector<std::unique_ptr<RuntimeWorkerSpawnerReference>> m_worker_spawner_instances;
 
     std::unique_ptr<RequestManager> m_request_manager;
 
-    const DeploymentConfig&        m_deployment_config;
-    const LayerCollection&         m_layer_collection;
-    const WorkerSpawnerCollection& m_worker_spawner_collection;
+    const DeploymentConfig&    m_deployment_config;
+    const LayerConfig&         m_layer_config;
+    const WorkerSpawnerConfig& m_worker_spawner_config;
 
-    std::unique_ptr<WorldController> m_world_controller;
+    std::unique_ptr<RuntimeWorldController> m_world_controller;
 
-    std::map<LayerId, std::unique_ptr<Bridge>>                    m_bridges;
-    std::unordered_map<Connection<>::ClientHash, WorkerInstance*> m_worker_instance_mapping;
+    std::map<LayerId, std::unique_ptr<RuntimeBridge>>                     m_bridges;
+    std::unordered_map<Connection<>::ClientHash, RuntimeWorkerReference*> m_worker_instance_mapping;
 };
 
 // Jani

@@ -702,3 +702,10 @@ bool Jani::Worker::IsEntityOwned(EntityId _entity_id) const
 
     return false;
 }
+
+bool Jani::Worker::IsComponentOwned(ComponentId _component_id) const
+{
+    JaniWarnOnce("Worker -> Calling IsComponentOwned() but the method isn't implemented yet, returning false");
+
+    return false;
+}

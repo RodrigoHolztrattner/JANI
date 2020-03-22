@@ -1,12 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: WorkerSpawnerInstance.h
+// Filename: JaniRuntimeWorkerSpawnerReference.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -16,9 +16,9 @@
 JaniNamespaceBegin(Jani)
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: WorkerSpawnerInstance
+// Class name: RuntimeWorkerSpawnerReference
 ////////////////////////////////////////////////////////////////////////////////
-class WorkerSpawnerInstance
+class RuntimeWorkerSpawnerReference
 {
     struct WorkerSpawnStatus
     {
@@ -31,8 +31,8 @@ class WorkerSpawnerInstance
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    WorkerSpawnerInstance();
-    ~WorkerSpawnerInstance();
+    RuntimeWorkerSpawnerReference();
+    ~RuntimeWorkerSpawnerReference();
 
 //////////////////////////
 public: // MAIN METHODS //

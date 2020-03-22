@@ -1,17 +1,17 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorkerSpawnerCollection.cpp
+// Filename: JaniWorkerSpawnerConfig.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniWorkerSpawnerCollection.h"
+#include "JaniWorkerSpawnerConfig.h"
 
-Jani::WorkerSpawnerCollection::WorkerSpawnerCollection()
+Jani::WorkerSpawnerConfig::WorkerSpawnerConfig()
 {
 }
 
-Jani::WorkerSpawnerCollection::~WorkerSpawnerCollection()
+Jani::WorkerSpawnerConfig::~WorkerSpawnerConfig()
 {
 }
 
-bool Jani::WorkerSpawnerCollection::Initialize(const std::string& _config_file_path)
+bool Jani::WorkerSpawnerConfig::Initialize(const std::string& _config_file_path)
 {
     std::ifstream file(_config_file_path);
     if (!file.is_open())
@@ -52,12 +52,12 @@ bool Jani::WorkerSpawnerCollection::Initialize(const std::string& _config_file_p
     return true;
 }
 
-bool Jani::WorkerSpawnerCollection::IsValid() const
+bool Jani::WorkerSpawnerConfig::IsValid() const
 {
     return m_is_valid;
 }
 
-const std::vector<Jani::WorkerSpawnerCollection::WorkerSpawnerInfo>& Jani::WorkerSpawnerCollection::GetWorkerSpawnersInfos() const
+const std::vector<Jani::WorkerSpawnerConfig::WorkerSpawnerInfo>& Jani::WorkerSpawnerConfig::GetWorkerSpawnersInfos() const
 {
     return m_worker_spawners;
 }

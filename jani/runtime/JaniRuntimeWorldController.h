@@ -1,14 +1,14 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniWorldController.h
+// Filename: JaniRuntimeWorldController.h
 ////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
-#include "JaniWorkerInstance.h" // TODO: Move to .cpp
+#include "JaniRuntimeWorkerReference.h" // TODO: Move to .cpp
 
 ///////////////
 // NAMESPACE //
@@ -17,23 +17,23 @@
 // Jani
 JaniNamespaceBegin(Jani)
 
-class Database;
-class Bridge;
-class LayerCollection;
-class WorkerSpawnerCollection;
+class RuntimeDatabase;
+class RuntimeBridge;
+class LayerConfig;
+class WorkerSpawnerConfig;
 
 class DeploymentConfig;
-class LayerCollection;
+class LayerConfig;
 
-class WorkerInstance;
+class RuntimeWorkerReference;
 
 ////////////////////////////////////////////////////////////////////////////////
-// Class name: WorldController
+// Class name: RuntimeWorldController
 ////////////////////////////////////////////////////////////////////////////////
-class WorldController
+class RuntimeWorldController
 {
-    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, ServerEntity*>&, WorldCellCoordinates, LayerId, const WorkerInstance&, const WorkerInstance&)>;
-    using EntityLayerOwnershipChangeCallback = std::function<void(const ServerEntity&, LayerId, const WorkerInstance&, const WorkerInstance&)>;
+    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, ServerEntity*>&, WorldCellCoordinates, LayerId, const RuntimeWorkerReference&, const RuntimeWorkerReference&)>;
+    using EntityLayerOwnershipChangeCallback = std::function<void(const ServerEntity&, LayerId, const RuntimeWorkerReference&, const RuntimeWorkerReference&)>;
     using WorkerLayerRequestCallback         = std::function<void(LayerId)>;
 
     struct WorkerDensityKey
@@ -74,7 +74,7 @@ class WorldController
     struct WorkerInfo
     {
         WorkerCellsInfos                worker_cells_infos;
-        std::unique_ptr<WorkerInstance> worker_instance;
+        std::unique_ptr<RuntimeWorkerReference> worker_instance;
 
         WorkerDensityKey GetDensityKey() const
         {
@@ -97,10 +97,10 @@ class WorldController
 public: // CONSTRUCTORS //
 //////////////////////////
 
-    WorldController(
+    RuntimeWorldController(
         const DeploymentConfig& _deployment_config,
-        const LayerCollection&  _layer_collection);
-    ~WorldController();
+        const LayerConfig&  _layer_config);
+    ~RuntimeWorldController();
 
 //////////////////////////
 public: // MAIN METHODS //
@@ -119,7 +119,7 @@ public: // MAIN METHODS //
     /*
     *
     */
-    bool AddWorkerForLayer(std::unique_ptr<WorkerInstance> _worker, LayerId _layer_id)
+    bool AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id)
     {
         assert(_layer_id < MaximumLayers);
         auto& layer_info = m_layer_infos[_layer_id];
@@ -249,7 +249,7 @@ private:
 private:
 
     const DeploymentConfig& m_deployment_config;
-    const LayerCollection&  m_layer_collection;
+    const LayerConfig&  m_layer_config;
 
     std::array<std::optional<LayerInfo>, MaximumLayers> m_layer_infos;
 

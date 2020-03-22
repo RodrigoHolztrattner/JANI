@@ -2,14 +2,14 @@
 // Filename: JaniRuntime.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniRuntime.h"
-#include "JaniDeploymentConfig.h"
-#include "JaniLayerCollection.h"
-#include "JaniWorkerSpawnerCollection.h"
-#include "JaniBridge.h"
-#include "JaniDatabase.h"
-#include "JaniWorkerInstance.h"
-#include "JaniWorkerSpawnerInstance.h"
-#include "JaniWorldController.h"
+#include "config/JaniDeploymentConfig.h"
+#include "config/JaniLayerConfig.h"
+#include "config/JaniWorkerSpawnerConfig.h"
+#include "JaniRuntimeBridge.h"
+#include "JaniRuntimeDatabase.h"
+#include "JaniRuntimeWorkerReference.h"
+#include "JaniRuntimeWorkerSpawnerReference.h"
+#include "JaniRuntimeWorldController.h"
 
 const char* s_local_ip                  = "127.0.0.1";
 uint32_t    s_client_worker_listen_port = 8080;
@@ -17,14 +17,14 @@ uint32_t    s_worker_listen_port        = 13051;
 uint32_t    s_inspector_listen_port     = 14051;
 
 Jani::Runtime::Runtime(
-    Database&                      _database, 
-    const DeploymentConfig&        _deployment_config, 
-    const LayerCollection&         _layer_collection,
-    const WorkerSpawnerCollection& _worker_spawner_collection) 
+    RuntimeDatabase&           _database, 
+    const DeploymentConfig&    _deployment_config, 
+    const LayerConfig&         _layer_config,
+    const WorkerSpawnerConfig& _worker_spawner_config) 
     : m_database(_database)
     , m_deployment_config(_deployment_config)
-    , m_layer_collection(_layer_collection)
-    , m_worker_spawner_collection(_worker_spawner_collection)
+    , m_layer_config(_layer_config)
+    , m_worker_spawner_config(_worker_spawner_config)
 {
 }
 
@@ -39,12 +39,12 @@ bool Jani::Runtime::Initialize()
     m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
     m_request_manager       = std::make_unique<RequestManager>();
 
-    auto& worker_spawners = m_worker_spawner_collection.GetWorkerSpawnersInfos();
+    auto& worker_spawners = m_worker_spawner_config.GetWorkerSpawnersInfos();
     for (auto& worker_spawner_info : worker_spawners)
     {
         static uint32_t spawner_port = 13000;
 
-        auto spawner_connection = std::make_unique<WorkerSpawnerInstance>();
+        auto spawner_connection = std::make_unique<RuntimeWorkerSpawnerReference>();
 
         if (!spawner_connection->Initialize(
             spawner_port++,
@@ -59,16 +59,16 @@ bool Jani::Runtime::Initialize()
         m_worker_spawner_instances.push_back(std::move(spawner_connection));
     }
 
-    m_world_controller = std::make_unique<WorldController>(m_deployment_config, m_layer_collection);
+    m_world_controller = std::make_unique<RuntimeWorldController>(m_deployment_config, m_layer_config);
     if (!m_world_controller->Initialize())
     {
         return false;
     }
 
     m_world_controller->RegisterCellOwnershipChangeCallback(
-        [&](const std::map<EntityId, ServerEntity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        [&](const std::map<EntityId, ServerEntity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const RuntimeWorkerReference& _current_worker, const RuntimeWorkerReference& _new_worker)
         {
-            auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
+            auto& layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
             Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {}", _current_worker.GetId(), _new_worker.GetId());
 
@@ -128,9 +128,9 @@ bool Jani::Runtime::Initialize()
         });
 
     m_world_controller->RegisterEntityLayerOwnershipChangeCallback(
-        [&](const ServerEntity& _entity, LayerId _layer_id, const WorkerInstance& _current_worker, const WorkerInstance& _new_worker)
+        [&](const ServerEntity& _entity, LayerId _layer_id, const RuntimeWorkerReference& _current_worker, const RuntimeWorkerReference& _new_worker)
         {
-            auto& layer_info = m_layer_collection.GetLayerInfo(_layer_id);
+            auto& layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
             Message::WorkerLayerAuthorityLostRequest authority_lost_request;
             authority_lost_request.entity_id = _entity.GetId();
@@ -199,7 +199,7 @@ bool Jani::Runtime::Initialize()
 
             if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(_layer_id))
             {
-                auto& registered_layers = m_layer_collection.GetLayers();
+                auto& registered_layers = m_layer_config.GetLayers();
                 Jani::MessageLog().Error("Unable to request a new worker from worker spawner, layer {}", registered_layers.find(_layer_id)->second.name);
             }
         });
@@ -555,12 +555,12 @@ bool Jani::Runtime::TryAllocateNewWorker(
 {
     assert(m_worker_instance_mapping.find(_client_hash) == m_worker_instance_mapping.end());
 
-    if (!m_layer_collection.HasLayer(_layer_id))
+    if (!m_layer_config.HasLayer(_layer_id))
     {
         return false;
     }
 
-    auto layer_info = m_layer_collection.GetLayerInfo(_layer_id);
+    auto layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
     // Make sure the layer is an user layer if the requester is also an user, also vice-versa
     if (layer_info.user_layer != _is_user)
@@ -584,20 +584,20 @@ bool Jani::Runtime::TryAllocateNewWorker(
     auto bridge_iter = m_bridges.find(_layer_id);
     if (bridge_iter == m_bridges.end())
     {
-        auto new_bridge = std::make_unique<Bridge>(*this, _layer_id);
+        auto new_bridge = std::make_unique<RuntimeBridge>(*this, _layer_id);
         m_bridges.insert({ _layer_id , std::move(new_bridge) });
         bridge_iter = m_bridges.find(_layer_id);
     }
 
     auto& bridge = bridge_iter->second;
 
-    auto worker_instance = std::make_unique<WorkerInstance>(
+    auto worker_instance = std::make_unique<RuntimeWorkerReference>(
         *bridge,
         _layer_id,
         _client_hash,
         _is_user);
 
-    WorkerInstance* worker_instance_ptr = worker_instance.get();
+    RuntimeWorkerReference* worker_instance_ptr = worker_instance.get();
 
     if (!m_world_controller->AddWorkerForLayer(std::move(worker_instance), _layer_id))
     {
@@ -616,7 +616,7 @@ bool Jani::Runtime::TryAllocateNewWorker(
 //
 
 bool Jani::Runtime::OnWorkerLogMessage(
-    WorkerInstance& _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
     WorkerLogLevel  _log_level,
     std::string     _log_title,
@@ -635,7 +635,7 @@ bool Jani::Runtime::OnWorkerLogMessage(
 }
 
 std::optional<Jani::EntityId> Jani::Runtime::OnWorkerReserveEntityIdRange(
-    WorkerInstance& _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
     uint32_t        _total_ids)
 {
@@ -643,7 +643,7 @@ std::optional<Jani::EntityId> Jani::Runtime::OnWorkerReserveEntityIdRange(
 }
 
 bool Jani::Runtime::OnWorkerAddEntity(
-    WorkerInstance&      _worker_instance,
+    RuntimeWorkerReference&      _worker_instance,
     WorkerId             _worker_id,
     EntityId             _entity_id,
     const EntityPayload& _entity_payload)
@@ -690,7 +690,7 @@ bool Jani::Runtime::OnWorkerAddEntity(
     std::array<bool, MaximumLayers> worker_authority_control = {};
     for (auto requested_component_payload : _entity_payload.component_payloads)
     {
-        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(requested_component_payload.component_id);
+        LayerId layer_id = m_layer_config.GetLayerIdForComponent(requested_component_payload.component_id);
         auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
@@ -725,7 +725,7 @@ bool Jani::Runtime::OnWorkerAddEntity(
 }
 
 bool Jani::Runtime::OnWorkerRemoveEntity(
-    WorkerInstance& _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
     EntityId        _entity_id)
 {
@@ -739,7 +739,7 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
     {
         for (int i = 0; i < MaximumLayers; i++)
         {
-            LayerId layer_id = m_layer_collection.GetLayerIdForComponent(i);
+            LayerId layer_id = m_layer_config.GetLayerIdForComponent(i);
             auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
             if (worker)
             {
@@ -762,13 +762,13 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
 }
 
 bool Jani::Runtime::OnWorkerAddComponent(
-    WorkerInstance&         _worker_instance,
+    RuntimeWorkerReference&         _worker_instance,
     WorkerId                _worker_id,
     EntityId                _entity_id,
     ComponentId             _component_id,
     const ComponentPayload& _component_payload)
 {
-    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     // Quick check if there is a layer available to this component
     if (!IsLayerForComponentAvailable(_component_id))
@@ -789,7 +789,7 @@ bool Jani::Runtime::OnWorkerAddComponent(
     }
 
     {
-        LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+        LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
         auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
@@ -826,12 +826,12 @@ bool Jani::Runtime::OnWorkerAddComponent(
 }
 
 bool Jani::Runtime::OnWorkerRemoveComponent(
-    WorkerInstance& _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
     EntityId        _entity_id,
     ComponentId     _component_id)
 {
-    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     // Get the worker owner for this component
     // ...
@@ -854,14 +854,14 @@ bool Jani::Runtime::OnWorkerRemoveComponent(
 }
 
 bool Jani::Runtime::OnWorkerComponentUpdate(
-    WorkerInstance&              _worker_instance,
+    RuntimeWorkerReference&              _worker_instance,
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,
     const ComponentPayload&      _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
-    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     {
         auto entity = m_database.GetEntityById(_entity_id);
@@ -908,7 +908,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
 }
 
 bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
-    WorkerInstance&                    _worker_instance,
+    RuntimeWorkerReference&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
     ComponentId                        _component_id,
@@ -921,7 +921,7 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
     }
 
     auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
-    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_collection.GetLayerIdForComponent(_component_id));
+    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_config.GetLayerIdForComponent(_component_id));
     if (!cell_worker)
     {
         return false;
@@ -940,7 +940,7 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
 }
 
 std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::OnWorkerComponentInterestQuery(
-    WorkerInstance&                    _worker_instance,
+    RuntimeWorkerReference&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
     ComponentId                        _component_id) const
@@ -954,7 +954,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
     }
 
     auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
-    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_collection.GetLayerIdForComponent(_component_id));
+    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_config.GetLayerIdForComponent(_component_id));
     if (!cell_worker)
     {
         return std::move(query_results);
@@ -1161,7 +1161,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
         for (const auto& requested_component_id : bitset::indices_on(_query.component_mask))
         {
             // Check if we should ignore this
-            LayerId component_layer             = m_layer_collection.GetLayerIdForComponent(requested_component_id);
+            LayerId component_layer             = m_layer_config.GetLayerIdForComponent(requested_component_id);
             auto current_component_layer_worker = m_world_controller->GetWorldCellInfo(entity->GetWorldCellCoordinates()).GetWorkerForLayer(component_layer);
             if (_ignore_worker 
                 && current_component_layer_worker 
@@ -1185,7 +1185,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
 bool Jani::Runtime::IsLayerForComponentAvailable(ComponentId _component_id) const
 {
     // Convert the component id to its operating layer id
-    LayerId layer_id = m_layer_collection.GetLayerIdForComponent(_component_id);
+    LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     for (auto& [bridge_layer_id, bridge] : m_bridges)
     {

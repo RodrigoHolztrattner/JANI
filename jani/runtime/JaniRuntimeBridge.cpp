@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniBridge.cpp
+// Filename: JaniRuntimeBridge.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniBridge.h"
+#include "JaniRuntimeBridge.h"
 #include "JaniRuntime.h"
-#include "JaniWorkerInstance.h"
+#include "JaniRuntimeWorkerReference.h"
 
-Jani::Bridge::Bridge(
+Jani::RuntimeBridge::RuntimeBridge(
     Runtime& _runtime,
     LayerId  _layer_id) :
     m_runtime(_runtime), 
@@ -13,25 +13,19 @@ Jani::Bridge::Bridge(
 {
 }
 
-Jani::Bridge::~Bridge()
+Jani::RuntimeBridge::~RuntimeBridge()
 {
 }
 
-std::optional<Jani::WorkerInstance*> Jani::Bridge::TryAllocateNewWorker(
+std::optional<Jani::RuntimeWorkerReference*> Jani::RuntimeBridge::TryAllocateNewWorker(
     LayerId                  _layer_id,
     Connection<>::ClientHash _client_hash,
     bool                     _is_user, bool _deprecated)
 {
-    // Check if there is space for more workers on this layer
-    if (m_load_balance_strategy.maximum_workers && m_worker_instances.size() >= m_load_balance_strategy.maximum_workers.value())
-    {
-        return std::nullopt;
-    }
-    
     // Check other layer requirements, as necessary
     // ...
 
-    auto worker_instance = std::make_unique<WorkerInstance>(
+    auto worker_instance = std::make_unique<RuntimeWorkerReference>(
         *this, 
         _layer_id,
         _client_hash,
@@ -42,7 +36,7 @@ std::optional<Jani::WorkerInstance*> Jani::Bridge::TryAllocateNewWorker(
     return worker_instance_iter.first->second.get();
 }
 
-bool Jani::Bridge::DisconnectWorker(Connection<>::ClientHash _client_hash)
+bool Jani::RuntimeBridge::DisconnectWorker(Connection<>::ClientHash _client_hash)
 {
     auto worker_instance_iter = m_worker_instances.find(_client_hash);
     if (worker_instance_iter != m_worker_instances.end())
@@ -55,32 +49,22 @@ bool Jani::Bridge::DisconnectWorker(Connection<>::ClientHash _client_hash)
     return false;
 }
 
-const std::string& Jani::Bridge::GetLayerName() const
+const std::string& Jani::RuntimeBridge::GetLayerName() const
 {
     return m_layer_name;
 }
 
-Jani::Hash Jani::Bridge::GetLayerNameHash() const
+Jani::Hash Jani::RuntimeBridge::GetLayerNameHash() const
 {
     return m_layer_hash;
 }
 
-uint32_t Jani::Bridge::GetLayerId() const
+uint32_t Jani::RuntimeBridge::GetLayerId() const
 {
     return m_layer_id;
 }
 
-const Jani::LayerLoadBalanceStrategy& Jani::Bridge::GetLoadBalanceStrategy() const
-{
-    return m_load_balance_strategy;
-}
-
-Jani::LayerLoadBalanceStrategyTypeFlags Jani::Bridge::GetLoadBalanceStrategyFlags() const
-{
-    return m_load_balance_strategy_flags;
-}
-
-void Jani::Bridge::Update()
+void Jani::RuntimeBridge::Update()
 {
     // Process worker messages
     // ...
@@ -89,17 +73,17 @@ void Jani::Bridge::Update()
     // ...
 }
 
-const std::unordered_map<Jani::WorkerId, std::unique_ptr<Jani::WorkerInstance>>& Jani::Bridge::GetWorkers() const
+const std::unordered_map<Jani::WorkerId, std::unique_ptr<Jani::RuntimeWorkerReference>>& Jani::RuntimeBridge::GetWorkers() const
 {
     return m_worker_instances;
 }
 
-std::unordered_map<Jani::WorkerId, std::unique_ptr<Jani::WorkerInstance>>& Jani::Bridge::GetWorkersMutable()
+std::unordered_map<Jani::WorkerId, std::unique_ptr<Jani::RuntimeWorkerReference>>& Jani::RuntimeBridge::GetWorkersMutable()
 {
     return m_worker_instances;
 }
 
-bool Jani::Bridge::IsValid() const
+bool Jani::RuntimeBridge::IsValid() const
 {
     // Check timeout on m_worker_connection
     // ...
@@ -107,18 +91,13 @@ bool Jani::Bridge::IsValid() const
     return true;
 }
 
-bool Jani::Bridge::AcceptLoadBalanceStrategy(LayerLoadBalanceStrategyBits _load_balance_strategy) const
-{
-    return m_load_balance_strategy_flags & _load_balance_strategy;
-}
-
-uint32_t Jani::Bridge::GetTotalWorkerCount() const
+uint32_t Jani::RuntimeBridge::GetTotalWorkerCount() const
 {
     return m_worker_instances.size();
 }
 
 #if 0
-uint32_t Jani::Bridge::GetDistanceToPosition(WorldPosition _position) const
+uint32_t Jani::RuntimeBridge::GetDistanceToPosition(WorldPosition _position) const
 {
     if (m_load_balance_strategy_flags & m_load_balance_strategy_flags && m_world_rect)
     {
@@ -128,7 +107,7 @@ uint32_t Jani::Bridge::GetDistanceToPosition(WorldPosition _position) const
     return std::numeric_limits<uint32_t>::max();
 }
 
-uint32_t Jani::Bridge::GetWorldArea() const
+uint32_t Jani::RuntimeBridge::GetWorldArea() const
 {
     if (m_load_balance_strategy_flags & m_load_balance_strategy_flags && m_world_rect)
     {
@@ -143,13 +122,8 @@ uint32_t Jani::Bridge::GetWorldArea() const
 //
 //
 
-Jani::WorkerRequestResult Jani::Bridge::OnWorkerConnect(WorkerId _worker_id)
-{
-    return WorkerRequestResult(true);
-}
-
-bool Jani::Bridge::OnWorkerLogMessage(
-    WorkerInstance& _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerLogMessage(
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id, 
     WorkerLogLevel  _log_level, 
     std::string     _log_title, 
@@ -163,8 +137,8 @@ bool Jani::Bridge::OnWorkerLogMessage(
         _log_message);
 }
 
-std::optional<Jani::EntityId> Jani::Bridge::OnWorkerReserveEntityIdRange(
-    WorkerInstance& _worker_instance,
+std::optional<Jani::EntityId> Jani::RuntimeBridge::OnWorkerReserveEntityIdRange(
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id, 
     uint32_t        _total_ids)
 {
@@ -174,8 +148,8 @@ std::optional<Jani::EntityId> Jani::Bridge::OnWorkerReserveEntityIdRange(
         _total_ids);
 }
 
-bool Jani::Bridge::OnWorkerAddEntity(
-    WorkerInstance&      _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerAddEntity(
+    RuntimeWorkerReference&      _worker_instance,
     WorkerId             _worker_id, 
     EntityId             _entity_id, 
     const EntityPayload& _entity_payload)
@@ -187,8 +161,8 @@ bool Jani::Bridge::OnWorkerAddEntity(
         _entity_payload);
 }
 
-bool Jani::Bridge::OnWorkerRemoveEntity(
-    WorkerInstance& _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerRemoveEntity(
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id, 
     EntityId        _entity_id)
 {
@@ -198,8 +172,8 @@ bool Jani::Bridge::OnWorkerRemoveEntity(
         _entity_id);
 }
 
-bool Jani::Bridge::OnWorkerAddComponent(
-    WorkerInstance&         _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerAddComponent(
+    RuntimeWorkerReference&         _worker_instance,
     WorkerId                _worker_id, 
     EntityId                _entity_id, 
     ComponentId             _component_id, 
@@ -213,8 +187,8 @@ bool Jani::Bridge::OnWorkerAddComponent(
         _component_payload);
 }
 
-bool Jani::Bridge::OnWorkerRemoveComponent(
-    WorkerInstance& _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerRemoveComponent(
+    RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
     EntityId        _entity_id, 
     ComponentId     _component_id)
@@ -226,8 +200,8 @@ bool Jani::Bridge::OnWorkerRemoveComponent(
         _component_id);
 }
 
-bool Jani::Bridge::OnWorkerComponentUpdate(
-    WorkerInstance&              _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerComponentUpdate(
+    RuntimeWorkerReference&              _worker_instance,
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,
@@ -243,8 +217,8 @@ bool Jani::Bridge::OnWorkerComponentUpdate(
         _entity_world_position);
 }
 
-bool Jani::Bridge::OnWorkerComponentInterestQueryUpdate(
-    WorkerInstance&                    _worker_instance,
+bool Jani::RuntimeBridge::OnWorkerComponentInterestQueryUpdate(
+    RuntimeWorkerReference&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
     ComponentId                        _component_id,
@@ -258,8 +232,8 @@ bool Jani::Bridge::OnWorkerComponentInterestQueryUpdate(
         _component_queries);
 }
 
-std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Bridge::OnWorkerComponentInterestQuery(
-    WorkerInstance&                    _worker_instance,
+std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::RuntimeBridge::OnWorkerComponentInterestQuery(
+    RuntimeWorkerReference&                    _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
     ComponentId                        _component_id)

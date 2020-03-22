@@ -1,22 +1,22 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: JaniDatabase.cpp
+// Filename: JaniRuntimeDatabase.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniDatabase.h"
+#include "JaniRuntimeDatabase.h"
 
-Jani::Database::Database()
+Jani::RuntimeDatabase::RuntimeDatabase()
 {
 }
 
-Jani::Database::~Database()
+Jani::RuntimeDatabase::~RuntimeDatabase()
 {
 }
 
-std::optional<const Jani::ServerEntity*> Jani::Database::GetEntityById(EntityId _entity_id) const
+std::optional<const Jani::ServerEntity*> Jani::RuntimeDatabase::GetEntityById(EntityId _entity_id) const
 {
     return GetEntityByIdMutable(_entity_id);
 }
 
-std::optional<Jani::ServerEntity*> Jani::Database::GetEntityByIdMutable(EntityId _entity_id) const
+std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::GetEntityByIdMutable(EntityId _entity_id) const
 {
     auto entity_iter = m_active_entities.find(_entity_id);
     if (entity_iter != m_active_entities.end())
@@ -27,19 +27,19 @@ std::optional<Jani::ServerEntity*> Jani::Database::GetEntityByIdMutable(EntityId
     return std::nullopt;
 }
 
-const std::map< Jani::EntityId, std::unique_ptr< Jani::ServerEntity>>& Jani::Database::GetEntities() const
+const std::map< Jani::EntityId, std::unique_ptr< Jani::ServerEntity>>& Jani::RuntimeDatabase::GetEntities() const
 {
     return m_active_entities;
 }
 
-std::optional<Jani::EntityId> Jani::Database::ReserveEntityIdRange(uint32_t _total_ids)
+std::optional<Jani::EntityId> Jani::RuntimeDatabase::ReserveEntityIdRange(uint32_t _total_ids)
 {
     static uint64_t current_entity_count = 0;
     current_entity_count += _total_ids;
     return current_entity_count - _total_ids;
 }
 
-std::optional<Jani::ServerEntity*> Jani::Database::AddEntity(
+std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddEntity(
     WorkerId             _worker_id,
     EntityId             _entity_id,
     const EntityPayload& _entity_payload)
@@ -62,7 +62,7 @@ std::optional<Jani::ServerEntity*> Jani::Database::AddEntity(
     return entity.get();
 }
 
-bool Jani::Database::RemoveEntity(
+bool Jani::RuntimeDatabase::RemoveEntity(
     WorkerId _worker_id,
     EntityId _entity_id)
 {
@@ -78,7 +78,7 @@ bool Jani::Database::RemoveEntity(
     return true;
 }
 
-std::optional<Jani::ServerEntity*> Jani::Database::AddComponent(
+std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddComponent(
     WorkerId                _worker_id,
     EntityId                _entity_id,
     LayerId                 _layer_id,
@@ -106,7 +106,7 @@ std::optional<Jani::ServerEntity*> Jani::Database::AddComponent(
     return entity.get();
 }
 
-std::optional<Jani::ServerEntity*> Jani::Database::RemoveComponent(
+std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::RemoveComponent(
     WorkerId    _worker_id,
     EntityId    _entity_id,
     LayerId     _layer_id,
@@ -133,7 +133,7 @@ std::optional<Jani::ServerEntity*> Jani::Database::RemoveComponent(
     return entity.get();
 }
 
-std::optional<Jani::ServerEntity*> Jani::Database::ComponentUpdate(
+std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::ComponentUpdate(
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     LayerId                      _layer_id,

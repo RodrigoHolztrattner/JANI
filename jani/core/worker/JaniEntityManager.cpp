@@ -101,7 +101,7 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
                 m_server_id_to_local.erase(_entity_id);
             }
 
-            auto new_entityx       = m_ecs_manager.entities.create();
+            auto new_entityx = m_ecs_manager.entities.create();
             auto new_entityx_index = new_entityx.id().index();
             if (new_entityx_index >= m_entity_infos.size())
             {
@@ -110,9 +110,9 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             }
 
             EntityInfo new_entity_info;
-            new_entity_info.entityx          = new_entityx;
+            new_entity_info.entityx = new_entityx;
             new_entity_info.server_entity_id = _entity_id;
-            new_entity_info.is_pure_local    = false;
+            new_entity_info.is_pure_local = false;
 
             m_entity_infos[new_entityx_index] = std::move(new_entity_info);
             m_server_id_to_local.insert({ _entity_id, new_entityx });
@@ -131,10 +131,7 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             and_query.first->EntitiesInRadius(30.0f);
             and_query.second->RequireComponent(0);
 
-            _worker.RequestUpdateComponentInterestQuery(
-                _entity_id,
-                0,
-                { std::move(component_query) });
+            UpdateInterestQuery(Entity(*this, new_entityx_index), 0, { std::move(component_query) });
         });
 
     _worker.RegisterOnEntityDestroyCallback(
@@ -200,10 +197,21 @@ bool Jani::EntityManager::DestroyEntity(const Entity& _entity)
 }
 
 bool Jani::EntityManager::UpdateInterestQuery(
-    const Entity&                _entity,
+    const Entity&                 _entity,
     ComponentId                   _target_component_id,
     std::vector<ComponentQuery>&& _queries)
 {
+    assert(_target_component_id < MaximumEntityComponents);
+
+    auto entity_info = GetEntityInfo(_entity);
+    if (entity_info && entity_info.value()->server_entity_id.has_value())
+    {
+        m_worker.RequestUpdateComponentInterestQuery(
+            entity_info.value()->server_entity_id.value(),
+            _target_component_id,
+            std::move(_queries));
+    }
+
     return false;
 }
 
@@ -312,5 +320,5 @@ bool Jani::EntityManager::IsEntityOwned(EntityId _entity_id) const
 
 bool Jani::EntityManager::IsComponentOwned(ComponentId _component_id) const
 {
-    return false;
+    return m_worker.IsComponentOwned(_component_id);
 }
