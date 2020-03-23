@@ -106,11 +106,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 add_entity_request.entity_id,
                 add_entity_request.entity_payload);
 
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
-
             break;
         }
         case RequestType::RuntimeRemoveEntity:
@@ -121,11 +116,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 *this,
                 m_client_hash,
                 remove_entity_request.entity_id);
-
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
 
             break;
         }
@@ -140,11 +130,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 add_component_request.component_id, 
                 add_component_request.component_payload);
 
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
-
             break;
         }
         case RequestType::RuntimeRemoveComponent:
@@ -156,11 +141,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 m_client_hash,
                 remove_component_request.entity_id,
                 remove_component_request.component_id);
-
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
 
             break;
         }
@@ -176,11 +156,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 component_update_request.component_payload, 
                 component_update_request.entity_world_position);
 
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
-
             break;
         }
         case RequestType::RuntimeWorkerReportAcknowledge:
@@ -189,11 +164,6 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
 
             m_total_data_received_per_second = component_report_acknowledge_request.total_data_received_per_second;
             m_total_data_sent_per_second     = component_report_acknowledge_request.total_data_sent_per_second;
-
-            Message::RuntimeDefaultResponse response = { true };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
 
             break;
         }
@@ -208,15 +178,12 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 component_queries_update_request.component_id,
                 component_queries_update_request.queries);
 
-            Message::RuntimeDefaultResponse response = { result };
-            {
-                _response_payload.PushResponse(std::move(response));
-            }
-
             break;
         }
         case RequestType::RuntimeComponentInterestQuery:
         {
+            assert(false);
+#if 0
             auto component_queries_request = _request_payload.GetRequest<Message::RuntimeComponentInterestQueryRequest>();
 
             auto query_entries = m_bridge.OnWorkerComponentInterestQuery(
@@ -253,6 +220,7 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                     _response_payload.PushResponse(std::move(response));
                 }
             }
+#endif
 
             break;
         }

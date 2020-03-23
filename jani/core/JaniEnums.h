@@ -46,4 +46,21 @@ namespace Jani
         MaximumWorkers = 1 << 0,
         SpatialArea = 1 << 1
     };
+
+    enum class QueryUpdateFrequency
+    {
+        _50    = 50, 
+        _40    = 40,
+        _30    = 30,
+        _20    = 20, 
+        _10    = 10, 
+        _5     = 5,
+        _1     = 1,
+        Low    = _5,
+        Medium = _10, 
+        High   = _40,
+        Min    = _1, 
+        Max    = _50, 
+        Count  = 7
+    };
 }

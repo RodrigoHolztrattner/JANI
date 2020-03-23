@@ -1388,6 +1388,7 @@ namespace Jani
         {
             assert(_component_id < MaximumEntityComponents);
             m_component_queries[_component_id] = std::move(_queries);
+            m_component_queries_version[_component_id]++;
         }
 
         /*
@@ -1397,6 +1398,15 @@ namespace Jani
         {
             assert(_component_id < MaximumEntityComponents);
             return m_component_queries[_component_id];
+        }
+
+        /*
+        * Return the version for the given component query
+        * This is usually used to identify out of date queries
+        */
+        uint32_t GetQueryVersion(ComponentId _component_id)
+        {
+            return m_component_queries_version[_component_id];
         }
 
         ComponentId    component_id;
@@ -1413,6 +1423,7 @@ namespace Jani
 
         std::array<ComponentPayload, MaximumEntityComponents>            m_component_payloads;
         std::array<std::vector<ComponentQuery>, MaximumEntityComponents> m_component_queries;
+        std::array<uint32_t, MaximumEntityComponents>                    m_component_queries_version = {};
     };
 
     template <typename C, typename EM>

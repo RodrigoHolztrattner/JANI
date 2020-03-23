@@ -215,7 +215,7 @@ protected:
     * containing its component info
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestAddEntity(
+    bool RequestAddEntity(
         EntityId                     _entity_id, 
         EntityPayload                _entity_payload, 
         std::optional<WorldPosition> _entity_world_position = std::nullopt);
@@ -224,13 +224,13 @@ protected:
     * Request the game server to remove a certain entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestRemoveEntity(EntityId _entity_id);
+    bool RequestRemoveEntity(EntityId _entity_id);
 
     /*
     * Request the game server to add a certain component to an entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestAddComponent(
+    bool RequestAddComponent(
         EntityId         _entity_id, 
         ComponentId      _component_id, 
         ComponentPayload _component_payload);
@@ -239,7 +239,7 @@ protected:
     * Request the game server to remove a certain component from an entity
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestRemoveComponent(
+    bool RequestRemoveComponent(
         EntityId         _entity_id,
         ComponentId      _component_id);
 
@@ -251,7 +251,7 @@ protected:
     * Requires this worker to be authoritative against the given component
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestUpdateComponent(
+    bool RequestUpdateComponent(
         EntityId                     _entity_id,
         ComponentId                  _component_id,
         ComponentPayload             _component_payload, 
@@ -261,7 +261,7 @@ protected:
     * Request the same server to update a component interest query
     * This operation is dependent on the permissions of this worker
     */
-    ResponseCallback<Message::RuntimeDefaultResponse> RequestUpdateComponentInterestQuery(
+    bool RequestUpdateComponentInterestQuery(
         EntityId                     _entity_id,
         ComponentId                  _component_id,
         std::vector<ComponentQuery>  _queries);

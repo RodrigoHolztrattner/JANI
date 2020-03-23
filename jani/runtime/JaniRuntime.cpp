@@ -11,6 +11,36 @@
 #include "JaniRuntimeWorkerSpawnerReference.h"
 #include "JaniRuntimeWorldController.h"
 
+#include <jobxx/queue.h>
+#include <jobxx/job.h>
+
+class worker_pool
+{
+public:
+    explicit worker_pool(int threads)
+    {
+        for (int i = 0; i < threads; ++i)
+        {
+            _threads.emplace_back([this]() { _queue.work_forever(); });
+        }
+    }
+
+    jobxx::queue& queue() { return _queue; }
+
+    ~worker_pool()
+    {
+        _queue.close();
+        for (auto& thread : _threads)
+        {
+            thread.join();
+        }
+    }
+
+private:
+    jobxx::queue _queue;
+    std::vector<std::thread> _threads;
+};
+
 const char* s_local_ip                  = "127.0.0.1";
 uint32_t    s_client_worker_listen_port = 8080;
 uint32_t    s_worker_listen_port        = 13051;
@@ -214,6 +244,99 @@ void Jani::Runtime::Update()
     m_inspector_connections->Update();
 
     m_world_controller->Update();
+
+    {
+        worker_pool pool(0);
+        
+        jobxx::job query_job = pool.queue().create_job(
+            [this](jobxx::context& ctx)
+            {
+                m_entity_query_controller.ForEach(
+                [&](auto& query_info) -> void
+                {
+                    ctx.spawn_task(
+                        [this, &query_info]()
+                        {
+                            EntityId    entity_id     = query_info.entity_id;
+                            ComponentId component_id  = query_info.component_id;
+                            uint32_t    query_version = query_info.query_version;
+
+                            auto entity = m_database.GetEntityByIdMutable(entity_id);
+                            if (!entity)
+                            {
+                                query_info.is_outdated = true;
+                                return;
+                            }
+
+                            if (entity.value()->GetQueryVersion(component_id) != query_version)
+                            {
+                                query_info.is_outdated = true;
+                                return;
+                            }
+
+                            auto& cell_info = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
+                            auto cell_worker = cell_info.GetWorkerForLayer(m_layer_config.GetLayerIdForComponent(component_id));
+                            if (!cell_worker)
+                            {
+                                return;
+                            }
+
+                            std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_results;
+
+                            // Get and apply the queries
+                            auto component_queries = entity.value()->GetQueriesForComponent(component_id);
+                            for (auto& component_query : component_queries)
+                            {
+                                assert(!component_query.query_owner_component || component_query.query_owner_component.value() == component_id);
+
+                                auto query_result = PerformComponentQuery(component_query, entity.value()->GetWorldPosition(), cell_worker.value()->GetId());
+                                query_results.insert(query_results.end(), std::make_move_iterator(query_result.begin()), std::make_move_iterator(query_result.end()));
+                            }
+
+                            {
+                                for (auto& query_entry : query_results)
+                                {
+                                    Message::RuntimeComponentInterestQueryResponse response;
+                                    response.succeed               = true;
+                                    response.entity_component_mask = query_entry.first;
+                                    response.components_payloads.reserve(query_entry.second.size());
+
+                                    uint32_t total_accumulated_size = 0;
+                                    for (auto& component_payload : query_entry.second)
+                                    {
+                                        // Check if the message is getting too big and break it
+                                        if (total_accumulated_size + component_payload.component_data.size() > 500)
+                                        {
+                                            m_request_manager->MakeRequest(
+                                                *m_worker_connections,
+                                                cell_worker.value()->GetConnectionClientHash(), 
+                                                Jani::RequestType::RuntimeComponentInterestQuery,
+                                                response);
+
+                                            response.components_payloads.clear();
+                                            total_accumulated_size = 0;
+                                        }
+
+                                        response.components_payloads.push_back(std::move(component_payload));
+
+                                        total_accumulated_size += response.components_payloads.back().component_data.size();
+                                    }
+
+                                    if (response.components_payloads.size() > 0)
+                                    {
+                                        m_request_manager->MakeRequest(
+                                            *m_worker_connections,
+                                            cell_worker.value()->GetConnectionClientHash(),
+                                            Jani::RequestType::RuntimeComponentInterestQuery,
+                                            response);
+                                    }
+                                }
+                            }
+                        });
+                });  
+            });
+        pool.queue().wait_job_actively(query_job);
+    }
 
     auto ProcessWorkerRequest = [&](
         auto                  _client_hash, 
@@ -936,16 +1059,21 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
 
     entity.value()->UpdateQueriesForComponent(_component_id, _component_queries);
 
+    m_entity_query_controller.InsertQuery(_entity_id, _component_id, QueryUpdateFrequency::Max, entity.value()->GetQueryVersion(_component_id));
+
     return true;
 }
 
 std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::OnWorkerComponentInterestQuery(
-    RuntimeWorkerReference&                    _worker_instance,
+    RuntimeWorkerReference&            _worker_instance,
     WorkerId                           _worker_id,
     EntityId                           _entity_id,
-    ComponentId                        _component_id) const
+    ComponentId                        _component_id)
 {
+    assert(false);
+
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_results;
+#if 0
 
     auto entity = m_database.GetEntityByIdMutable(_entity_id);
     if (!entity)
@@ -976,6 +1104,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
         auto query_result = PerformComponentQuery(component_query, entity.value()->GetWorldPosition(), _worker_id);
         query_results.insert(query_results.end(), std::make_move_iterator(query_result.begin()), std::make_move_iterator(query_result.end()));
     }
+#endif
 
     return std::move(query_results);
 }
@@ -986,7 +1115,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
     std::optional<WorkerId> _ignore_worker) const
 {
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_result;
-    std::unordered_map<EntityId, ServerEntity*>                                selected_entities;
+    std::unordered_map<EntityId, ServerEntity*>                          selected_entities;
 
     if (!_query.IsValid())
     {

@@ -143,7 +143,7 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeReserveEntityIdRangeRespons
     return ResponseCallback<Message::RuntimeReserveEntityIdRangeResponse>();
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestAddEntity(
+bool Jani::Worker::RequestAddEntity(
     EntityId                     _entity_id,
     EntityPayload                _entity_payload,
     std::optional<WorldPosition> _entity_world_position)
@@ -158,13 +158,13 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddEntity, add_entity_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestRemoveEntity(EntityId _entity_id)
+bool Jani::Worker::RequestRemoveEntity(EntityId _entity_id)
 {
     assert(m_bridge_connection);
 
@@ -174,13 +174,13 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveEntity, remove_entity_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestAddComponent(
+bool Jani::Worker::RequestAddComponent(
     EntityId         _entity_id,
     ComponentId      _component_id,
     ComponentPayload _component_payload)
@@ -195,13 +195,13 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeAddComponent, add_component_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestRemoveComponent(
+bool Jani::Worker::RequestRemoveComponent(
     EntityId         _entity_id,
     ComponentId      _component_id)
 {
@@ -214,13 +214,13 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeRemoveComponent, remove_component_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestUpdateComponent(
+bool Jani::Worker::RequestUpdateComponent(
     EntityId                     _entity_id,
     ComponentId                  _component_id,
     ComponentPayload             _component_payload,
@@ -237,13 +237,13 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeComponentUpdate, component_update_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
-Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Worker::RequestUpdateComponentInterestQuery(
+bool Jani::Worker::RequestUpdateComponentInterestQuery(
     EntityId                     _entity_id,
     ComponentId                  _component_id,
     std::vector<ComponentQuery>  _queries)
@@ -265,10 +265,10 @@ Jani::Worker::ResponseCallback<Jani::Message::RuntimeDefaultResponse> Jani::Work
     auto request_result = m_request_manager.MakeRequest(*m_bridge_connection, Jani::RequestType::RuntimeComponentInterestQueryUpdate, component_update_interest_query_request);
     if (request_result)
     {
-        return ResponseCallback<Message::RuntimeDefaultResponse>(request_result.value(), this);
+        return true;
     }
 
-    return ResponseCallback<Message::RuntimeDefaultResponse>();
+    return false;
 }
 
 void Jani::Worker::Update(uint32_t _time_elapsed_ms)
@@ -335,6 +335,8 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
     for (auto& [entity_id, entity_info] : m_entity_id_to_info_map)
     {
+        break;
+
         for (int i = 0; i < entity_info.component_queries.size(); i++)
         {
             auto& component_queries = entity_info.component_queries[i];
@@ -394,46 +396,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
                 {
                     case Jani::RequestType::RuntimeWorkerReportAcknowledge:
                     {
-                        is_internal_response = true;
-                        break;
-                    }
-                    case Jani::RequestType::RuntimeComponentInterestQuery:
-                    {
-                        auto response = _response_payload.GetResponse<Jani::Message::RuntimeComponentInterestQueryResponse>();
-
-                        for (auto& component_payload : response.components_payloads)
-                        {
-                            // Check if the entity was already registered
-                            auto entity_iter = m_entity_id_to_info_map.find(component_payload.entity_owner);
-                            if (entity_iter == m_entity_id_to_info_map.end())
-                            {
-                                EntityInfo entity_info;
-                                entity_iter = m_entity_id_to_info_map.insert({ component_payload.entity_owner, std::move(entity_info) }).first;
-
-                                m_entity_count++;
-
-                                assert(m_on_entity_create_callback);
-                                m_on_entity_create_callback(component_payload.entity_owner);
-                            }
-
-                            auto& entity_info = entity_iter->second;
-
-                            // Dont update the component if this worker already owns it
-                            if (entity_info.owned_component_mask.test(component_payload.component_id))
-                            {
-                                continue;
-                            }
-
-                            // Mark this entity component as interest-based, also update the general component mask
-                            entity_info.interest_component_mask.set(component_payload.component_id, true);
-                            entity_info.component_mask.set(component_payload.component_id, true);
-
-                            entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
-
-                            assert(m_on_component_update_callback);
-                            m_on_component_update_callback(component_payload.entity_owner, component_payload.component_id, component_payload);
-                        }
-
                         is_internal_response = true;
                         break;
                     }
@@ -646,17 +608,51 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                         break;
                     }
+                    case Jani::RequestType::RuntimeComponentInterestQuery:
+                    {
+                        auto response = _request_payload.GetRequest<Jani::Message::RuntimeComponentInterestQueryResponse>();
+
+                        for (auto& component_payload : response.components_payloads)
+                        {
+                            // Check if the entity was already registered
+                            auto entity_iter = m_entity_id_to_info_map.find(component_payload.entity_owner);
+                            if (entity_iter == m_entity_id_to_info_map.end())
+                            {
+                                EntityInfo entity_info;
+                                entity_iter = m_entity_id_to_info_map.insert({ component_payload.entity_owner, std::move(entity_info) }).first;
+
+                                m_entity_count++;
+
+                                assert(m_on_entity_create_callback);
+                                m_on_entity_create_callback(component_payload.entity_owner);
+                            }
+
+                            auto& entity_info = entity_iter->second;
+
+                            // Dont update the component if this worker already owns it
+                            if (entity_info.owned_component_mask.test(component_payload.component_id))
+                            {
+                                continue;
+                            }
+
+                            // Mark this entity component as interest-based, also update the general component mask
+                            entity_info.interest_component_mask.set(component_payload.component_id, true);
+                            entity_info.component_mask.set(component_payload.component_id, true);
+
+                            entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
+
+                            assert(m_on_component_update_callback);
+                            m_on_component_update_callback(component_payload.entity_owner, component_payload.component_id, component_payload);
+                        }
+
+                        break;
+                    }
                     default:
                     {
                         Jani::MessageLog().Error("Worker -> Received invalid request type from server");
 
                         break;
                     }
-                }
-
-                Message::WorkerDefaultResponse response = { true };
-                {
-                    _response_payload.PushResponse(std::move(response));
                 }
             });
     }

@@ -418,7 +418,7 @@ void Jani::RuntimeWorldController::ForEachEntityOnRadius(WorldPosition _world_po
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
     float                cell_radius      = ConvertWorldScalarIntoCellScalar(_radius);
 
-    auto& selected_cells = m_world_grid->InsideRangeMutable(cell_coordinates, cell_radius);
+    auto& selected_cells = m_world_grid->InsideRange(cell_coordinates, cell_radius); // This will break if using multiple threads because it uses a shared temporary buffer, fix is needed!!
     for (auto& cell : selected_cells)
     {
         for (auto& [entity_id, entity] : cell.entities)
@@ -438,7 +438,7 @@ void Jani::RuntimeWorldController::ForEachEntityOnRect(WorldRect _world_rect, st
     WorldCellCoordinates rect_size        = WorldCellCoordinates({ _world_rect.width / cell_unit_length, _world_rect.height / cell_unit_length });
     WorldCellCoordinates rect_end         = WorldCellCoordinates({ rect_begin.x + rect_size.x, rect_begin.y + rect_size.y });
 
-    auto& selected_cells = m_world_grid->InsideRectMutable(rect_begin, rect_end);
+    auto& selected_cells = m_world_grid->InsideRectMutable(rect_begin, rect_end); // This will break if using multiple threads because it uses a shared temporary buffer, fix is needed!!
     for (auto& cell : selected_cells)
     {
         for (auto& [entity_id, entity] : cell.entities)

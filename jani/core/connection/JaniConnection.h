@@ -16,6 +16,7 @@
 #include <string>
 #include <chrono>
 #include <map>
+#include <mutex>
 #include <entityx/entityx.h>
 #include <boost/pfr.hpp>
 #include <magic_enum.hpp>
@@ -99,6 +100,7 @@ namespace Jani
             mutable bool                                       timed_out = false;
             SocketType*                                        socket = nullptr;
             struct sockaddr_in                                 client_addr;
+            mutable std::mutex                                 send_mutex;
         };
 
         struct ServerInfo
@@ -404,6 +406,7 @@ namespace Jani
                 auto client_iter = m_server_clients.find(_client_hash);
                 if (client_iter != m_server_clients.end())
                 {
+                    std::lock_guard l(client_iter->second.send_mutex);
                     long total = ikcp_send(client_iter->second.kcp_instance, reinterpret_cast<const char*>(_msg), _msg_size);
                     if (total == 0)
                     {
@@ -604,14 +607,12 @@ namespace Jani
                     if (client_iter == m_server_clients.end() || client_iter->second.timed_out)
                     {
                         // Create a client entry
-                        ClientInfo new_client;
-                        client_iter = m_server_clients.insert({ client_hash, std::move(new_client) }).first;
-
-                        ClientInfo& client_info = client_iter->second;
-                        client_info.hash = client_hash;
+                        ClientInfo& client_info  = m_server_clients[client_hash];
+                        client_iter              = m_server_clients.find(client_hash);
+                        client_info.hash         = client_hash;
                         client_info.kcp_instance = ikcp_create(0, &client_info);
-                        client_info.address = inet_ntoa(sender.sin_addr);
-                        client_info.port = ntohs(sender.sin_port);
+                        client_info.address      = inet_ntoa(sender.sin_addr);
+                        client_info.port         = ntohs(sender.sin_port);
                         if (!client_info.kcp_instance)
                         {
                             continue;
@@ -858,6 +859,12 @@ namespace Jani
             this->setg(vec.data(), vec.data(), vec.data() + vec.size());
             this->setp(vec.data(), vec.data() + vec.size());
         }
+        template<size_t TArraySize>
+        StreamVectorWrap(std::array<CharT, TArraySize>& _array)
+        {
+            this->setg(_array.data(), _array.data(), _array.data() + _array.size());
+            this->setp(_array.data(), _array.data() + _array.size());
+        }
         StreamVectorWrap(nonstd::span<CharT>& vec)
         {
             this->setg(vec.data(), vec.data(), vec.data() + vec.size());
@@ -909,10 +916,10 @@ namespace Jani
         }
 
         RequestPayload(
-            const RequestInfo&       _original_request, 
-            const Connection<>&      _connection, 
-            Connection<>::ClientHash _client_hash, 
-            std::vector<char>&       _response_buffer)
+            const RequestInfo&                                   _original_request, 
+            const Connection<>&                                  _connection, 
+            Connection<>::ClientHash                             _client_hash, 
+            std::array<char, Connection<>::MaximumDatagramSize>& _response_buffer)
             : original_request(_original_request)
             , output_data({ &_connection, _client_hash, &_response_buffer })
         {
@@ -948,9 +955,6 @@ namespace Jani
         {
             assert(output_data);
             assert(sizeof(ResponsePayloadType) < Connection<>::MaximumDatagramSize);
-                
-            output_data->response_buffer->clear();
-            output_data->response_buffer->resize(Connection<>::MaximumDatagramSize);
 
             StreamVectorWrap<char> out_data_buffer(*output_data->response_buffer);
             std::ostream           out_stream(&out_data_buffer);
@@ -973,9 +977,9 @@ namespace Jani
 
         struct OutputData
         {
-            const Connection<>*      connection;
-            Connection<>::ClientHash client_hash;
-            std::vector<char>*       response_buffer;
+            const Connection<>*                                  connection;
+            Connection<>::ClientHash                             client_hash;
+            std::array<char, Connection<>::MaximumDatagramSize>* response_buffer;
         };
 
         std::optional<cereal::BinaryInputArchive*> input_archive;
@@ -995,10 +999,9 @@ namespace Jani
         template<typename RequestPayloadType>
         std::optional<RequestInfo::RequestIndex> MakeRequest(const Connection<>& _connection, Connection<>::ClientHash _client_hash, RequestType _request_type, const RequestPayloadType& _payload)
         {
-            m_temporary_request_buffer.clear();
-            m_temporary_request_buffer.resize(Connection<>::MaximumDatagramSize);
+            std::array<char, Connection<>::MaximumDatagramSize> temporary_request_buffer;
 
-            StreamVectorWrap<char> data_buffer(m_temporary_request_buffer);
+            StreamVectorWrap<char> data_buffer(temporary_request_buffer);
             std::ostream           out_stream(&data_buffer);
 
             RequestInfo new_request;
@@ -1014,7 +1017,7 @@ namespace Jani
                 archive(_payload);
             }
 
-            if (_connection.Send(m_temporary_request_buffer.data(), out_stream.tellp(), _client_hash))
+            if (_connection.Send(temporary_request_buffer.data(), out_stream.tellp(), _client_hash))
             {
                 return m_request_counter - 1;
             }
@@ -1058,12 +1061,13 @@ namespace Jani
 
                     if (is_request && _request_callback)
                     {
+                        std::array<char, Connection<>::MaximumDatagramSize> temporary_response_buffer;
                         RequestPayload  request_payload(in_archive, original_request);
                         ResponsePayload response_payload(
                             original_request, 
                             _connection,
                             _client_hash.has_value() ? _client_hash.value() : 0,
-                            m_temporary_response_buffer);
+                            temporary_response_buffer);
 
                         _request_callback(_client_hash, original_request, request_payload, response_payload);
                     }
@@ -1084,7 +1088,6 @@ namespace Jani
     private:
 
         RequestInfo::RequestIndex m_request_counter = 0;
-        std::vector<char>         m_temporary_request_buffer;
         std::vector<char>         m_temporary_response_buffer;
     };
 
