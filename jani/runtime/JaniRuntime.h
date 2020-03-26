@@ -7,6 +7,7 @@
 // INCLUDES //
 //////////////
 #include "JaniInternal.h"
+#include "JaniRuntimeThreadContext.h"
 
 ///////////////
 // NAMESPACE //
@@ -326,10 +327,10 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
-        RuntimeWorkerReference&      _worker_instance,
-        WorkerId             _worker_id,
-        EntityId             _entity_id,
-        const EntityPayload& _entity_payload);
+        RuntimeWorkerReference& _worker_instance,
+        WorkerId                _worker_id,
+        EntityId                _entity_id,
+        EntityPayload           _entity_payload);
 
     /*
     * Received when a worker requests to remove an existing entity
@@ -343,11 +344,11 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
-        RuntimeWorkerReference&         _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
-        const ComponentPayload& _component_payload);
+        ComponentPayload        _component_payload);
 
     /*
     * Received when a worker requests to remove an existing component for the given entity
@@ -364,11 +365,11 @@ protected: // WORKER COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
-        RuntimeWorkerReference&              _worker_instance,
+        RuntimeWorkerReference&      _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
-        const ComponentPayload&      _component_payload, 
+        ComponentPayload             _component_payload, 
         std::optional<WorldPosition> _entity_world_position);
 
     /*
@@ -385,17 +386,17 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker request a component query 
     */
     std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
-        RuntimeWorkerReference&                    _worker_instance,
-        WorkerId                           _worker_id,
-        EntityId                           _entity_id,
-        ComponentId                        _component_id);
+        RuntimeWorkerReference& _worker_instance,
+        WorkerId                _worker_id,
+        EntityId                _entity_id,
+        ComponentId             _component_id);
 
 private:
 
     /*
     * Perform a component query, optionally it can ignore entities owned by the given worker
     */
-    std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> PerformComponentQuery(
+    nonstd::transient_vector<std::pair<Jani::ComponentMask, nonstd::transient_vector<const Jani::ComponentPayload*>>> PerformComponentQuery(
         const ComponentQuery&   _query, 
         WorldPosition           _search_center_location, 
         std::optional<WorkerId> _ignore_worker = std::nullopt) const;

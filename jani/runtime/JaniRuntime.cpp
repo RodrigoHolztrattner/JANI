@@ -62,8 +62,12 @@ Jani::Runtime::~Runtime()
 {
 }
 
+std::unique_ptr<worker_pool> s_thread_pool;
+
 bool Jani::Runtime::Initialize()
 {
+    s_thread_pool = std::make_unique<worker_pool>(7);
+
     m_client_connections    = std::make_unique<Connection<>>(s_client_worker_listen_port);
     m_worker_connections    = std::make_unique<Connection<>>(s_worker_listen_port);
     m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
@@ -133,18 +137,10 @@ bool Jani::Runtime::Initialize()
                         continue;
                     }
 
-                    auto component_payload = entity->GetComponentPayload(component_id);
-                    if (!component_payload)
-                    {
-                        Jani::MessageLog().Error("Runtime -> Error retrieving component payload for ownership transfer");
-
-                        continue;
-                    }
-
                     Message::WorkerAddComponentRequest add_component_request;
                     add_component_request.entity_id         = entity->GetId();
                     add_component_request.component_id      = component_id;
-                    add_component_request.component_payload = std::move(component_payload.value());
+                    add_component_request.component_payload = entity->GetComponentPayload(component_id); // If possible, somehow avoid this allocation!!
 
                     if (!m_request_manager->MakeRequest(
                         *m_worker_connections,
@@ -191,18 +187,10 @@ bool Jani::Runtime::Initialize()
                     continue;
                 }
 
-                auto component_payload = _entity.GetComponentPayload(component_id);
-                if (!component_payload)
-                {
-                    Jani::MessageLog().Error("Runtime -> Error retrieving component payload for ownership transfer");
-
-                    continue;
-                }
-
                 Message::WorkerAddComponentRequest add_component_request;
                 add_component_request.entity_id         = _entity.GetId();
                 add_component_request.component_id      = component_id;
-                add_component_request.component_payload = std::move(component_payload.value());
+                add_component_request.component_payload = _entity.GetComponentPayload(component_id); // If possible, somehow avoid this allocation!!
 
                 if (!m_request_manager->MakeRequest(
                     *m_worker_connections,
@@ -246,9 +234,7 @@ void Jani::Runtime::Update()
     m_world_controller->Update();
 
     {
-        worker_pool pool(0);
-        
-        jobxx::job query_job = pool.queue().create_job(
+        jobxx::job query_job = s_thread_pool->queue().create_job(
             [this](jobxx::context& ctx)
             {
                 m_entity_query_controller.ForEach(
@@ -281,7 +267,7 @@ void Jani::Runtime::Update()
                                 return;
                             }
 
-                            std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_results;
+                            nonstd::transient_vector<std::pair<ComponentMask, nonstd::transient_vector<const ComponentPayload*>>> query_results;
 
                             // Get and apply the queries
                             auto component_queries = entity.value()->GetQueriesForComponent(component_id);
@@ -305,7 +291,7 @@ void Jani::Runtime::Update()
                                     for (auto& component_payload : query_entry.second)
                                     {
                                         // Check if the message is getting too big and break it
-                                        if (total_accumulated_size + component_payload.component_data.size() > 500)
+                                        if (total_accumulated_size + component_payload->component_data.size() > 500)
                                         {
                                             m_request_manager->MakeRequest(
                                                 *m_worker_connections,
@@ -317,7 +303,7 @@ void Jani::Runtime::Update()
                                             total_accumulated_size = 0;
                                         }
 
-                                        response.components_payloads.push_back(std::move(component_payload));
+                                        response.components_payloads.push_back(*component_payload);
 
                                         total_accumulated_size += response.components_payloads.back().component_data.size();
                                     }
@@ -335,7 +321,7 @@ void Jani::Runtime::Update()
                         });
                 });  
             });
-        pool.queue().wait_job_actively(query_job);
+        s_thread_pool->queue().wait_job_actively(query_job);
     }
 
     auto ProcessWorkerRequest = [&](
@@ -572,7 +558,7 @@ void Jani::Runtime::Update()
                     Message::RuntimeInspectorQueryResponse response;
                     response.succeed               = true;
                     response.window_id             = inspector_query_request.window_id;
-                    response.entity_id             = query_entry.second.front().entity_owner;
+                    response.entity_id             = query_entry.second.front()->entity_owner;
                     response.entity_component_mask = query_entry.first;
                     response.entity_world_position = WorldPosition({ 0, 0 });
                     response.components_payloads.reserve(query_entry.second.size());
@@ -587,14 +573,14 @@ void Jani::Runtime::Update()
                     for (auto& component_payload : query_entry.second)
                     {
                         // Check if the message is getting too big and break it
-                        if (total_accumulated_size + component_payload.component_data.size() > 500)
+                        if (total_accumulated_size + component_payload->component_data.size() > 500)
                         {
                             _response_payload.PushResponse(response);
                             response.components_payloads.clear();
                             total_accumulated_size = 0;
                         }
 
-                        response.components_payloads.push_back(std::move(component_payload));
+                        response.components_payloads.push_back(*component_payload);
 
                         total_accumulated_size += response.components_payloads.back().component_data.size();
                     }
@@ -669,6 +655,8 @@ void Jani::Runtime::Update()
     {
         bridge->Update();
     }
+
+    ThreadLocalStorage::AcknowledgeFrameEnd();
 }
 
 bool Jani::Runtime::TryAllocateNewWorker(
@@ -766,10 +754,10 @@ std::optional<Jani::EntityId> Jani::Runtime::OnWorkerReserveEntityIdRange(
 }
 
 bool Jani::Runtime::OnWorkerAddEntity(
-    RuntimeWorkerReference&      _worker_instance,
-    WorkerId             _worker_id,
-    EntityId             _entity_id,
-    const EntityPayload& _entity_payload)
+    RuntimeWorkerReference& _worker_instance,
+    WorkerId                _worker_id,
+    EntityId                _entity_id,
+    EntityPayload           _entity_payload)
 {
     // Quick check if there are layers available for all requested components
     for (auto requested_component_payload : _entity_payload.component_payloads)
@@ -781,7 +769,7 @@ bool Jani::Runtime::OnWorkerAddEntity(
     }
 
     // Create the new entity on the database
-    auto entity = m_database.AddEntity(_worker_id, _entity_id, _entity_payload);
+    auto entity = m_database.AddEntity(_worker_id, _entity_id, _entity_payload); // Do not move since it will be used below
     if (!entity)
     {
         return false;
@@ -811,7 +799,7 @@ bool Jani::Runtime::OnWorkerAddEntity(
     }
 
     std::array<bool, MaximumLayers> worker_authority_control = {};
-    for (auto requested_component_payload : _entity_payload.component_payloads)
+    for (auto requested_component_payload : _entity_payload.component_payloads) 
     {
         LayerId layer_id = m_layer_config.GetLayerIdForComponent(requested_component_payload.component_id);
         auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
@@ -828,7 +816,7 @@ bool Jani::Runtime::OnWorkerAddEntity(
         Message::WorkerAddComponentRequest add_component_request;
         add_component_request.entity_id         = _entity_id;
         add_component_request.component_id      = requested_component_payload.component_id;
-        add_component_request.component_payload = requested_component_payload;
+        add_component_request.component_payload = std::move(requested_component_payload); // Safe to move, this is the last usage
 
         // Send a message to this worker to acknowledge him about receiving the component/entity
         if (!m_request_manager->MakeRequest(
@@ -885,11 +873,11 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
 }
 
 bool Jani::Runtime::OnWorkerAddComponent(
-    RuntimeWorkerReference&         _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId                _worker_id,
     EntityId                _entity_id,
     ComponentId             _component_id,
-    const ComponentPayload& _component_payload)
+    ComponentPayload        _component_payload)
 {
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
@@ -905,7 +893,7 @@ bool Jani::Runtime::OnWorkerAddComponent(
         _entity_id, 
         layer_id,
         _component_id, 
-        _component_payload);
+        _component_payload); // Do not move since it will be used below
     if (!entity)
     {
         return false;
@@ -927,7 +915,7 @@ bool Jani::Runtime::OnWorkerAddComponent(
         Message::WorkerAddComponentRequest add_component_request;
         add_component_request.entity_id         = _entity_id;
         add_component_request.component_id      = _component_id;
-        add_component_request.component_payload = _component_payload;
+        add_component_request.component_payload = std::move(_component_payload); // Safe to move, this is the last usage
 
         // Send a message to this worker to acknowledge him about receiving the component/entity
         if (!m_request_manager->MakeRequest(
@@ -977,11 +965,11 @@ bool Jani::Runtime::OnWorkerRemoveComponent(
 }
 
 bool Jani::Runtime::OnWorkerComponentUpdate(
-    RuntimeWorkerReference&              _worker_instance,
+    RuntimeWorkerReference&      _worker_instance,
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,
-    const ComponentPayload&      _component_payload,
+    ComponentPayload             _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
@@ -1014,7 +1002,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
         _entity_id, 
         _component_id, 
         layer_id, 
-        _component_payload,
+        std::move(_component_payload),
         _entity_world_position);
     if (!entity)
     {
@@ -1109,13 +1097,13 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
     return std::move(query_results);
 }
 
-std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::PerformComponentQuery(
+nonstd::transient_vector<std::pair<Jani::ComponentMask, nonstd::transient_vector<const Jani::ComponentPayload*>>> Jani::Runtime::PerformComponentQuery(
     const ComponentQuery&   _query, 
     WorldPosition           _search_center_location,
     std::optional<WorkerId> _ignore_worker) const
 {
-    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_result;
-    std::unordered_map<EntityId, ServerEntity*>                          selected_entities;
+    nonstd::transient_vector<std::pair<ComponentMask, nonstd::transient_vector<const ComponentPayload*>>> query_result;
+    nonstd::transient_unordered_map<EntityId, ServerEntity*>                                              selected_entities;
 
     if (!_query.IsValid())
     {
@@ -1284,7 +1272,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
 
     for (auto& [entity_id, entity] : selected_entities)
     {
-        std::pair<ComponentMask, std::vector<ComponentPayload>> entry;
+        std::pair<ComponentMask, nonstd::transient_vector<const ComponentPayload*>> entry;
         entry.first = entity->GetComponentMask();
 
         for (const auto& requested_component_id : bitset::indices_on(_query.component_mask))
@@ -1301,7 +1289,7 @@ std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>>
 
             if (entity->HasComponent(requested_component_id))
             {
-                entry.second.push_back(entity->GetComponentPayload(requested_component_id).value());
+                entry.second.push_back(&entity->GetComponentPayload(requested_component_id));
             }
         }
 

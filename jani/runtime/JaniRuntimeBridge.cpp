@@ -149,16 +149,16 @@ std::optional<Jani::EntityId> Jani::RuntimeBridge::OnWorkerReserveEntityIdRange(
 }
 
 bool Jani::RuntimeBridge::OnWorkerAddEntity(
-    RuntimeWorkerReference&      _worker_instance,
-    WorkerId             _worker_id, 
-    EntityId             _entity_id, 
-    const EntityPayload& _entity_payload)
+    RuntimeWorkerReference& _worker_instance,
+    WorkerId                _worker_id, 
+    EntityId                _entity_id, 
+    EntityPayload           _entity_payload)
 {
     return m_runtime.OnWorkerAddEntity(
         _worker_instance, 
         _worker_id, 
         _entity_id,
-        _entity_payload);
+        std::move(_entity_payload));
 }
 
 bool Jani::RuntimeBridge::OnWorkerRemoveEntity(
@@ -173,18 +173,18 @@ bool Jani::RuntimeBridge::OnWorkerRemoveEntity(
 }
 
 bool Jani::RuntimeBridge::OnWorkerAddComponent(
-    RuntimeWorkerReference&         _worker_instance,
+    RuntimeWorkerReference& _worker_instance,
     WorkerId                _worker_id, 
     EntityId                _entity_id, 
     ComponentId             _component_id, 
-    const ComponentPayload& _component_payload)
+    ComponentPayload        _component_payload)
 {
     return m_runtime.OnWorkerAddComponent(
         _worker_instance,
         _worker_id, 
         _entity_id, 
         _component_id,
-        _component_payload);
+        std::move(_component_payload));
 }
 
 bool Jani::RuntimeBridge::OnWorkerRemoveComponent(
@@ -201,11 +201,11 @@ bool Jani::RuntimeBridge::OnWorkerRemoveComponent(
 }
 
 bool Jani::RuntimeBridge::OnWorkerComponentUpdate(
-    RuntimeWorkerReference&              _worker_instance,
+    RuntimeWorkerReference&      _worker_instance,
     WorkerId                     _worker_id,
     EntityId                     _entity_id,
     ComponentId                  _component_id,
-    const ComponentPayload&      _component_payload,
+    ComponentPayload             _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
     return m_runtime.OnWorkerComponentUpdate(
@@ -213,7 +213,7 @@ bool Jani::RuntimeBridge::OnWorkerComponentUpdate(
         _worker_id, 
         _entity_id, 
         _component_id, 
-        _component_payload, 
+        std::move(_component_payload),
         _entity_world_position);
 }
 

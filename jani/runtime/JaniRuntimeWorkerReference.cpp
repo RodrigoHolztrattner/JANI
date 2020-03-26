@@ -153,7 +153,7 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 m_client_hash,
                 component_update_request.entity_id,
                 component_update_request.component_id, 
-                component_update_request.component_payload, 
+                std::move(component_update_request.component_payload),
                 component_update_request.entity_world_position);
 
             break;

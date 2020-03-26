@@ -2,6 +2,7 @@
 // Filename: JaniRuntimeWorldController.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "JaniRuntimeWorldController.h"
+#include "JaniRuntimeEntitySparseGrid.h"
 #include "config/JaniDeploymentConfig.h"
 #include "config/JaniLayerConfig.h"
 
@@ -41,7 +42,7 @@ bool Jani::RuntimeWorldController::Initialize()
         m_layer_infos[layer_id] = std::move(layer_info);
     }
     
-    m_world_grid = std::make_unique<SparseGrid<WorldCellInfo>>(m_deployment_config.GetMaximumWorldLength());
+    m_world_grid = std::make_unique<EntitySparseGrid<WorldCellInfo>>(m_deployment_config.GetMaximumWorldLength());
 
     return true;
 }
@@ -65,6 +66,53 @@ void Jani::RuntimeWorldController::Update()
         }
 
         // TODO: ...
+    }
+}
+
+bool Jani::RuntimeWorldController::AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id)
+{
+    assert(_layer_id < MaximumLayers);
+    auto& layer_info = m_layer_infos[_layer_id];
+    if (!layer_info)
+    {
+        return false;
+    }
+
+    if (layer_info.value().worker_instances.size() + 1 > layer_info.value().maximum_workers)
+    {
+        return false;
+    }
+
+    WorkerInfo worker_info;
+    worker_info.worker_cells_infos.entity_count = 0;
+    worker_info.worker_instance = std::move(_worker);
+    worker_info.worker_cells_infos.worker_instance = worker_info.worker_instance.get();
+
+    WorkerId worker_id = worker_info.worker_instance->GetId();
+    auto density_key = worker_info.GetDensityKey();
+
+    auto insert_iter = layer_info.value().worker_instances.insert({ worker_id, std::move(worker_info) });
+    layer_info.value().ordered_worker_density_info.insert({ density_key, &insert_iter.first->second });
+
+    return true;
+}
+
+const Jani::WorldCellInfo& Jani::RuntimeWorldController::GetWorldCellInfo(WorldCellCoordinates _coordinates) const
+{
+    return m_world_grid->At(_coordinates);
+}
+
+const std::unordered_map<Jani::WorkerId, Jani::RuntimeWorldController::WorkerInfo>& Jani::RuntimeWorldController::GetWorkersInfosForLayer(LayerId _layer_id) const
+{
+    assert(_layer_id < MaximumLayers);
+    if (m_layer_infos[_layer_id])
+    {
+        return m_layer_infos[_layer_id]->worker_instances;
+    }
+    else
+    {
+        static std::unordered_map<WorkerId, WorkerInfo> dummy;
+        return dummy;
     }
 }
 
@@ -418,14 +466,14 @@ void Jani::RuntimeWorldController::ForEachEntityOnRadius(WorldPosition _world_po
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_world_position);
     float                cell_radius      = ConvertWorldScalarIntoCellScalar(_radius);
 
-    auto& selected_cells = m_world_grid->InsideRange(cell_coordinates, cell_radius); // This will break if using multiple threads because it uses a shared temporary buffer, fix is needed!!
+    auto selected_cells = m_world_grid->InsideRange(cell_coordinates, cell_radius);
     for (auto& cell : selected_cells)
     {
-        for (auto& [entity_id, entity] : cell.entities)
+        for (auto& [entity_id, entity] : cell->entities)
         {
             if (glm::distance(glm::vec2(_world_position), glm::vec2(entity->GetWorldPosition())) < _radius)
             {
-                _callback(entity_id, *entity, cell.cell_coordinates);
+                _callback(entity_id, *entity, cell->cell_coordinates);
             }
         }
     }
@@ -438,10 +486,10 @@ void Jani::RuntimeWorldController::ForEachEntityOnRect(WorldRect _world_rect, st
     WorldCellCoordinates rect_size        = WorldCellCoordinates({ _world_rect.width / cell_unit_length, _world_rect.height / cell_unit_length });
     WorldCellCoordinates rect_end         = WorldCellCoordinates({ rect_begin.x + rect_size.x, rect_begin.y + rect_size.y });
 
-    auto& selected_cells = m_world_grid->InsideRectMutable(rect_begin, rect_end); // This will break if using multiple threads because it uses a shared temporary buffer, fix is needed!!
+    auto selected_cells = m_world_grid->InsideRectMutable(rect_begin, rect_end);
     for (auto& cell : selected_cells)
     {
-        for (auto& [entity_id, entity] : cell.entities)
+        for (auto& [entity_id, entity] : cell->entities)
         {
             WorldPosition entity_world_pos = entity->GetWorldPosition();
             if (entity_world_pos.x > _world_rect.x
@@ -449,7 +497,7 @@ void Jani::RuntimeWorldController::ForEachEntityOnRect(WorldRect _world_rect, st
                 && entity_world_pos.x < _world_rect.x + _world_rect.width
                 && entity_world_pos.y < _world_rect.y + _world_rect.height)
             {
-                _callback(entity_id, *entity, cell.cell_coordinates);
+                _callback(entity_id, *entity, cell->cell_coordinates);
             }
         }
     }

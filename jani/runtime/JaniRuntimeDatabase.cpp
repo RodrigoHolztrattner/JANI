@@ -40,9 +40,9 @@ std::optional<Jani::EntityId> Jani::RuntimeDatabase::ReserveEntityIdRange(uint32
 }
 
 std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddEntity(
-    WorkerId             _worker_id,
-    EntityId             _entity_id,
-    const EntityPayload& _entity_payload)
+    WorkerId      _worker_id,
+    EntityId      _entity_id,
+    EntityPayload _entity_payload)
 {
     // Make sure there is not active entity with the given id
     if (m_active_entities.find(_entity_id) != m_active_entities.end())
@@ -56,7 +56,8 @@ std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddEntity(
     // Add each component contained on the payload
     for (auto& component_payload : _entity_payload.component_payloads)
     {
-        entity->AddComponent(component_payload.component_id, component_payload);
+        auto component_id = component_payload.component_id;
+        entity->AddComponent(component_id, std::move(component_payload));
     }
 
     return entity.get();
@@ -79,11 +80,11 @@ bool Jani::RuntimeDatabase::RemoveEntity(
 }
 
 std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddComponent(
-    WorkerId                _worker_id,
-    EntityId                _entity_id,
-    LayerId                 _layer_id,
-    ComponentId             _component_id,
-    const ComponentPayload& _component_payload)
+    WorkerId         _worker_id,
+    EntityId         _entity_id,
+    LayerId          _layer_id,
+    ComponentId      _component_id,
+    ComponentPayload _component_payload)
 {
     // Check if this entity is active
     auto entity_iter = m_active_entities.find(_entity_id);
@@ -101,7 +102,7 @@ std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::AddComponent(
     }
 
     // Add the component to the entity
-    entity->AddComponent(_component_id, _component_payload);
+    entity->AddComponent(_component_id, std::move(_component_payload));
 
     return entity.get();
 }
@@ -138,7 +139,7 @@ std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::ComponentUpdate(
     EntityId                     _entity_id,
     LayerId                      _layer_id,
     ComponentId                  _component_id,
-    const ComponentPayload&      _component_payload,
+    ComponentPayload             _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
     // Check if this entity is active
@@ -156,7 +157,7 @@ std::optional<Jani::ServerEntity*> Jani::RuntimeDatabase::ComponentUpdate(
         return std::nullopt;
     }
 
-    if (!entity->UpdateComponent(_component_id, _component_payload))
+    if (!entity->UpdateComponent(_component_id, std::move(_component_payload)))
     {
         return std::nullopt;
     }

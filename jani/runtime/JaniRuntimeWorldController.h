@@ -27,6 +27,9 @@ class LayerConfig;
 
 class RuntimeWorkerReference;
 
+template <typename mType, uint32_t mBucketDimSize = 16>
+class EntitySparseGrid;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Class name: RuntimeWorldController
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,55 +122,14 @@ public: // MAIN METHODS //
     /*
     *
     */
-    bool AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id)
-    {
-        assert(_layer_id < MaximumLayers);
-        auto& layer_info = m_layer_infos[_layer_id];
-        if (!layer_info)
-        {
-            return false;
-        }
-
-        if (layer_info.value().worker_instances.size() + 1 > layer_info.value().maximum_workers)
-        {
-            return false;
-        }
-
-        WorkerInfo worker_info;
-        worker_info.worker_cells_infos.entity_count    = 0;
-        worker_info.worker_instance                    = std::move(_worker);
-        worker_info.worker_cells_infos.worker_instance = worker_info.worker_instance.get();
-
-        WorkerId worker_id = worker_info.worker_instance->GetId();
-        auto density_key   = worker_info.GetDensityKey();
-
-        auto insert_iter = layer_info.value().worker_instances.insert({worker_id, std::move(worker_info)});
-        layer_info.value().ordered_worker_density_info.insert({ density_key, &insert_iter.first->second });
-
-        return true;
-    }
+    bool AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id);
 
     /*
     
     */
-    const WorldCellInfo& GetWorldCellInfo(WorldCellCoordinates _coordinates) const
-    {
-        return m_world_grid->At(_coordinates);
-    }
+    const WorldCellInfo& GetWorldCellInfo(WorldCellCoordinates _coordinates) const;
 
-    const std::unordered_map<WorkerId, WorkerInfo>& GetWorkersInfosForLayer(LayerId _layer_id) const
-    {
-        assert(_layer_id < MaximumLayers);
-        if (m_layer_infos[_layer_id])
-        {
-            return m_layer_infos[_layer_id]->worker_instances;
-        }
-        else
-        {
-            static std::unordered_map<WorkerId, WorkerInfo> dummy;
-            return dummy;
-        }
-    }
+    const std::unordered_map<WorkerId, WorkerInfo>& GetWorkersInfosForLayer(LayerId _layer_id) const;
 
     /*
     * This function will check and request workers for layers that doesn't have workers
@@ -253,7 +215,7 @@ private:
 
     std::array<std::optional<LayerInfo>, MaximumLayers> m_layer_infos;
 
-    std::unique_ptr<SparseGrid<WorldCellInfo>> m_world_grid;
+    std::unique_ptr<EntitySparseGrid<WorldCellInfo>> m_world_grid;
 
     CellOwnershipChangeCallback        m_cell_ownership_change_callback;
     EntityLayerOwnershipChangeCallback m_entity_layer_ownership_change_callback;

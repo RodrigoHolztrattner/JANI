@@ -73,23 +73,23 @@ int main(int _argc, char* _argv[])
 
             runtime->Update();
 
-            auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() > 3)
-            {
-                Jani::MessageLog().Warning("Runtime -> Update frame is taking too long to process process_time({})", process_time);
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
             elapsed_time_since_last_memory_feedback += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
             if (elapsed_time_since_last_memory_feedback > 1000)
             {
                 Jani::MessageLog().Info("Total allocations: ({}), a total of: ({})", s_total_allocations_per_second, Jani::pretty_bytes(s_total_allocated_per_second));
 
-                s_total_allocations_per_second          = 0;
-                s_total_allocated_per_second            = 0;
+                s_total_allocations_per_second = 0;
+                s_total_allocated_per_second = 0;
                 elapsed_time_since_last_memory_feedback = 0;
+
+                auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count() > 3)
+                {
+                    Jani::MessageLog().Warning("Runtime -> Update frame is taking too long to process process_time({})", process_time);
+                }
             }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 

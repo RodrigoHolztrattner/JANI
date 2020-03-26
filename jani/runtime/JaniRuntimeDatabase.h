@@ -49,9 +49,9 @@ public:
     /*
     */
     std::optional<ServerEntity*> AddEntity(
-        WorkerId             _worker_id,
-        EntityId             _entity_id,
-        const EntityPayload& _entity_payload);
+        WorkerId      _worker_id,
+        EntityId      _entity_id,
+        EntityPayload _entity_payload);
 
     /*
     */
@@ -62,11 +62,11 @@ public:
     /*
     */
     std::optional<ServerEntity*> AddComponent(
-        WorkerId                _worker_id,
-        EntityId                _entity_id, 
-        LayerId                 _layer_id,
-        ComponentId             _component_id, 
-        const ComponentPayload& _component_payload);
+        WorkerId         _worker_id,
+        EntityId         _entity_id, 
+        LayerId          _layer_id,
+        ComponentId      _component_id, 
+        ComponentPayload _component_payload);
 
     /*
     */
@@ -83,7 +83,7 @@ public:
         EntityId                     _entity_id, 
         LayerId                      _layer_id,
         ComponentId                  _component_id, 
-        const ComponentPayload&      _component_payload, 
+        ComponentPayload             _component_payload, 
         std::optional<WorldPosition> _entity_world_position);
 
 ////////////////////////

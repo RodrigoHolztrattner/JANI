@@ -150,10 +150,10 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to add a new entity
     */
     bool OnWorkerAddEntity(
-        RuntimeWorkerReference&      _worker_instance,
-        WorkerId             _worker_id, 
-        EntityId             _entity_id, 
-        const EntityPayload& _entity_payload);
+        RuntimeWorkerReference& _worker_instance,
+        WorkerId                _worker_id, 
+        EntityId                _entity_id, 
+        EntityPayload           _entity_payload);
 
     /*
     * Received when a worker requests to remove an existing entity
@@ -167,11 +167,11 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * Received when a worker requests to add a new component for the given entity
     */
     bool OnWorkerAddComponent(
-        RuntimeWorkerReference&         _worker_instance,
+        RuntimeWorkerReference& _worker_instance,
         WorkerId                _worker_id, 
         EntityId                _entity_id, 
         ComponentId             _component_id, 
-        const ComponentPayload& _component_payload);
+        ComponentPayload        _component_payload);
 
     /*
     * Received when a worker requests to remove an existing component for the given entity
@@ -188,11 +188,11 @@ private: // WORKER -> BRIDGE COMMUNICATION //
     * If this component changes the entity world position, it will generate an entity position change event over the runtime
     */
     bool OnWorkerComponentUpdate(
-        RuntimeWorkerReference&              _worker_instance,
+        RuntimeWorkerReference&      _worker_instance,
         WorkerId                     _worker_id, 
         EntityId                     _entity_id, 
         ComponentId                  _component_id, 
-        const ComponentPayload&      _component_payload, 
+        ComponentPayload             _component_payload, 
         std::optional<WorldPosition> _entity_world_position);
 
     /*
