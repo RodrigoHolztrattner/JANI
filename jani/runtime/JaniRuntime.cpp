@@ -228,12 +228,36 @@ bool Jani::Runtime::Initialize()
 void Jani::Runtime::Update()
 {
     m_client_connections->Update();
-    m_worker_connections->Update();
+    
+    {
+        ElapsedTimeAutoLogger("Workers update: ", 1000);
+
+        jobxx::job query_job = s_thread_pool->queue().create_job([this](jobxx::context& ctx)
+        {
+            ctx.spawn_task([this]()
+            {
+                m_worker_connections->Update([](auto client_info_wrapper, auto _parallel_update_callback)
+                {
+                    _parallel_update_callback(client_info_wrapper);
+                });
+            });
+
+        });
+
+        s_thread_pool->queue().wait_job_actively(query_job);
+    }
+
     m_inspector_connections->Update();
 
-    m_world_controller->Update();
-
     {
+        ElapsedTimeAutoLogger("World controller update: ", 1000);
+
+        m_world_controller->Update();
+    }
+    
+    {
+        ElapsedTimeAutoLogger("Total query time: ", 1000);
+
         jobxx::job query_job = s_thread_pool->queue().create_job(
             [this](jobxx::context& ctx)
             {
@@ -416,21 +440,26 @@ void Jani::Runtime::Update()
                 _response_payload);
         });
 
-    m_request_manager->Update(
-        *m_worker_connections,
-        [](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload)
-        {
-            // Currently we don't read from worker responses
-        },
-        [&](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
-        {
-            ProcessWorkerRequest(
-                _client_hash,
-                false,
-                _request,
-                _request_payload,
-                _response_payload);
-        });
+    {
+        ElapsedTimeAutoLogger("Workers requests: ", 1000);
+
+        m_request_manager->Update(
+            *m_worker_connections,
+            [](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload)
+            {
+                // Currently we don't read from worker responses
+            },
+            [&](auto _client_hash, const RequestInfo& _request, const RequestPayload& _request_payload, ResponsePayload& _response_payload)
+            {
+                ProcessWorkerRequest(
+                    _client_hash,
+                    false,
+                    _request,
+                    _request_payload,
+                    _response_payload);
+            });
+    }
+
 
     m_request_manager->Update(
         *m_inspector_connections,
@@ -633,12 +662,17 @@ void Jani::Runtime::Update()
             ProcessWorkerDisconnection(_client_hash.value());
         });
 
-    m_worker_connections->DidTimeout(
-        [&](std::optional<Connection<>::ClientHash> _client_hash)
-        {
-            assert(_client_hash.has_value());
-            ProcessWorkerDisconnection(_client_hash.value());
-        });
+    {
+        ElapsedTimeAutoLogger("Workers timeout check: ", 1000);
+
+        m_worker_connections->DidTimeout(
+            [&](std::optional<Connection<>::ClientHash> _client_hash)
+            {
+                assert(_client_hash.has_value());
+                ProcessWorkerDisconnection(_client_hash.value());
+            });
+    }
+
 
     m_inspector_connections->DidTimeout(
         [&](std::optional<Connection<>::ClientHash> _client_hash)

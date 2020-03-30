@@ -62,9 +62,21 @@ namespace Jani
     {
     public:
 
-        using ClientHash      = ClientHashType;
-        using ReceiveCallback = std::function<void(std::optional<ClientHash>, nonstd::span<char>)>;
-        using TimeoutCallback = std::function<void(std::optional<ClientHash>)>;
+        class ClientInfoWrapper
+        {
+            friend Connection;
+
+        protected:
+
+            long long time_elapsed = 0; 
+            ikcpcb*   kcp_instance = nullptr;
+        };
+
+
+        using ClientHash             = ClientHashType;
+        using ReceiveCallback        = std::function<void(std::optional<ClientHash>, nonstd::span<char>)>;
+        using TimeoutCallback        = std::function<void(std::optional<ClientHash>)>;
+        using ParallelUpdateCallback = std::function<void(ClientInfoWrapper, std::function<void(ClientInfoWrapper)>)>;
 
 #define JANI_CONNECTION_RECORD_TRAFFIC
 
@@ -157,7 +169,6 @@ namespace Jani
             }
 
             ikcp_nodelay(m_single_kcp_instance, 1, IntervalUpdateTime, 2, 1);
-            ikcp_wndsize(m_single_kcp_instance, 4096 * 8, 4096 * 8);
 
             {
                 struct sockaddr_in outaddr;
@@ -265,7 +276,7 @@ namespace Jani
         * This function returns the minimum time (in ms) that can be waited until a 
         * connected client or the server requires an update
         */
-        uint32_t Update()
+        uint32_t Update(ParallelUpdateCallback _parallel_update_callback = {})
         {
             auto time_now              = std::chrono::steady_clock::now();
             auto total_time_elapsed    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -290,8 +301,8 @@ namespace Jani
             {
                 auto time_now = std::chrono::steady_clock::now();
                 auto time_from_last_receive_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_server_receive_timestamp).count();
-                auto time_from_last_update_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
-                auto time_elapsed_for_ping_ms = time_from_last_receive_ms - time_from_last_update_ms;
+                auto time_from_last_update_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(time_now - m_last_update_timestamp).count();
+                auto time_elapsed_for_ping_ms  = time_from_last_receive_ms - time_from_last_update_ms;
 
                 if (time_elapsed_for_ping_ms > m_ping_window_ms)
                 {
@@ -316,7 +327,22 @@ namespace Jani
 
                     if (time_remaining_for_update <= 0)
                     {
-                        ikcp_update(client_info.kcp_instance, total_time_elapsed);
+                        if (_parallel_update_callback)
+                        {
+                            ClientInfoWrapper client_info_wrapper;
+                            client_info_wrapper.time_elapsed = total_time_elapsed;
+                            client_info_wrapper.kcp_instance = client_info.kcp_instance;
+                            _parallel_update_callback(
+                                client_info_wrapper, 
+                                [](ClientInfoWrapper _client_info_wrapper)
+                                {
+                                    ikcp_update(_client_info_wrapper.kcp_instance, _client_info_wrapper.time_elapsed);
+                                });
+                        }
+                        else
+                        {
+                            ikcp_update(client_info.kcp_instance, total_time_elapsed);
+                        }
                     }
                 }
             }
@@ -619,7 +645,6 @@ namespace Jani
                         }
 
                         ikcp_nodelay(client_info.kcp_instance, 1, IntervalUpdateTime, 2, 1);
-                        ikcp_wndsize(client_info.kcp_instance, 4096 * 8, 4096 * 8);
 
                         struct sockaddr_in outaddr;
                         memset(&outaddr, 0, sizeof(outaddr));

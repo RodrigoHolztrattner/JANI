@@ -331,51 +331,6 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
         }
     }
 
-    // NON OPTIMAL ENTITY QUERY 
-
-    for (auto& [entity_id, entity_info] : m_entity_id_to_info_map)
-    {
-        break;
-
-        for (int i = 0; i < entity_info.component_queries.size(); i++)
-        {
-            auto& component_queries = entity_info.component_queries[i];
-            if (component_queries.size() > 0)
-            {
-                uint32_t frequency = 0;
-                for (auto& query : component_queries)
-                {
-                    frequency = std::max(frequency, query.frequency);
-                }
-
-                if (frequency == 0)
-                {
-                    continue;
-                }
-
-                uint32_t necessary_time_diff = 1000 / frequency;
-
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(time_now - entity_info.component_queries_time[i]).count() > necessary_time_diff)
-                {
-                    Message::RuntimeComponentInterestQueryRequest component_interest_query_request;
-                    component_interest_query_request.entity_id    = entity_id;
-                    component_interest_query_request.component_id = i;
-
-                    if (!m_request_manager.MakeRequest(
-                        *m_bridge_connection,
-                        RequestType::RuntimeComponentInterestQuery,
-                        component_interest_query_request))
-                    {
-                    }
-
-                    entity_info.component_queries_time[i] = time_now;
-                }
-            }
-        }
-    }
-
-    // NON OPTIMAL ENTITY QUERY
-
     if (m_bridge_connection)
     {
         m_bridge_connection->Update();

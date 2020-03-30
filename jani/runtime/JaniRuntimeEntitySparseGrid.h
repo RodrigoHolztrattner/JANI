@@ -145,13 +145,18 @@ public:
     {
         nonstd::transient_vector<mType*> out_result;
 
+        // TODO:
+        // This calculation should be improved! It will (in most cases) lead into a 3x3 grid search when
+        // it could perform the search only on the central grid
+        // I need to pass the actual position inside the cell and determine if it with the radius really imply in
+        // searching all the neighbors or just a few/none
         auto [bucket_x, bucket_y, local_x, local_y] = ConvertWorldToLocalCoordinates(_cell_coordinates.x, _cell_coordinates.y);
-        int actual_radius = std::ceil(_radius);
+        int actual_radius      = std::ceil(_radius);
         int actual_radius_pow2 = actual_radius * actual_radius;
-        int start_x = _cell_coordinates.x - actual_radius;
-        int start_y = _cell_coordinates.y - actual_radius;
-        int end_x = _cell_coordinates.x + actual_radius;
-        int end_y = _cell_coordinates.y + actual_radius;
+        int start_x            = _cell_coordinates.x - actual_radius;
+        int start_y            = _cell_coordinates.y - actual_radius;
+        int end_x              = _cell_coordinates.x + actual_radius;
+        int end_y              = _cell_coordinates.y + actual_radius;
         
         for (int x = start_x; x <= end_x; x++)
         {
