@@ -1086,51 +1086,6 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
     return true;
 }
 
-std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::Runtime::OnWorkerComponentInterestQuery(
-    RuntimeWorkerReference&            _worker_instance,
-    WorkerId                           _worker_id,
-    EntityId                           _entity_id,
-    ComponentId                        _component_id)
-{
-    assert(false);
-
-    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> query_results;
-#if 0
-
-    auto entity = m_database.GetEntityByIdMutable(_entity_id);
-    if (!entity)
-    {
-        return std::move(query_results);
-    }
-
-    auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
-    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_config.GetLayerIdForComponent(_component_id));
-    if (!cell_worker)
-    {
-        return std::move(query_results);
-    }
-
-    // This can happen if we just changed the owned of an entity layer and it didn't received the message yet or
-    // it arrived before it sent an update
-    if (_worker_id != cell_worker.value()->GetId())
-    {
-        return std::move(query_results);
-    }
-    
-    // Get and apply the queries
-    auto component_queries = entity.value()->GetQueriesForComponent(_component_id);
-    for (auto& component_query : component_queries)
-    {
-        assert(!component_query.query_owner_component || component_query.query_owner_component.value() == _component_id);
-
-        auto query_result = PerformComponentQuery(component_query, entity.value()->GetWorldPosition(), _worker_id);
-        query_results.insert(query_results.end(), std::make_move_iterator(query_result.begin()), std::make_move_iterator(query_result.end()));
-    }
-#endif
-
-    return std::move(query_results);
-}
-
 nonstd::transient_vector<std::pair<Jani::ComponentMask, nonstd::transient_vector<const Jani::ComponentPayload*>>> Jani::Runtime::PerformComponentQuery(
     const ComponentQuery&   _query, 
     WorldPosition           _search_center_location,

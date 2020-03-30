@@ -382,15 +382,6 @@ protected: // WORKER COMMUNICATION //
         ComponentId                        _component_id,
         const std::vector<ComponentQuery>& _component_queries);
     
-    /*
-    * Received when a worker request a component query 
-    */
-    std::vector<std::pair<ComponentMask, std::vector<ComponentPayload>>> OnWorkerComponentInterestQuery(
-        RuntimeWorkerReference& _worker_instance,
-        WorkerId                _worker_id,
-        EntityId                _entity_id,
-        ComponentId             _component_id);
-
 private:
 
     /*

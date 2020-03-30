@@ -231,16 +231,3 @@ bool Jani::RuntimeBridge::OnWorkerComponentInterestQueryUpdate(
         _component_id,
         _component_queries);
 }
-
-std::vector<std::pair<Jani::ComponentMask, std::vector<Jani::ComponentPayload>>> Jani::RuntimeBridge::OnWorkerComponentInterestQuery(
-    RuntimeWorkerReference&                    _worker_instance,
-    WorkerId                           _worker_id,
-    EntityId                           _entity_id,
-    ComponentId                        _component_id)
-{
-    return std::move(m_runtime.OnWorkerComponentInterestQuery(
-        _worker_instance,
-        _worker_id,
-        _entity_id,
-        _component_id));
-}
