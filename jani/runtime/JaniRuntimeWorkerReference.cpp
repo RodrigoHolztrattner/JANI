@@ -176,7 +176,7 @@ void Jani::RuntimeWorkerReference::ProcessRequest(const RequestInfo& _request, c
                 m_client_hash,
                 component_queries_update_request.entity_id,
                 component_queries_update_request.component_id,
-                component_queries_update_request.queries);
+                std::move(component_queries_update_request.queries));
 
             break;
         }

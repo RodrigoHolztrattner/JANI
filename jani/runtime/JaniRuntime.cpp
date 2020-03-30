@@ -1053,11 +1053,11 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
 }
 
 bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
-    RuntimeWorkerReference&                    _worker_instance,
-    WorkerId                           _worker_id,
-    EntityId                           _entity_id,
-    ComponentId                        _component_id,
-    const std::vector<ComponentQuery>& _component_queries)
+    RuntimeWorkerReference&     _worker_instance,
+    WorkerId                    _worker_id,
+    EntityId                    _entity_id,
+    ComponentId                 _component_id,
+    std::vector<ComponentQuery> _component_queries)
 {
     auto entity = m_database.GetEntityByIdMutable(_entity_id);
     if (!entity)
@@ -1079,9 +1079,16 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
         return false;
     }
 
-    entity.value()->UpdateQueriesForComponent(_component_id, _component_queries);
+    // Use the highest frequency
+    QueryUpdateFrequency frequency = QueryUpdateFrequency::Min;
+    for (auto& query_info : _component_queries)
+    {
+        frequency = static_cast<QueryUpdateFrequency>(std::max(static_cast<uint32_t>(frequency), static_cast<uint32_t>(query_info.frequency)));
+    }
 
-    m_entity_query_controller.InsertQuery(_entity_id, _component_id, QueryUpdateFrequency::Max, entity.value()->GetQueryVersion(_component_id));
+    entity.value()->UpdateQueriesForComponent(_component_id, std::move(_component_queries));
+
+    m_entity_query_controller.InsertQuery(_entity_id, _component_id, frequency, entity.value()->GetQueryVersion(_component_id));
 
     return true;
 }

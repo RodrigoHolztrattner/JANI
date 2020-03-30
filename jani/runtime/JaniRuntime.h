@@ -376,11 +376,11 @@ protected: // WORKER COMMUNICATION //
     * Received when a worker request to update a component query
     */
     bool OnWorkerComponentInterestQueryUpdate(
-        RuntimeWorkerReference&                    _worker_instance,
-        WorkerId                           _worker_id,
-        EntityId                           _entity_id,
-        ComponentId                        _component_id,
-        const std::vector<ComponentQuery>& _component_queries);
+        RuntimeWorkerReference&     _worker_instance,
+        WorkerId                    _worker_id,
+        EntityId                    _entity_id,
+        ComponentId                 _component_id,
+        std::vector<ComponentQuery> _component_queries);
     
 private:
 

@@ -628,9 +628,9 @@ namespace Jani
             return *this;
         }
 
-        ComponentQuery& WithFrequency(uint32_t _frequency)
+        ComponentQuery& WithFrequency(QueryUpdateFrequency _frequency)
         {
-            frequency = std::max(frequency, _frequency);
+            frequency = _frequency;
             return *this;
         }
 
@@ -700,7 +700,7 @@ namespace Jani
         std::optional<ComponentId>                 query_owner_component;
         ComponentMask                              component_mask;
         std::shared_ptr<ComponentQueryInstruction> root_query;
-        uint32_t                                   frequency = 0;
+        QueryUpdateFrequency                       frequency = QueryUpdateFrequency::Min;
     };
 
     struct ComponentQueryResultPayload

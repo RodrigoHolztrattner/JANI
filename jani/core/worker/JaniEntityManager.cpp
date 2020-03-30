@@ -124,7 +124,7 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             Jani::ComponentQuery component_query;
             auto* query_instruction = component_query
                 .QueryComponent(0)
-                .WithFrequency(1)
+                .WithFrequency(QueryUpdateFrequency::Max)
                 .Begin(0);
 
             auto and_query = query_instruction->And();

@@ -57,7 +57,7 @@ namespace Jani
     class RequestMaker;
     class RequestManager;
 
-    template <typename ClientHashType = uint64_t, uint32_t IntervalUpdateTime = 20, uint32_t MaximumDatagramSize = 2048>
+    template <typename ClientHashType = uint64_t, uint32_t IntervalUpdateTime = 10, uint32_t MaximumDatagramSize = 2048>
     class Connection
     {
     public:
@@ -169,6 +169,7 @@ namespace Jani
             }
 
             ikcp_nodelay(m_single_kcp_instance, 1, IntervalUpdateTime, 2, 1);
+            ikcp_wndsize(m_single_kcp_instance, 4096 * 8, 4096 * 8);
 
             {
                 struct sockaddr_in outaddr;
@@ -187,7 +188,14 @@ namespace Jani
                     ServerInfo& server_info = *(ServerInfo*)user;
 
 #ifdef JANI_CONNECTION_RECORD_TRAFFIC
+                    
+                    // TODO: It might be a good idea to use WSASend() here instead sendto (for windows), we could accumulate multiple buffer datas
+                    // and perform only one call by providing multiple entries for the lpBuffers parameter
                     auto total_sent = sendto(*server_info.socket, buf, len, 0, (struct sockaddr*) & server_info.server_addr, sizeof(server_info.server_addr));
+
+#ifdef _WIN32
+                    assert(WSAGetLastError() == 0);
+#endif
                     s_total_accumulated_data_sent += total_sent;
                     return total_sent;
 #else
@@ -624,6 +632,10 @@ namespace Jani
                     break;
                 }
 
+#ifdef _WIN32
+                assert(WSAGetLastError() == 0);
+#endif
+
                 if (m_is_server)
                 {
                     ClientHash client_hash = HashClientAddr(sender);
@@ -645,6 +657,7 @@ namespace Jani
                         }
 
                         ikcp_nodelay(client_info.kcp_instance, 1, IntervalUpdateTime, 2, 1);
+                        ikcp_wndsize(client_info.kcp_instance, 4096 * 8, 4096 * 8);
 
                         struct sockaddr_in outaddr;
                         memset(&outaddr, 0, sizeof(outaddr));
@@ -663,6 +676,11 @@ namespace Jani
 
 #ifdef JANI_CONNECTION_RECORD_TRAFFIC
                                 auto total_sent = sendto(*client_info.socket, buf, len, 0, (struct sockaddr*) & client_info.client_addr, sizeof(client_info.client_addr));
+
+#ifdef _WIN32
+                                assert(WSAGetLastError() == 0);
+#endif
+
                                 s_total_accumulated_data_sent += total_sent;
                                 return total_sent;
 #else
