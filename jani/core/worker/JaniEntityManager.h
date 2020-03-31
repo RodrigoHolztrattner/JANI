@@ -202,6 +202,26 @@ public: // MAIN METHODS //
     }
 
     /*
+    * Returns the component id for an already registered component
+    *
+    * This functions assumes that the component was registered previously, returning
+    * std::numeric_limits<ComponentId>::max() if it's not found
+    */
+    template <class ComponentClass>
+    ComponentId GetRegisteredComponentId()
+    {
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_iter = m_hash_to_component_id.find(component_type_hash);
+        if (component_iter != m_hash_to_component_id.end())
+        {
+            return component_iter->second;
+        }
+
+        MessageLog().Error("EntityManager -> Calling GetRegisteredComponentId() with an unregistered component: {}", ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().cppstring());
+        return std::numeric_limits<ComponentId>::max();
+    }
+
+    /*
     * Register and assign a component class to its server component id
     *
     * This function should be called for each component that is registered on the server, this

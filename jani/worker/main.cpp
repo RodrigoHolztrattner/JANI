@@ -78,13 +78,13 @@ int main(int _argc, char* _argv[])
         {
             Jani::ComponentQuery component_query;
             auto* query_instruction = component_query
-                .QueryComponent(0)
+                .QueryComponent(entity_manager->GetRegisteredComponentId<PositionComponent>())
                 .WithFrequency(Jani::QueryUpdateFrequency::Max)
                 .Begin();
 
             auto and_query = query_instruction->And();
             and_query.first->EntitiesInRadius(30.0f);
-            and_query.second->RequireComponent(0);
+            and_query.second->RequireComponent(entity_manager->GetRegisteredComponentId<PositionComponent>());
 
             entity_manager->UpdateInterestQuery<PositionComponent>(_entity, std::move(component_query));
         });
