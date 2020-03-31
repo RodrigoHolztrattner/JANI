@@ -17,6 +17,7 @@
 #include <chrono>
 #include <map>
 #include <mutex>
+#include <atomic>
 #include <entityx/entityx.h>
 #include <boost/pfr.hpp>
 #include <magic_enum.hpp>
@@ -62,23 +63,9 @@ namespace Jani
     {
     public:
 
-        class ClientInfoWrapper
-        {
-            friend Connection;
+        using ClientHash = ClientHashType;
 
-        protected:
-
-            long long time_elapsed = 0; 
-            ikcpcb*   kcp_instance = nullptr;
-        };
-
-
-        using ClientHash             = ClientHashType;
-        using ReceiveCallback        = std::function<void(std::optional<ClientHash>, nonstd::span<char>)>;
-        using TimeoutCallback        = std::function<void(std::optional<ClientHash>)>;
-        using ParallelUpdateCallback = std::function<void(ClientInfoWrapper, std::function<void(ClientInfoWrapper)>)>;
-
-#define JANI_CONNECTION_RECORD_TRAFFIC
+    private:
 
 #ifdef _WIN32
         using socklen_t = int;
@@ -88,18 +75,6 @@ namespace Jani
         using SocketType = SOCKET;
 #else
         using SocketType = int;
-#endif
-
-        static const uint32_t MaximumDatagramSize = 2048; // Change  this to 576 bytes
-
-    private:
-
-#ifdef JANI_CONNECTION_RECORD_TRAFFIC
-        inline static uint64_t s_total_data_received                                            = 0;
-        inline static uint64_t s_total_data_sent                                                = 0;
-        inline static uint64_t s_total_accumulated_data_received                                = 0;
-        inline static uint64_t s_total_accumulated_data_sent                                    = 0;
-        inline static std::chrono::time_point<std::chrono::steady_clock> s_last_network_traffic_update = std::chrono::steady_clock::now();
 #endif
 
         struct ClientInfo
@@ -113,6 +88,13 @@ namespace Jani
             SocketType*                                        socket = nullptr;
             struct sockaddr_in                                 client_addr;
             mutable std::mutex                                 send_mutex;
+            std::vector<uint8_t>                               send_buffer;
+            std::vector<uint32_t>                              send_sizes;
+#ifdef _WIN32
+            std::vector<WSABUF>        send_buffer_win;
+            std::vector<WSAOVERLAPPED> send_overlapped_data;
+            std::atomic<uint32_t>      pending_sends;
+#endif
         };
 
         struct ServerInfo
@@ -120,6 +102,38 @@ namespace Jani
             struct sockaddr_in server_addr;
             SocketType* socket = nullptr;
         };
+
+
+    public:
+
+        class ClientInfoWrapper
+        {
+            friend Connection;
+
+        protected:
+
+            ClientInfo* client_info  = nullptr;
+            long long   time_elapsed = 0;
+            std::mutex* safety;
+        };
+
+        using ReceiveCallback        = std::function<void(std::optional<ClientHash>, nonstd::span<char>)>;
+        using TimeoutCallback        = std::function<void(std::optional<ClientHash>)>;
+        using ParallelUpdateCallback = std::function<void(ClientInfoWrapper, std::function<void(ClientInfoWrapper)>)>;
+
+#define JANI_CONNECTION_RECORD_TRAFFIC
+
+        static const uint32_t MaximumDatagramSize = 2048; // Change  this to 576 bytes
+
+    private:
+
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+        inline static uint64_t s_total_data_received                                            = 0;
+        inline static uint64_t s_total_data_sent                                                = 0;
+        inline static uint64_t s_total_accumulated_data_received                                = 0;
+        inline static uint64_t s_total_accumulated_data_sent                                    = 0;
+        inline static std::chrono::time_point<std::chrono::steady_clock> s_last_network_traffic_update = std::chrono::steady_clock::now();
+#endif
 
     public:
 
@@ -276,6 +290,33 @@ namespace Jani
             m_ping_window_ms = _heartbeat_time;
         }
 
+        static void CALLBACK SendCompletion(
+                DWORD dwError,
+                DWORD cbTransferred,
+                LPOVERLAPPED pOvl,
+                DWORD dwFlags
+            )
+        {
+            ClientInfo& client_info = *(ClientInfo*)pOvl->hEvent;
+            client_info.pending_sends--;
+        }
+
+        void WaitPendingSendOperations()
+        {
+            // Update the kcp instance(s)
+            if (m_is_server)
+            {
+                // For each registered client
+                for (auto& [client_hash, client_info] : m_server_clients)
+                {
+                    while (client_info.pending_sends != 0)
+                    {
+                        SleepEx(1, true);
+                    }
+                }
+            }
+        }
+
         /*
         * This function will attempt to grab any received datagram from the UDP layer and
         * pass it to the corresponding kcp instance
@@ -335,21 +376,98 @@ namespace Jani
 
                     if (time_remaining_for_update <= 0)
                     {
+                        client_info.send_buffer.clear();
+                        client_info.send_sizes.clear();
+
+#ifdef _WIN32
+                        client_info.send_buffer_win.clear();
+#endif
+
                         if (_parallel_update_callback)
                         {
                             ClientInfoWrapper client_info_wrapper;
+                            client_info_wrapper.client_info  = &client_info;
                             client_info_wrapper.time_elapsed = total_time_elapsed;
-                            client_info_wrapper.kcp_instance = client_info.kcp_instance;
+                            client_info_wrapper.safety       = &m_socket_mutex;
+
                             _parallel_update_callback(
                                 client_info_wrapper, 
                                 [](ClientInfoWrapper _client_info_wrapper)
                                 {
-                                    ikcp_update(_client_info_wrapper.kcp_instance, _client_info_wrapper.time_elapsed);
+                                    ClientInfo& client_info = *_client_info_wrapper.client_info;
+                                    
+                                    // This will populate send_buffer and send_sizes
+                                    ikcp_update(client_info.kcp_instance, _client_info_wrapper.time_elapsed);
+
+                                    if (client_info.send_sizes.size() == 0)
+                                    {
+                                        return;
+                                    }
+
+                                    uint32_t previous_data_location = 0;
+                                    for (int i = 0; i < client_info.send_sizes.size(); i++)
+                                    {
+                                        uint32_t data_size = client_info.send_sizes[i] - previous_data_location;
+
+                                        client_info.send_buffer_win[i].buf = reinterpret_cast<char*>(&client_info.send_buffer[previous_data_location]);
+                                        client_info.send_buffer_win[i].len = data_size;
+
+                                        previous_data_location += data_size;
+                                    }
+
+                                    int optlen = sizeof(int);
+                                    int optval = 0;
+                                    getsockopt(*client_info.socket, SOL_SOCKET, SO_MAX_MSG_SIZE, (char*)&optval, &optlen);
+
+                                    uint32_t data_accumulated_initial_index = 0;
+                                    for (int i = 0; i < client_info.send_buffer_win.size(); i++)
+                                    {
+                                        std::memset(&client_info.send_overlapped_data[i], 0, sizeof(client_info.send_overlapped_data[i]));
+                                        client_info.send_overlapped_data[i].hEvent = (PVOID)&client_info;
+
+                                        std::lock_guard l(*_client_info_wrapper.safety);
+                                        DWORD total_sent = 0;
+                                        auto send_result = WSASendTo(
+                                            *client_info.socket,
+                                            &client_info.send_buffer_win[i],
+                                            1,
+                                            &total_sent,
+                                            0,
+                                            (struct sockaddr*) & client_info.client_addr,
+                                            sizeof(client_info.client_addr),
+                                            &client_info.send_overlapped_data[i],
+                                            SendCompletion);
+                                        client_info.pending_sends++;
+
+                                        auto err = WSAGetLastError();
+                                        assert(err == 0 || err == ERROR_IO_PENDING);
+                                    }
+
+                                    std::vector<WSAOVERLAPPED> send_overlapped_data;
                                 });
                         }
                         else
                         {
                             ikcp_update(client_info.kcp_instance, total_time_elapsed);
+
+                            uint32_t previous_data_location = 0;
+                            for (int i = 0; i < client_info.send_sizes.size(); i++)
+                            {
+                                uint32_t data_size = client_info.send_sizes[i] - previous_data_location;
+
+                                sendto(
+                                    *client_info.socket,
+                                    reinterpret_cast<const char*>(&client_info.send_buffer[previous_data_location]),
+                                    data_size,
+                                    0,
+                                    (struct sockaddr*)& client_info.client_addr,
+                                    sizeof(client_info.client_addr));
+
+#ifdef _WIN32
+                                assert(WSAGetLastError() == 0);
+#endif
+                                previous_data_location += data_size;
+                            }
                         }
                     }
                 }
@@ -615,16 +733,38 @@ namespace Jani
         {
             struct sockaddr_in sender;
             socklen_t          sendersize = sizeof(sender);
-            int                buffer_size = MaximumDatagramSize;
-            char               buffer[MaximumDatagramSize];
+            int                buffer_size = 65507;
+            char               buffer[65507];
 
             while (CanReceiveDatagram())
             {
-                int total_received = recvfrom(m_socket, buffer, buffer_size, 0, reinterpret_cast<struct sockaddr*>(&sender), &sendersize);
+                DWORD total_received = 0;
+
+                WSABUF receive_buffer;
+                receive_buffer.buf = buffer;
+                receive_buffer.len = buffer_size;
+
+                DWORD recv_flags = 0;
+
+                int receive_result = WSARecvFrom(
+                    m_socket, 
+                    &receive_buffer, 
+                    1, 
+                    &total_received, 
+                    &recv_flags,
+                    reinterpret_cast<struct sockaddr*>(&sender), 
+                    &sendersize, 
+                    nullptr,
+                    nullptr);
 
 #ifdef JANI_CONNECTION_RECORD_TRAFFIC
                 s_total_accumulated_data_received += total_received;
 #endif
+
+                if (total_received >= MaximumDatagramSize + 5)
+                {
+                    assert(false);
+                }
 
                 // [[unlikely]]
                 if (total_received <= 0)
@@ -674,18 +814,19 @@ namespace Jani
                             {
                                 ClientInfo& client_info = *(ClientInfo*)user;
 
-#ifdef JANI_CONNECTION_RECORD_TRAFFIC
-                                auto total_sent = sendto(*client_info.socket, buf, len, 0, (struct sockaddr*) & client_info.client_addr, sizeof(client_info.client_addr));
+                                uint32_t previous_send_buffer_size = client_info.send_buffer.size();
+                                client_info.send_buffer.insert(client_info.send_buffer.end(), buf, buf + len);
+                                client_info.send_sizes.push_back(previous_send_buffer_size + len);
 
 #ifdef _WIN32
-                                assert(WSAGetLastError() == 0);
+                                client_info.send_buffer_win.push_back(WSABUF());
+                                client_info.send_overlapped_data.push_back(WSAOVERLAPPED());
 #endif
-
-                                s_total_accumulated_data_sent += total_sent;
-                                return total_sent;
-#else
-                                return sendto(*client_info.socket, buf, len, 0, (struct sockaddr*) & client_info.client_addr, sizeof(client_info.client_addr));
+                                
+#ifdef JANI_CONNECTION_RECORD_TRAFFIC
+                                s_total_accumulated_data_sent += len;
 #endif
+                                return len;
                             });
 
                     }
@@ -830,6 +971,7 @@ namespace Jani
 #ifdef _WIN32
         WSAData     m_wsa_data;
         SocketType  m_socket          = {};
+        std::mutex  m_socket_mutex;
 #else
         SocketType  m_socket          = 0;
 #endif

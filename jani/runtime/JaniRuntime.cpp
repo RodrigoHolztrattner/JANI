@@ -228,23 +228,20 @@ bool Jani::Runtime::Initialize()
 void Jani::Runtime::Update()
 {
     m_client_connections->Update();
+
+    {
+        ElapsedTimeAutoLogger("Pending sends wait: ", 1000);
+
+        m_worker_connections->WaitPendingSendOperations();
+    }
     
     {
         ElapsedTimeAutoLogger("Workers update: ", 1000);
 
-        jobxx::job query_job = s_thread_pool->queue().create_job([this](jobxx::context& ctx)
+        m_worker_connections->Update([](auto client_info_wrapper, auto _parallel_update_callback)
         {
-            ctx.spawn_task([this]()
-            {
-                m_worker_connections->Update([](auto client_info_wrapper, auto _parallel_update_callback)
-                {
-                    _parallel_update_callback(client_info_wrapper);
-                });
-            });
-
+            _parallel_update_callback(client_info_wrapper);
         });
-
-        s_thread_pool->queue().wait_job_actively(query_job);
     }
 
     m_inspector_connections->Update();
