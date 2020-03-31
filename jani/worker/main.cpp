@@ -73,6 +73,22 @@ int main(int _argc, char* _argv[])
     entity_manager->RegisterComponent<PositionComponent>(0);
     entity_manager->RegisterComponent<NpcComponent>(1);
 
+    entity_manager->RegisterOnEntityCreatedCallback(
+        [&](Jani::Entity _entity) -> void
+        {
+            Jani::ComponentQuery component_query;
+            auto* query_instruction = component_query
+                .QueryComponent(0)
+                .WithFrequency(Jani::QueryUpdateFrequency::Max)
+                .Begin();
+
+            auto and_query = query_instruction->And();
+            and_query.first->EntitiesInRadius(30.0f);
+            and_query.second->RequireComponent(0);
+
+            entity_manager->UpdateInterestQuery<PositionComponent>(_entity, std::move(component_query));
+        });
+
     if (!worker->InitializeWorker(runtime_ip, runtime_listen_port))
     {
         Jani::MessageLog().Critical("Worker -> Unable to initialize worker");
@@ -127,7 +143,7 @@ int main(int _argc, char* _argv[])
         else
         {
             entity_manager->ForEach<PositionComponent>(
-                [&](Jani::Entity entity, PositionComponent& _position)
+                [&](Jani::Entity _entity, PositionComponent& _position)
                 {
                     auto RandomFloat = [](float _from, float _to) -> float
                     {
@@ -160,7 +176,7 @@ int main(int _argc, char* _argv[])
                         }
                     }
 
-                    entity_manager->AcknowledgeComponentUpdate<PositionComponent>(entity);
+                    entity_manager->AcknowledgeComponentUpdate<PositionComponent>(_entity);
                 });
         }
 

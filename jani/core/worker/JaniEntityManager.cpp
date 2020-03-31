@@ -117,21 +117,10 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             m_entity_infos[new_entityx_index] = std::move(new_entity_info);
             m_server_id_to_local.insert({ _entity_id, new_entityx });
 
-            //
-            //
-            //
-
-            Jani::ComponentQuery component_query;
-            auto* query_instruction = component_query
-                .QueryComponent(0)
-                .WithFrequency(QueryUpdateFrequency::Max)
-                .Begin(0);
-
-            auto and_query = query_instruction->And();
-            and_query.first->EntitiesInRadius(30.0f);
-            and_query.second->RequireComponent(0);
-
-            UpdateInterestQuery(Entity(*this, new_entityx_index), 0, { std::move(component_query) });
+            if (m_on_entity_created_callback)
+            {
+                m_on_entity_created_callback({ *this, new_entityx_index });
+            }
         });
 
     _worker.RegisterOnEntityDestroyCallback(
@@ -143,6 +132,11 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             {
                 MessageLog().Error("EntityManager -> OnEntityDestroyCallback called but there isn't any entity linked with this id: {}", _entity_id);
                 return;
+            }
+
+            if (m_on_entity_destroyed_callback && entity_iter->second.valid())
+            {
+                m_on_entity_destroyed_callback({ *this, entity_iter->second.id().index() });
             }
 
             if (entity_iter->second.valid() && m_entity_infos[entity_iter->second.id().index()].has_value())

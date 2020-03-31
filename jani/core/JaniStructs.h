@@ -608,9 +608,8 @@ namespace Jani
 
         friend Runtime;
 
-        ComponentQueryInstruction* Begin(std::optional<ComponentId> _query_owner_component = std::nullopt)
+        ComponentQueryInstruction* Begin()
         {
-            query_owner_component = _query_owner_component;
             root_query = std::make_shared<ComponentQueryInstruction>();
 
             return root_query.get();
@@ -697,7 +696,6 @@ namespace Jani
 
     public:
 
-        std::optional<ComponentId>                 query_owner_component;
         ComponentMask                              component_mask;
         std::shared_ptr<ComponentQueryInstruction> root_query;
         QueryUpdateFrequency                       frequency = QueryUpdateFrequency::Min;

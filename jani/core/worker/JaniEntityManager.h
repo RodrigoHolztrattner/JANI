@@ -68,6 +68,11 @@ private:
         OnComponentWorldPositionFunction component_world_position_function;
     };
 
+public:
+
+    using OnEntityCreatedCallback   = std::function<void(Entity)>;
+    using OnEntityDestroyedCallback = std::function<void(Entity)>;
+
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
@@ -78,6 +83,22 @@ public: // CONSTRUCTORS //
 //////////////////////////
 public: // MAIN METHODS //
 //////////////////////////
+
+    /*
+    * Register a callback for when an entity is created
+    */
+    void RegisterOnEntityCreatedCallback(OnEntityCreatedCallback _callback)
+    {
+        m_on_entity_created_callback = std::move(_callback);
+    }
+
+    /*
+    * Register a callback for when an entity is destroyed
+    */
+    void RegisterOnEntityDestroyedCallback(OnEntityDestroyedCallback _callback)
+    {
+        m_on_entity_destroyed_callback = std::move(_callback);
+    }
 
     /*
     * Register and assign a component class to its server component id
@@ -557,9 +578,16 @@ public: // MAIN METHODS //
     
     */
     template <class ComponentClass>
-    bool UpdateInterestQuery(const Entity& _entity, ComponentQuery&& _query)
+    bool UpdateInterestQuery(const Entity& _entity, ComponentQuery _query)
     {
-        return UpdateInterestQuery(_entity, { std::move(_query) });
+        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_iter      = m_hash_to_component_id.find(component_type_hash);
+        if (component_iter != m_hash_to_component_id.end())
+        {
+            return UpdateInterestQuery(_entity, component_iter->second, { std::move(_query) });
+        }
+
+        return false;
     }
 
     /*
@@ -742,6 +770,9 @@ private: // VARIABLES //
     std::unordered_map<EntityId, entityx::Entity> m_server_id_to_local;
 
     uint32_t m_total_components_with_world_position = 0;
+
+    OnEntityCreatedCallback   m_on_entity_created_callback;
+    OnEntityDestroyedCallback m_on_entity_destroyed_callback;
 };
 
 // Jani

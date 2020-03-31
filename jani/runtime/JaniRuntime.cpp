@@ -297,8 +297,6 @@ void Jani::Runtime::Update()
                             auto component_queries = entity.value()->GetQueriesForComponent(component_id);
                             for (auto& component_query : component_queries)
                             {
-                                assert(!component_query.query_owner_component || component_query.query_owner_component.value() == component_id);
-
                                 auto query_result = PerformComponentQuery(component_query, entity.value()->GetWorldPosition(), cell_worker.value()->GetId());
                                 query_results.insert(query_results.end(), std::make_move_iterator(query_result.begin()), std::make_move_iterator(query_result.end()));
                             }
