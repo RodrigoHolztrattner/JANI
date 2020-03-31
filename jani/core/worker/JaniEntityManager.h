@@ -667,14 +667,14 @@ public: // ITERATORS //
         typedef T type; 
     };
 
-    template <typename ... Components>
-    void ForEach(typename Identity<std::function<void(Jani::Entity _entity, Components&...)>>::type _f)
+    template <typename ... Components, typename ... Args>
+    void ForEach(typename Identity<std::function<void(Jani::Entity _entity, Components&..., Args&...)>>::type _f, Args&... _args)
     {
         m_ecs_manager.entities.each<Components...>(
             [&](entityx::Entity _entity, Components&... _components)
             {
                 auto entity_id = _entity.id().index();
-                _f({ *this, entity_id }, _components ...);
+                _f({ *this, entity_id }, _components ..., _args ...);
             });
     }
 
