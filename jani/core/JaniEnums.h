@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include "nonstd/enum_bitset.hpp"
 
 namespace Jani
 {
@@ -28,6 +29,13 @@ namespace Jani
         Critical
     };
 
+    enum class WorkerType
+    {
+        Dummy,
+        Server, 
+        Client
+    };
+
     enum class LayerPermissions : uint64_t
     {
         Log = 1 << 0,
@@ -40,12 +48,15 @@ namespace Jani
         UpdateInterest = 1 << 7
     };
 
-    enum class LayerLoadBalanceStrategyBits
+    enum class EntityFlagBits
     {
-        None = 0,
-        MaximumWorkers = 1 << 0,
-        SpatialArea = 1 << 1
+        None                 = 0,
+        IsIncludedOnSnapshot = 1 << 0, 
+        IsCellLocked         = 1 << 1, 
+        IsPlayerControlable  = 1 << 2, 
     };
+
+    using EntityFlags = nonstd::enum_bitset<EntityFlagBits>;
 
     enum class QueryUpdateFrequency
     {

@@ -41,6 +41,67 @@ private:
     std::vector<std::thread> _threads;
 };
 
+/*
+    *** Pendencias 
+
+    => New player storage object
+        - Preciso criar um objeto que vai guardar entidades de jogadores, essas entidades devem ser
+        salvas com um account/player ID e algum outro identificador (caso o jogador tenha mais de uma
+        entidade salva no momento)
+        - Devo ter como iterar sobre essas entidades e pedir para o Runtime criar ela(s) quando o cliente
+        se connectar (eh isso mesmo? pelo que eu entendo o cliente pode abusar isso de varias formas, tipo
+        escolhendo invalidamente logar usando um personagem que nao deveria, tipo um summon em vez da
+        entidade principal)
+        - Esse objeto deve funcionar como a main database persistent do jogo
+
+        - Preciso passar um arquivo que contém uma lista de entidades que devem ser criadas com o mundo
+        - Preciso passar um arquivo com as entidades do mundo organizadas por posição
+        - Os dois arquivos acima podem compreender o snapshot
+        - Adicionar flags na entity (se ela não pode mudar de cell, se ela deve ser salva no snapshot, se eh controlada por player?, etc)
+        - Permitir que algo externo injete entidades que podem ou não serem linkadas a uma client worker connection (se forem, devem expirar depois de um tempo caso ele não conecte)
+
+        ----------------------------------
+
+        => Client View
+        - Clientes podem ter ownership sobre certos componentes, dessa forma eu posso fazer com que o jogo "siga" a virtual position de
+        uma entidade.
+        - Para garantir que o cliente nao ira fazer algo indevido, outro worker pode mudar a qbi de um dos componentes que sao controlados
+        pelo cliente a fim de fazer o cliente receber os updates sobre entidades em volta do mesmo
+
+        => Client entity(s)
+        - O cliente faz o login inicial, seleciona o seu personagem (ou cria o mesmo, enviando os dados para a database), ao realizar
+        a preparacao para entrar no mundo do jogo, o runtime recebe a informacao sobre o personagem(s) do cliente, o cliente segue
+        com a entrada no mundo, Runtime percebe que um client worker entrou e "acorda/cria" as entidades marcadas com aquele ID
+
+        => Persistent World
+        - Ao carregar uma area nova (cell), runtime deve requisitar info da database sobre todas as entidades que estao dentro dessa regiao
+        e que devem ser criadas/carregadas
+        - Caso essa regiao fique sem uso (sem nenhuma player entity por perto e sem nenhuma entidade que seja essencial presente), tal regiao
+        pode ser removida da memoria, com suas entidades dinamicas sendo salvas (e possivelmente as static entities sendo ignoradas, afinal
+        sao estaticas e sempre vao estar la)
+
+        => Snapshot
+        - Runtime (ou algo intermediario):
+            + Precisa conter as informacoes de todas as entidades essenciais que devem ser carregadas com o startup do mundo
+            + Precisa tambem ter a informacao de entidades localizadas em cada cell (permitir carregar as mesmas com o uso da cell)
+            + Deve poder receber info sobre player entities e adicionar estas no mundo quando necessario
+
+        - Database:
+            + Deve conter as informacoes de todas entidades essenciais?! (runtime ou database?!)
+            + Deve conter as informacoes de entidades dos jogadores (deve disponibilizar essa informacao para o runtime quando necessario)
+
+        Perguntas:
+            - Ao salvar o "mundo" devo criar 2 tipos de saves (static e dynamic/essential)?
+            - Workers devem ter acesso ao mundo fisico (terrain) e nao sobre as entidades? O que eh responsabelidade de um worker
+            e o que eh responsabelidade do runtime criar?
+            - O runtime deve acessar um snapshot completo ou so com as entidades estaticas? Deve ser responsabelidade da database
+            (ou outro sistema) de fornecer informacoes sobre entidades dinamicas/essenciais quando o mundo eh carregado?
+            - O snapshot com entidades estaticas deve ser salvo localmente? No caso de uma entidade que nao eh necessariamente
+            estatica, tipo um npc que se movimenta, caso ele mude de cell, eu preciso armazenar isso no snapshot, correto? (ou
+            deveria ter algo que continua simulando a movimentacao desse npc "offline"?)
+
+*/
+
 const char* s_local_ip                  = "127.0.0.1";
 uint32_t    s_client_worker_listen_port = 8080;
 uint32_t    s_worker_listen_port        = 13051;
@@ -100,54 +161,71 @@ bool Jani::Runtime::Initialize()
     }
 
     m_world_controller->RegisterCellOwnershipChangeCallback(
-        [&](const std::map<EntityId, ServerEntity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const RuntimeWorkerReference& _current_worker, const RuntimeWorkerReference& _new_worker)
+        [&](const std::map<EntityId, ServerEntity*>& _entities, WorldCellCoordinates _cell_coordinates, LayerId _layer_id, const RuntimeWorkerReference* _current_worker, const RuntimeWorkerReference* _new_worker)
         {
             auto& layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
-            Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {}", _current_worker.GetId(), _new_worker.GetId());
+            if (_current_worker != nullptr && _new_worker == nullptr)
+            {
+                Jani::MessageLog().Warning("Runtime -> Emergency moving entities from a worker_id to the dummy worker {} on layer_id {}", _current_worker->GetId(), _layer_id);
+            }
+            else if (_current_worker == nullptr && _new_worker != nullptr)
+            {
+                Jani::MessageLog().Info("Runtime -> Moving entities from dummy worker to worker_id {} on layer_id {}", _new_worker->GetId(), _layer_id);
+            }
+            else
+            {
+                Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {} on layer_id {}", _current_worker->GetId(), _new_worker->GetId(), _layer_id);
+            }
 
             for (auto& [entity_id, entity] : _entities)
             {
                 Message::WorkerLayerAuthorityLostRequest authority_lost_request;
                 authority_lost_request.entity_id = entity_id;
 
-                if (!m_request_manager->MakeRequest(
-                    *m_worker_connections,
-                    _current_worker.GetConnectionClientHash(),
-                    RequestType::WorkerLayerAuthorityLost,
-                    authority_lost_request))
+                if (_current_worker)
                 {
-                }
-
-                Message::WorkerLayerAuthorityGainRequest authority_gain_request;
-                authority_gain_request.entity_id = entity_id;
-
-                if (!m_request_manager->MakeRequest(
-                    *m_worker_connections,
-                    _new_worker.GetConnectionClientHash(),
-                    RequestType::WorkerLayerAuthorityGain,
-                    authority_gain_request))
-                {
-                }
-
-                for (auto component_id : layer_info.components)
-                {
-                    if (!entity->HasComponent(component_id))
+                    if (!m_request_manager->MakeRequest(
+                        *m_worker_connections,
+                        _current_worker->GetConnectionClientHash(),
+                        RequestType::WorkerLayerAuthorityLost,
+                        authority_lost_request))
                     {
-                        continue;
                     }
+                }
 
-                    Message::WorkerAddComponentRequest add_component_request;
-                    add_component_request.entity_id         = entity->GetId();
-                    add_component_request.component_id      = component_id;
-                    add_component_request.component_payload = entity->GetComponentPayload(component_id); // If possible, somehow avoid this allocation!!
+                if (_new_worker)
+                {
+                    Message::WorkerLayerAuthorityGainRequest authority_gain_request;
+                    authority_gain_request.entity_id = entity_id;
 
                     if (!m_request_manager->MakeRequest(
                         *m_worker_connections,
-                        _new_worker.GetConnectionClientHash(),
-                        RequestType::WorkerAddComponent,
-                        add_component_request))
+                        _new_worker->GetConnectionClientHash(),
+                        RequestType::WorkerLayerAuthorityGain,
+                        authority_gain_request))
                     {
+                    }
+
+                    for (auto component_id : layer_info.components)
+                    {
+                        if (!entity->HasComponent(component_id))
+                        {
+                            continue;
+                        }
+
+                        Message::WorkerAddComponentRequest add_component_request;
+                        add_component_request.entity_id         = entity->GetId();
+                        add_component_request.component_id      = component_id;
+                        add_component_request.component_payload = entity->GetComponentPayload(component_id); // If possible, somehow avoid this allocation!!
+
+                        if (!m_request_manager->MakeRequest(
+                            *m_worker_connections,
+                            _new_worker->GetConnectionClientHash(),
+                            RequestType::WorkerAddComponent,
+                            add_component_request))
+                        {
+                        }
                     }
                 }
             }
@@ -371,7 +449,7 @@ void Jani::Runtime::Update()
             bool worker_allocation_result = TryAllocateNewWorker(
                 Hasher(authentication_request.layer_name),
                 _client_hash.value(),
-                true);
+                WorkerType::Client);
 
             Jani::MessageLog().Info("Runtime -> New client worker connected");
 
@@ -391,7 +469,7 @@ void Jani::Runtime::Update()
             bool worker_allocation_result = TryAllocateNewWorker(
                 authentication_request.layer_id,
                 _client_hash.value(),
-                false);
+                WorkerType::Server);
 
             if (worker_allocation_result)
             {
@@ -495,7 +573,6 @@ void Jani::Runtime::Update()
                     get_entities_info_response.entities_infos.push_back({
                         entity_id,
                         entity->GetWorldPosition(),
-                        cell_info.GetWorkerForLayer(0).value()->GetId(),
                         entity->GetComponentMask() });
                 }
 
@@ -509,7 +586,7 @@ void Jani::Runtime::Update()
                 Message::RuntimeGetCellsInfosResponse get_cells_infos_response;
                 get_cells_infos_response.succeed = true;
 
-                auto& workers_infos_position_layer = m_world_controller->GetWorkersInfosForLayer(0);
+                auto& workers_infos_position_layer = m_world_controller->GetWorkersInfosForLayer(get_cells_infos_request.layer_id);
                 int32_t worker_length              = m_deployment_config.GetWorkerLength();
                 for (auto& [worker_id, worker_info] : workers_infos_position_layer)
                 {
@@ -528,7 +605,7 @@ void Jani::Runtime::Update()
 
                         get_cells_infos_response.cells_infos.push_back({
                             worker_id,
-                            0,
+                            get_cells_infos_request.layer_id,
                             cell_rect,
                             worker_coordinate, 
                             static_cast<uint32_t>(cell_info.entities.size()) });
@@ -642,6 +719,10 @@ void Jani::Runtime::Update()
 
         auto* bridge = bridge_iter->second.get();
 
+        // There is no point on disconnecting the worker from the bridge since the one who owns the worker is the
+        // world controller
+        // This behavior may change in the future
+        /*
         bool disconnect_result = bridge->DisconnectWorker(_client_hash);
         if (!disconnect_result)
         {
@@ -651,6 +732,15 @@ void Jani::Runtime::Update()
         {
             Jani::MessageLog().Info("Runtime -> Worker disconnected with id {} for layer {} with client hash {}", worker_id, worker_layer_id, _client_hash);
         }
+        */
+
+        if (!m_world_controller->HandleWorkerDisconnection(worker_id, worker_layer_id))
+        {
+            Jani::MessageLog().Critical("Runtime -> Worker disconnection not handled correctly by the world controller, this failure will trigger an emergency backup and shutdown since the runtime is not able to continue on a non-broken state, worker_id {}, worker_layer_id {}, worker_client_hash {}", worker_id, worker_layer_id, _client_hash);
+            exit(11);
+        }
+
+        Jani::MessageLog().Info("Runtime -> Worker disconnected with id {} for layer {} with client hash {}", worker_id, worker_layer_id, _client_hash);
     };
 
     m_client_connections->DidTimeout(
@@ -694,7 +784,7 @@ void Jani::Runtime::Update()
 bool Jani::Runtime::TryAllocateNewWorker(
     LayerId                  _layer_id,
     Connection<>::ClientHash _client_hash,
-    bool                     _is_user)
+    WorkerType               _type)
 {
     assert(m_worker_instance_mapping.find(_client_hash) == m_worker_instance_mapping.end());
 
@@ -705,8 +795,8 @@ bool Jani::Runtime::TryAllocateNewWorker(
 
     auto layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
-    // Make sure the layer is an user layer if the requester is also an user, also vice-versa
-    if (layer_info.user_layer != _is_user)
+    // Make sure the layer is an user layer if the requester is also an user
+    if (layer_info.user_layer && _type != WorkerType::Client)
     {
         return false;
     }
@@ -738,7 +828,7 @@ bool Jani::Runtime::TryAllocateNewWorker(
         *bridge,
         _layer_id,
         _client_hash,
-        _is_user);
+        _type);
 
     RuntimeWorkerReference* worker_instance_ptr = worker_instance.get();
 

@@ -972,7 +972,7 @@ namespace Jani
         // RuntimeGetEntitiesInfo
         struct RuntimeGetEntitiesInfoResponse
         {
-            using EntityInfo = std::tuple<EntityId, WorldPosition, WorkerId, std::bitset<MaximumEntityComponents>>;
+            using EntityInfo = std::tuple<EntityId, WorldPosition, std::bitset<MaximumEntityComponents>>;
 
             Serializable();
 
@@ -985,7 +985,7 @@ namespace Jani
         {
             Serializable();
 
-            bool dummy = false;
+            LayerId layer_id = std::numeric_limits<LayerId>::max();
         };
 
         // RuntimeGetWorkersInfo
@@ -1033,7 +1033,7 @@ namespace Jani
 
     struct WorldCellInfo
     {
-        std::map<EntityId, ServerEntity*>                  entities;
+        std::map<EntityId, ServerEntity*>            entities;
         std::array<WorkerCellsInfos*, MaximumLayers> worker_cells_infos;
         WorldCellCoordinates                         cell_coordinates;
 
@@ -1056,7 +1056,9 @@ namespace Jani
 
     public:
 
-        ServerEntity(EntityId _unique_id) : entity_id(_unique_id)
+        ServerEntity(EntityId _unique_id, EntityFlagBits _flags = EntityFlagBits::None)
+            : entity_id(_unique_id)
+            , m_flags(_flags)
         {
 
         }
@@ -1123,11 +1125,19 @@ namespace Jani
         }
 
         /*
-
+        * Return this entity id
         */
         EntityId GetId() const
         {
             return entity_id;
+        }
+
+        /*
+        * Return this entity flags
+        */
+        EntityFlagBits GetFlags() const
+        {
+            return m_flags;
         }
 
         /*
@@ -1225,12 +1235,13 @@ namespace Jani
 
     private:
 
-        EntityId      entity_id = std::numeric_limits<EntityId>::max();
+        EntityId       entity_id = std::numeric_limits<EntityId>::max();
+        EntityFlagBits m_flags   = EntityFlagBits::None;
+
         WorldPosition world_position = { 0, 0 };
         WorkerId      world_position_worker_owner = std::numeric_limits<WorkerId>::max();
         ComponentMask component_mask;
         const WorldCellInfo* world_cell_info = nullptr;
-
 
         std::array<ComponentPayload, MaximumEntityComponents>            m_component_payloads;
         std::array<std::vector<ComponentQuery>, MaximumEntityComponents> m_component_queries;

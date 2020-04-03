@@ -299,7 +299,7 @@ private:
     bool TryAllocateNewWorker(
         LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash, 
-        bool                     _is_user);
+        WorkerType               _type);
 
 /////////////////////////////////////
 protected: // WORKER COMMUNICATION //

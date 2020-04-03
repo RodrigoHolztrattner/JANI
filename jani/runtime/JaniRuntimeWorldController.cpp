@@ -67,6 +67,57 @@ void Jani::RuntimeWorldController::Update()
 
         // TODO: ...
     }
+
+    /* MOVED TO AddWorkerForLayer()
+    // Perform dummy worker migrations, whenever required
+    for (auto& layer_info : m_layer_infos)
+    {
+        if (layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned.size() == 0
+            || layer_info->ordered_worker_density_info.size() == 0)
+        {
+            continue;
+        }
+
+        for (auto& cell_coordinates : layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned)
+        {
+            auto& cell_info = m_world_grid->AtMutable(cell_coordinates);
+
+            auto& target_worker_info       = layer_info->ordered_worker_density_info.begin()->second;
+            auto* dummy_worker_cells_infos = &layer_info->dummy_layer_worker_instance.worker_cells_infos;
+
+            WorkerDensityKey target_worker_density_key = layer_info->ordered_worker_density_info.begin()->first;
+            WorkerDensityKey over_capacity_worker_density_key = WorkerDensityKey(*cell_info.worker_cells_infos[layer_info->layer_id]);
+            
+            target_worker_info->worker_cells_infos.entity_count += cell_info.entities.size();
+            dummy_worker_cells_infos->entity_count              -= cell_info.entities.size();
+
+            dummy_worker_cells_infos->coordinates_owned.erase(cell_coordinates);
+            target_worker_info->worker_cells_infos.coordinates_owned.insert(cell_coordinates);
+
+            {
+                auto over_capacity_extracted_worker_node = layer_info->ordered_worker_density_info.extract(over_capacity_worker_density_key);
+                auto target_extracted_worker_node = layer_info->ordered_worker_density_info.extract(target_worker_density_key);
+                {
+                    over_capacity_extracted_worker_node.key().global_entity_count = dummy_worker_cells_infos->entity_count;
+                    target_extracted_worker_node.key().global_entity_count = target_worker_info->worker_cells_infos.entity_count;
+                    // over_capacity_extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(cell_coordinates);
+                }
+                layer_info->ordered_worker_density_info.insert(std::move(over_capacity_extracted_worker_node));
+                layer_info->ordered_worker_density_info.insert(std::move(target_extracted_worker_node));
+            }
+
+            cell_info.worker_cells_infos[layer_info->layer_id] = &target_worker_info->worker_cells_infos;
+
+            assert(m_cell_ownership_change_callback);
+            m_cell_ownership_change_callback(
+                cell_info.entities,
+                cell_info.cell_coordinates,
+                layer_info->layer_id,
+                nullptr,
+                *target_worker_info->worker_instance);
+        }
+    }
+    */ 
 }
 
 bool Jani::RuntimeWorldController::AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id)
@@ -93,6 +144,104 @@ bool Jani::RuntimeWorldController::AddWorkerForLayer(std::unique_ptr<RuntimeWork
 
     auto insert_iter = layer_info.value().worker_instances.insert({ worker_id, std::move(worker_info) });
     layer_info.value().ordered_worker_density_info.insert({ density_key, &insert_iter.first->second });
+
+    //
+    //
+    //
+
+    // Perform dummy worker migrations, whenever required
+    if (layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned.size() != 0)
+    {
+        for (auto& cell_coordinates : layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned)
+        {
+            auto& cell_info = m_world_grid->AtMutable(cell_coordinates);
+
+            MigrateEntitiesFromCellToNewWorker(
+                layer_info.value(), 
+                cell_info,
+                layer_info->dummy_layer_worker_instance, 
+                *layer_info->ordered_worker_density_info.begin()->second, 
+                std::nullopt, 
+                layer_info->ordered_worker_density_info.begin()->first, 
+                false);
+        }
+
+        layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned.clear();
+    }
+
+    return true;
+}
+
+bool Jani::RuntimeWorldController::HandleWorkerDisconnection(WorkerId _worker_id, LayerId _layer_id)
+{
+    assert(_layer_id < MaximumLayers);
+
+    // If there is no info about this layer, there is nothing that must be done
+    if (!m_layer_infos[_layer_id].has_value())
+    {
+        return true;
+    }
+
+    auto& layer_info = m_layer_infos[_layer_id].value();
+
+    // User layers should be ignored
+    if (layer_info.user_layer)
+    {
+        return true;
+    }
+
+    auto worker_iter = layer_info.worker_instances.find(_worker_id);
+    if (worker_iter == layer_info.worker_instances.end())
+    {
+        // This is a complicated situation, because the layer is valid and should have the information
+        // about every registered worker, but at the same time a worker could have just connected and
+        // disconnected and depending on how this is managed internally (right now, this situation is
+        // possible) this could be valid, for now just log a warning but return true
+        Jani::MessageLog().Warning("WorldController -> Trying to handle worker disconnection but there is no worker registered with the given ID in the current layer info, worker_id {}, layer_id {}", _worker_id, _layer_id);
+        return true;
+    }
+
+    auto worker_info_node = layer_info.worker_instances.extract(_worker_id);
+    auto& worker_info     = worker_info_node.mapped();
+    
+    layer_info.ordered_worker_density_info.erase(WorkerDensityKey(worker_info.GetDensityKey()));
+
+    WorkerInfo*                     target_worker_info = nullptr;
+    std::optional<WorkerDensityKey> target_worker_density_key;
+    if (layer_info.worker_instances.size() == 0)
+    {
+        target_worker_info = &layer_info.dummy_layer_worker_instance;
+    }
+    else
+    {
+        target_worker_info        = layer_info.ordered_worker_density_info.begin()->second;
+        target_worker_density_key = layer_info.ordered_worker_density_info.begin()->first;
+    }
+
+    for (auto& cell_coordinates : worker_info.worker_cells_infos.coordinates_owned)
+    {
+        auto& cell_info                             = m_world_grid->AtMutable(cell_coordinates);
+        WorkerDensityKey current_worker_density_key = WorkerDensityKey(*cell_info.worker_cells_infos[_layer_id]);
+
+        MigrateEntitiesFromCellToNewWorker(
+            layer_info,
+            cell_info,
+            worker_info,
+            *target_worker_info,
+            std::nullopt, 
+            target_worker_density_key,
+            false);
+
+        // Update the target worker info and density key since they probably changed after this layer migration
+        if (layer_info.worker_instances.size() != 0)
+        {
+            target_worker_info        = layer_info.ordered_worker_density_info.begin()->second;
+            target_worker_density_key = layer_info.ordered_worker_density_info.begin()->first;
+        }
+    }
+
+    worker_info.worker_cells_infos.coordinates_owned.clear();
+    worker_info.worker_cells_infos.worker_instance = nullptr;
 
     return true;
 }
@@ -141,6 +290,27 @@ void PushDebugCommand(std::string _command)
 
 void Jani::RuntimeWorldController::InsertEntity(ServerEntity& _entity, WorldPosition _position)
 {
+    /*
+    * Ideally this function should check if there are enough workers available for each layer in order
+    * to insert this entity, if that is not the case, we should add this entity into a list that will
+    * be checked against when registering a worker for the missing layer
+    * Maybe we should mark this entity as invalid until there are enough layers to attend to it
+    *
+    * Actually I needs something different, because it could be that a worker crashes, leaving a layer
+    * without available workers, this should be handled somehow...
+    *
+    * Maybe we should use a placeholder worker when there are no workers available for a given layer and
+    * send all cells used by this placeholder to the first worker created?
+
+
+        1 - Fazer a verificacao ao adicionar um novo worker para um layer
+            - Chamar o callback de troca de cell durante essa acao pode nao ser necessariamente uma boa ideia
+
+        2 - Fazer a verificacao durante Update()
+            
+
+    */
+
     PushDebugCommand("InsertEntity");
 
     WorldCellCoordinates cell_coordinates = ConvertPositionIntoCellCoordinates(_position);
@@ -187,6 +357,8 @@ void Jani::RuntimeWorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _
             return;
         }
 
+        assert(layer_info->ordered_worker_density_info.size() > 0);
+
         auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
         auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
         {
@@ -204,6 +376,8 @@ void Jani::RuntimeWorldController::SetupWorkCellEntityInsertion(WorldCellInfo& _
             {
                 break;
             }
+
+            assert(layer_info->ordered_worker_density_info.size() > 0);
 
             auto& current_worker_cells_infos = _cell_info.worker_cells_infos[layer_info->layer_id];
             auto extracted_worker_node       = layer_info->ordered_worker_density_info.extract(WorkerDensityKey(*current_worker_cells_infos));
@@ -264,6 +438,46 @@ void Jani::RuntimeWorldController::SetupWorkCellEntityRemoval(WorldCellInfo& _ce
         }
     }
 
+}
+
+void Jani::RuntimeWorldController::MigrateEntitiesFromCellToNewWorker(
+    LayerInfo&                      _layer_info, 
+    WorldCellInfo&                  _cell_info,
+    WorkerInfo&                     _current_worker_info,
+    WorkerInfo&                     _target_worker_info, 
+    std::optional<WorkerDensityKey> _current_worker_density_key,
+    std::optional<WorkerDensityKey> _target_worker_density_key, 
+    bool                            _erase_from_current_worker)
+{
+    _target_worker_info.worker_cells_infos.entity_count  += _cell_info.entities.size();
+    _current_worker_info.worker_cells_infos.entity_count -= _cell_info.entities.size();
+
+    if(_erase_from_current_worker) _current_worker_info.worker_cells_infos.coordinates_owned.erase(_cell_info.cell_coordinates);
+    _target_worker_info.worker_cells_infos.coordinates_owned.insert(_cell_info.cell_coordinates);
+ 
+    if (_current_worker_density_key)
+    {
+        auto over_capacity_extracted_worker_node                      = _layer_info.ordered_worker_density_info.extract(_current_worker_density_key.value());
+        over_capacity_extracted_worker_node.key().global_entity_count = _current_worker_info.worker_cells_infos.entity_count;
+        _layer_info.ordered_worker_density_info.insert(std::move(over_capacity_extracted_worker_node));
+    }
+
+    if (_target_worker_density_key)
+    {
+        auto target_extracted_worker_node                      = _layer_info.ordered_worker_density_info.extract(_target_worker_density_key.value());
+        target_extracted_worker_node.key().global_entity_count = _target_worker_info.worker_cells_infos.entity_count;
+        _layer_info.ordered_worker_density_info.insert(std::move(target_extracted_worker_node));
+    }
+
+    _cell_info.worker_cells_infos[_layer_info.layer_id] = &_target_worker_info.worker_cells_infos;
+
+    assert(m_cell_ownership_change_callback);
+    m_cell_ownership_change_callback(
+        _cell_info.entities,
+        _cell_info.cell_coordinates,
+        _layer_info.layer_id,
+        _current_worker_info.worker_instance.get(),
+        _target_worker_info.worker_instance.get());
 }
 
 void Jani::RuntimeWorldController::AcknowledgeEntityPositionChange(ServerEntity& _entity, WorldPosition _new_position)
@@ -371,20 +585,29 @@ void Jani::RuntimeWorldController::SetupCell(WorldCellCoordinates _cell_coordina
         // This is a new cell, so there shouldn't be any worker that owns the cell
         assert(cell_info.worker_cells_infos[i] == nullptr);
 
-        // We require at least one worker
-        assert(layer_info.value().ordered_worker_density_info.size() > 0);
-
-        /*
-        * Update the ordered worker density info (both the key and the entity count on the worker cells infos)
-        */
-        auto extracted_worker_node = layer_info->ordered_worker_density_info.extract(layer_info->ordered_worker_density_info.begin());
+        // If there are not workers available, use the dummy one
+        if (layer_info.value().ordered_worker_density_info.size() == 0)
         {
-            extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(_cell_coordinates);
-        }
-        auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+            layer_info->dummy_layer_worker_instance.worker_cells_infos.coordinates_owned.insert(_cell_coordinates);
 
-        // Make the cell point to the right worker cells infos
-        cell_info.worker_cells_infos[i] = &insert_iter.position->second->worker_cells_infos;
+            // Make the cell point to the right worker cells infos
+            cell_info.worker_cells_infos[i] = &layer_info->dummy_layer_worker_instance.worker_cells_infos;
+        }
+        // Insert normally
+        else
+        {
+            /*
+            * Update the ordered worker density info (both the key and the entity count on the worker cells infos)
+            */
+            auto extracted_worker_node = layer_info->ordered_worker_density_info.extract(layer_info->ordered_worker_density_info.begin());
+            {
+                extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(_cell_coordinates);
+            }
+            auto insert_iter = layer_info->ordered_worker_density_info.insert(std::move(extracted_worker_node));
+
+            // Make the cell point to the right worker cells infos
+            cell_info.worker_cells_infos[i] = &insert_iter.position->second->worker_cells_infos;
+        }
     }
 }
 
@@ -550,8 +773,8 @@ void Jani::RuntimeWorldController::ApplySpatialBalance()
         bool not_enough_space_on_other_workers = false;
         for (auto coordinates_iter = worker_cells_infos.coordinates_owned.begin(); coordinates_iter != worker_cells_infos.coordinates_owned.end(); )
         {
-            auto  cell_coordinate = *coordinates_iter;
-            auto& cell_info       = m_world_grid->AtMutable(cell_coordinate);
+            auto  cell_coordinates = *coordinates_iter;
+            auto& cell_info        = m_world_grid->AtMutable(cell_coordinates);
 
             assert(cell_info.worker_cells_infos[layer_info->layer_id]->worker_instance == worker_instance_over_limit->worker_instance.get());
 
@@ -597,40 +820,16 @@ void Jani::RuntimeWorldController::ApplySpatialBalance()
                     continue;
                 }
 
-                WorkerDensityKey over_capacity_worker_density_key = WorkerDensityKey(*cell_info.worker_cells_infos[layer_info->layer_id]);
+                WorkerDensityKey over_capacity_worker_density_key = WorkerDensityKey(*cell_info.worker_cells_infos[layer_info.value().layer_id]);
 
-                target_worker_info->worker_cells_infos.entity_count         += cell_info.entities.size();
-                worker_instance_over_limit->worker_cells_infos.entity_count -= cell_info.entities.size();
-
-                assert(worker_instance_over_limit->worker_cells_infos.coordinates_owned.find(cell_coordinate) != worker_instance_over_limit->worker_cells_infos.coordinates_owned.end());
-                assert(target_worker_info->worker_cells_infos.coordinates_owned.find(cell_coordinate) == target_worker_info->worker_cells_infos.coordinates_owned.end());
-
-                // worker_instance_over_limit->worker_cells_infos.coordinates_owned.erase(cell_coordinate); This is done below, we are inside a loop!
-                target_worker_info->worker_cells_infos.coordinates_owned.insert(cell_coordinate);
-
-                {
-                    auto over_capacity_extracted_worker_node = layer_info->ordered_worker_density_info.extract(over_capacity_worker_density_key);
-                    auto target_extracted_worker_node        = layer_info->ordered_worker_density_info.extract(target_worker_density_key);
-                    {
-                        over_capacity_extracted_worker_node.key().global_entity_count = worker_instance_over_limit->worker_cells_infos.entity_count;
-                        target_extracted_worker_node.key().global_entity_count        = target_worker_info->worker_cells_infos.entity_count;
-                        // over_capacity_extracted_worker_node.mapped()->worker_cells_infos.coordinates_owned.insert(cell_coordinate);
-                    }
-                    layer_info->ordered_worker_density_info.insert(std::move(over_capacity_extracted_worker_node));
-                    layer_info->ordered_worker_density_info.insert(std::move(target_extracted_worker_node));
-                }
-
-                // Tenho que tomar cuidado pra nao invalidar o target_worker_info ao mexer no ordered_worker_density_info
-
-                cell_info.worker_cells_infos[layer_info->layer_id] = &target_worker_info->worker_cells_infos;
-
-                assert(m_cell_ownership_change_callback);
-                m_cell_ownership_change_callback(
-                    cell_info.entities,
-                    cell_info.cell_coordinates,
-                    layer_info->layer_id,
-                    *worker_instance_over_limit->worker_instance,
-                    *target_worker_info->worker_instance);
+                MigrateEntitiesFromCellToNewWorker(
+                    layer_info.value(),
+                    cell_info,
+                    *worker_instance_over_limit,
+                    *target_worker_info,
+                    over_capacity_worker_density_key,
+                    target_worker_density_key,
+                    false);
 
                 did_give_away_cell = true;
                 break;

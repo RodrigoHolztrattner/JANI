@@ -59,12 +59,11 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
                     case Jani::RequestType::RuntimeGetEntitiesInfo:
                     {
                         auto infos = _resonse_payload.GetResponse< Jani::Message::RuntimeGetEntitiesInfoResponse>();
-                        for (auto& [entity_id, world_position, worker_id, component_mask] : infos.entities_infos)
+                        for (auto& [entity_id, world_position, component_mask] : infos.entities_infos)
                         {
                             EntityInfo entity_info;
                             entity_info.id                             = entity_id;
                             entity_info.world_position                 = world_position;
-                            entity_info.worker_id                      = worker_id;
                             entity_info.component_mask                 = component_mask;
                             entity_info.last_update_received_timestamp = std::chrono::steady_clock::now();
 
@@ -171,6 +170,8 @@ void Jani::Inspector::InspectorManager::Update(uint32_t _time_elapsed_ms)
         Jani::Message::RuntimeGetEntitiesInfoRequest get_entities_info_request;
         Jani::Message::RuntimeGetCellsInfosRequest   get_cells_infos_request;
         Jani::Message::RuntimeGetWorkersInfosRequest get_workers_infos_request;
+
+        get_cells_infos_request.layer_id = 0; // TODO: This should be an input from the UI, it will crash if there is no layer with id 0
 
         if (!m_request_manager->MakeRequest(
             *m_runtime_connection,

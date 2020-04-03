@@ -17,6 +17,8 @@ namespace Jani
     class ClientEntity;
     using Entity = ClientEntity;
     class EntityManager;
+    class Snapshot;
+    class SnapshotGenerator;
 
     struct WorldPosition;
     struct WorldPositionHasher;

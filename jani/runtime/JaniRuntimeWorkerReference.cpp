@@ -8,11 +8,11 @@ Jani::RuntimeWorkerReference::RuntimeWorkerReference(
     RuntimeBridge&           _bridge,
     LayerId                  _layer_id,
     Connection<>::ClientHash _client_hash,
-    bool                     _is_user)
+    WorkerType               _type)
     : m_bridge(_bridge)
     , m_layer_id(_layer_id)
     , m_client_hash(_client_hash)
-    , m_is_user(_is_user)
+    , m_type(_type)
 {
     // The constructor should create a Connection object and send an initial data
     // ...
@@ -43,9 +43,9 @@ bool Jani::RuntimeWorkerReference::UseSpatialArea() const
     return m_use_spatial_area;
 }
 
-bool Jani::RuntimeWorkerReference::IsUserInstance() const
+Jani::WorkerType Jani::RuntimeWorkerReference::GetType() const
 {
-    return m_is_user;
+    return m_type;
 }
 
 std::pair<uint64_t, uint64_t> Jani::RuntimeWorkerReference::GetNetworkTrafficPerSecond() const

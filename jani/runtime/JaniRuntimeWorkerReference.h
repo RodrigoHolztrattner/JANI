@@ -38,7 +38,7 @@ public: // CONSTRUCTORS //
         RuntimeBridge&           _bridge,
         LayerId                  _layer_id,
         Connection<>::ClientHash _client_hash,
-        bool                     _is_user);
+        WorkerType               _type);
     ~RuntimeWorkerReference();
 
 //////////////////////////
@@ -66,9 +66,9 @@ public: // MAIN METHODS //
     bool UseSpatialArea() const;
 
     /*
-    * Return if this is a user worker instance
+    * Returns the type of worker
     */
-    bool IsUserInstance() const;
+    WorkerType GetType() const;
 
     /*
     * Return a pair containing the network traffic for this worker (received/sent)
@@ -88,7 +88,7 @@ private: // VARIABLES //
     RuntimeBridge&           m_bridge;
     LayerId                  m_layer_id;
     Connection<>::ClientHash m_client_hash;
-    bool                     m_is_user;
+    WorkerType               m_type;
     bool                     m_use_spatial_area    = false;
 
     uint64_t m_total_data_received_per_second = 0;

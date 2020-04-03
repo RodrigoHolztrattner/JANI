@@ -53,16 +53,6 @@ public: // MAIN METHODS //
 //////////////////////////
 
     /*
-    * Attempt to allocate a new worker for the given layer
-    * This operation is susceptible to the feasibility of creating a new one according
-    * to the limits imposed by the layer itself
-    */
-    std::optional<RuntimeWorkerReference*> TryAllocateNewWorker(
-        LayerId                  _layer_id,
-        Connection<>::ClientHash _client_hash,
-        bool                     _is_user, bool _deprecated);
-
-    /*
     * Disconnect the given worker
     */
     bool DisconnectWorker(Connection<>::ClientHash _client_hash);

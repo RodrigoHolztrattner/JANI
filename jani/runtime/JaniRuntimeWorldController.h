@@ -35,7 +35,7 @@ class EntitySparseGrid;
 ////////////////////////////////////////////////////////////////////////////////
 class RuntimeWorldController
 {
-    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, ServerEntity*>&, WorldCellCoordinates, LayerId, const RuntimeWorkerReference&, const RuntimeWorkerReference&)>;
+    using CellOwnershipChangeCallback        = std::function<void(const std::map<EntityId, ServerEntity*>&, WorldCellCoordinates, LayerId, const RuntimeWorkerReference*, const RuntimeWorkerReference*)>;
     using EntityLayerOwnershipChangeCallback = std::function<void(const ServerEntity&, LayerId, const RuntimeWorkerReference&, const RuntimeWorkerReference&)>;
     using WorkerLayerRequestCallback         = std::function<void(LayerId)>;
 
@@ -76,7 +76,7 @@ class RuntimeWorldController
 
     struct WorkerInfo
     {
-        WorkerCellsInfos                worker_cells_infos;
+        WorkerCellsInfos                        worker_cells_infos;
         std::unique_ptr<RuntimeWorkerReference> worker_instance;
 
         WorkerDensityKey GetDensityKey() const
@@ -92,6 +92,7 @@ class RuntimeWorldController
         uint32_t                                                      maximum_entities_per_worker  = std::numeric_limits<uint32_t>::max();
         uint32_t                                                      maximum_workers              = std::numeric_limits<uint32_t>::max();
         std::unordered_map<WorkerId, WorkerInfo>                      worker_instances;
+        WorkerInfo                                                    dummy_layer_worker_instance;
         LayerId                                                       layer_id                     = std::numeric_limits<LayerId>::max();
         std::map<WorkerDensityKey, WorkerInfo*>                       ordered_worker_density_info;
     };
@@ -123,6 +124,11 @@ public: // MAIN METHODS //
     *
     */
     bool AddWorkerForLayer(std::unique_ptr<RuntimeWorkerReference> _worker, LayerId _layer_id);
+
+    /*
+    
+    */
+    bool HandleWorkerDisconnection(WorkerId _worker_id, LayerId _layer_id);
 
     /*
     
@@ -188,6 +194,18 @@ private:
     */
     void SetupWorkCellEntityInsertion(WorldCellInfo& _cell_info, std::optional<LayerId> _layer = std::nullopt);
     void SetupWorkCellEntityRemoval(WorldCellInfo& _cell_info, std::optional<LayerId> _layer = std::nullopt);
+
+    /*
+    
+    */
+    void MigrateEntitiesFromCellToNewWorker(
+        LayerInfo&                      _layer_info, 
+        WorldCellInfo&                  _cell_info,
+        WorkerInfo&                     _current_worker_info,
+        WorkerInfo&                     _target_worker_info, 
+        std::optional<WorkerDensityKey> _current_worker_density_key, 
+        std::optional<WorkerDensityKey> _target_worker_density_key, 
+        bool                            _erase_from_current_worker);
 
 ///////////////////////
 public: // CALLBACKS //

@@ -17,25 +17,6 @@ Jani::RuntimeBridge::~RuntimeBridge()
 {
 }
 
-std::optional<Jani::RuntimeWorkerReference*> Jani::RuntimeBridge::TryAllocateNewWorker(
-    LayerId                  _layer_id,
-    Connection<>::ClientHash _client_hash,
-    bool                     _is_user, bool _deprecated)
-{
-    // Check other layer requirements, as necessary
-    // ...
-
-    auto worker_instance = std::make_unique<RuntimeWorkerReference>(
-        *this, 
-        _layer_id,
-        _client_hash,
-        _is_user);
-
-    auto worker_instance_iter = m_worker_instances.insert({ _client_hash, std::move(worker_instance) });
-
-    return worker_instance_iter.first->second.get();
-}
-
 bool Jani::RuntimeBridge::DisconnectWorker(Connection<>::ClientHash _client_hash)
 {
     auto worker_instance_iter = m_worker_instances.find(_client_hash);

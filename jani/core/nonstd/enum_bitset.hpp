@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+namespace nonstd
+{
+
 template <typename EnumType, typename EnumBitsType = uint32_t>
 class enum_bitset
 {
@@ -67,3 +70,5 @@ private:
 
     EnumBitsType m_bitset = 0;
 };
+
+}
