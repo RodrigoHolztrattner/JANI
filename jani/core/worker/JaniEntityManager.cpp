@@ -105,7 +105,7 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
             auto new_entityx_index = new_entityx.id().index();
             if (new_entityx_index >= m_entity_infos.size())
             {
-                MessageLog().Info("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index + 1);
+                MessageLog().Trace("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index + 1);
                 m_entity_infos.resize(new_entityx_index + 1);
             }
 
@@ -218,7 +218,7 @@ bool Jani::EntityManager::ClearInterestQuery(
 
 std::optional<Jani::EntityId> Jani::EntityManager::RetrieveNextAvailableEntityId(bool _is_waiting_for_reserve_response) const
 {
-    constexpr uint32_t total_entities_to_reserve = 100;
+    constexpr uint32_t total_entities_to_reserve = 10000;
 
     if (m_available_entity_id_ranges.size() > 0)
     {

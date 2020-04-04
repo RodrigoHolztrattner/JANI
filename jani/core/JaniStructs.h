@@ -25,9 +25,38 @@
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/utility.hpp>
 #include <cereal/types/tuple.hpp>
+#include <jobxx/queue.h>
+#include <jobxx/job.h>
 
 namespace Jani
 {
+    class WorkerPool
+    {
+    public:
+        explicit WorkerPool(int threads)
+        {
+            for (int i = 0; i < threads; ++i)
+            {
+                m_threads.emplace_back([this]() { m_queue.work_forever(); });
+            }
+        }
+
+        jobxx::queue& GetQueue() { return m_queue; }
+
+        ~WorkerPool()
+        {
+            m_queue.close();
+            for (auto& thread : m_threads)
+            {
+                thread.join();
+            }
+        }
+
+    private:
+        jobxx::queue             m_queue;
+        std::vector<std::thread> m_threads;
+    };
+
     struct WorldPosition
     {
         Serializable();

@@ -298,7 +298,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
 
                 if (entity_info.IsInterestPure())
                 {
-                    Jani::MessageLog().Info("Worker -> Destroying timed-out interest pure entity {}", iter->first);
+                    Jani::MessageLog().Trace("Worker -> Destroying timed-out interest pure entity {}", iter->first);
 
                     assert(m_on_entity_destroy_callback);
                     m_on_entity_destroy_callback(entity_id);
@@ -639,7 +639,7 @@ void Jani::Worker::Update(uint32_t _time_elapsed_ms)
             }
         }
 
-        Jani::MessageLog().Info("Worker -> Entity count {} | Pure interest entity count {}", m_entity_count, total_pure_interest_entity_count);
+        Jani::MessageLog().Info("Worker -> Total owned entities {} | Total pure interest entities {}", m_entity_count - total_pure_interest_entity_count, total_pure_interest_entity_count);
     }
 }
 

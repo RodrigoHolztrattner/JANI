@@ -418,6 +418,8 @@ private: // VARIABLES //
 
     std::unique_ptr<RuntimeWorldController> m_world_controller;
 
+    std::unique_ptr<WorkerPool> m_thread_pool;
+
     std::map<LayerId, std::unique_ptr<RuntimeBridge>>                     m_bridges;
     std::unordered_map<Connection<>::ClientHash, RuntimeWorkerReference*> m_worker_instance_mapping;
 

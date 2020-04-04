@@ -11,36 +11,6 @@
 #include "JaniRuntimeWorkerSpawnerReference.h"
 #include "JaniRuntimeWorldController.h"
 
-#include <jobxx/queue.h>
-#include <jobxx/job.h>
-
-class worker_pool
-{
-public:
-    explicit worker_pool(int threads)
-    {
-        for (int i = 0; i < threads; ++i)
-        {
-            _threads.emplace_back([this]() { _queue.work_forever(); });
-        }
-    }
-
-    jobxx::queue& queue() { return _queue; }
-
-    ~worker_pool()
-    {
-        _queue.close();
-        for (auto& thread : _threads)
-        {
-            thread.join();
-        }
-    }
-
-private:
-    jobxx::queue _queue;
-    std::vector<std::thread> _threads;
-};
-
 /*
     *** Pendencias 
 
@@ -102,11 +72,6 @@ private:
 
 */
 
-const char* s_local_ip                  = "127.0.0.1";
-uint32_t    s_client_worker_listen_port = 8080;
-uint32_t    s_worker_listen_port        = 13051;
-uint32_t    s_inspector_listen_port     = 14051;
-
 Jani::Runtime::Runtime(
     RuntimeDatabase&           _database, 
     const DeploymentConfig&    _deployment_config, 
@@ -123,15 +88,13 @@ Jani::Runtime::~Runtime()
 {
 }
 
-std::unique_ptr<worker_pool> s_thread_pool;
-
 bool Jani::Runtime::Initialize()
 {
-    s_thread_pool = std::make_unique<worker_pool>(7);
+    m_thread_pool = std::make_unique<WorkerPool>(m_deployment_config.GetThreadPoolSize());
 
-    m_client_connections    = std::make_unique<Connection<>>(s_client_worker_listen_port);
-    m_worker_connections    = std::make_unique<Connection<>>(s_worker_listen_port);
-    m_inspector_connections = std::make_unique<Connection<>>(s_inspector_listen_port);
+    m_client_connections    = std::make_unique<Connection<>>(m_deployment_config.GetClientWorkerListenPort());
+    m_worker_connections    = std::make_unique<Connection<>>(m_deployment_config.GetServerWorkerListenPort());
+    m_inspector_connections = std::make_unique<Connection<>>(m_deployment_config.GetInspectorListenPort());
     m_request_manager       = std::make_unique<RequestManager>();
 
     auto& worker_spawners = m_worker_spawner_config.GetWorkerSpawnersInfos();
@@ -145,8 +108,8 @@ bool Jani::Runtime::Initialize()
             spawner_port++,
             worker_spawner_info.port,
             worker_spawner_info.ip.c_str(),
-            s_worker_listen_port,
-            s_local_ip))
+            m_deployment_config.GetServerWorkerListenPort(),
+            m_deployment_config.GetRuntimeIp()))
         {
             return false;
         }
@@ -165,17 +128,22 @@ bool Jani::Runtime::Initialize()
         {
             auto& layer_info = m_layer_config.GetLayerInfo(_layer_id);
 
+            if (_current_worker == nullptr && _new_worker == nullptr)
+            {
+                return;
+            }
+
             if (_current_worker != nullptr && _new_worker == nullptr)
             {
-                Jani::MessageLog().Warning("Runtime -> Emergency moving entities from a worker_id to the dummy worker {} on layer_id {}", _current_worker->GetId(), _layer_id);
+                Jani::MessageLog().Warning("Runtime -> Emergency moving entities from worker_id {} to the dummy worker on layer_id {} for cell ({},{})", _current_worker->GetId(), _layer_id, _cell_coordinates.x, _cell_coordinates.y);
             }
             else if (_current_worker == nullptr && _new_worker != nullptr)
             {
-                Jani::MessageLog().Info("Runtime -> Moving entities from dummy worker to worker_id {} on layer_id {}", _new_worker->GetId(), _layer_id);
+                Jani::MessageLog().Info("Runtime -> Moving entities from dummy worker to worker_id {} on layer_id {} for cell ({},{})", _new_worker->GetId(), _layer_id, _cell_coordinates.x, _cell_coordinates.y);
             }
             else
             {
-                Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {} on layer_id {}", _current_worker->GetId(), _new_worker->GetId(), _layer_id);
+                Jani::MessageLog().Info("Runtime -> Cell migration performed from worker_id {} to worker_id {} on layer_id {} for cell ({},{})", _current_worker->GetId(), _new_worker->GetId(), _layer_id, _cell_coordinates.x, _cell_coordinates.y);
             }
 
             for (auto& [entity_id, entity] : _entities)
@@ -293,10 +261,16 @@ bool Jani::Runtime::Initialize()
                 }
             }
 
+            if (!is_expecting_worker_for_layer)
+            {
+                auto& registered_layers = m_layer_config.GetLayers();
+                Jani::MessageLog().Info("Runtime -> Requesting new worker for layer {}", registered_layers.find(_layer_id)->second.name);
+            }
+
             if (!is_expecting_worker_for_layer && !m_worker_spawner_instances.back()->RequestWorkerForLayer(_layer_id))
             {
                 auto& registered_layers = m_layer_config.GetLayers();
-                Jani::MessageLog().Error("Unable to request a new worker from worker spawner, layer {}", registered_layers.find(_layer_id)->second.name);
+                Jani::MessageLog().Error("Runtime -> Unable to request a new worker from worker spawner, layer {}", registered_layers.find(_layer_id)->second.name);
             }
         });
 
@@ -308,9 +282,9 @@ void Jani::Runtime::Update()
     m_client_connections->Update();
     
     {
-        ElapsedTimeAutoLogger("Workers update: ", 1000);
+        // ElapsedTimeAutoLogger("Workers update: ", 1000);
 
-        jobxx::job query_job = s_thread_pool->queue().create_job([this](jobxx::context& ctx)
+        jobxx::job query_job = m_thread_pool->GetQueue().create_job([this](jobxx::context& ctx)
         {
             ctx.spawn_task([this]()
             {
@@ -322,21 +296,21 @@ void Jani::Runtime::Update()
 
         });
 
-        s_thread_pool->queue().wait_job_actively(query_job);
+        m_thread_pool->GetQueue().wait_job_actively(query_job);
     }
 
     m_inspector_connections->Update();
 
     {
-        ElapsedTimeAutoLogger("World controller update: ", 1000);
+        // ElapsedTimeAutoLogger("World controller update: ", 1000);
 
         m_world_controller->Update();
     }
     
     {
-        ElapsedTimeAutoLogger("Total query time: ", 1000);
+        // ElapsedTimeAutoLogger("Total query time: ", 1000);
 
-        jobxx::job query_job = s_thread_pool->queue().create_job(
+        jobxx::job query_job = m_thread_pool->GetQueue().create_job(
             [this](jobxx::context& ctx)
             {
                 m_entity_query_controller.ForEach(
@@ -421,7 +395,7 @@ void Jani::Runtime::Update()
                         });
                 });  
             });
-        s_thread_pool->queue().wait_job_actively(query_job);
+        m_thread_pool->GetQueue().wait_job_actively(query_job);
     }
 
     auto ProcessWorkerRequest = [&](
@@ -473,13 +447,13 @@ void Jani::Runtime::Update()
 
             if (worker_allocation_result)
             {
+                Jani::MessageLog().Info("Runtime -> New worker connected with id {} for layer {}", _client_hash.value(), authentication_request.layer_id);
+
                 for (auto& worker_spawner : m_worker_spawner_instances)
                 {
                     worker_spawner->AcknowledgeWorkerSpawn(authentication_request.layer_id);
                 }
             }
-
-            Jani::MessageLog().Info("Runtime -> New worker worker connected");
 
             Message::RuntimeAuthenticationResponse authentication_response = { worker_allocation_result, true, 7 };
             {
@@ -517,7 +491,7 @@ void Jani::Runtime::Update()
         });
 
     {
-        ElapsedTimeAutoLogger("Workers requests: ", 1000);
+        // ElapsedTimeAutoLogger("Workers requests: ", 1000);
 
         m_request_manager->Update(
             *m_worker_connections,
@@ -535,7 +509,6 @@ void Jani::Runtime::Update()
                     _response_payload);
             });
     }
-
 
     m_request_manager->Update(
         *m_inspector_connections,
@@ -751,7 +724,7 @@ void Jani::Runtime::Update()
         });
 
     {
-        ElapsedTimeAutoLogger("Workers timeout check: ", 1000);
+        // ElapsedTimeAutoLogger("Workers timeout check: ", 1000);
 
         m_worker_connections->DidTimeout(
             [&](std::optional<Connection<>::ClientHash> _client_hash)
@@ -844,10 +817,6 @@ bool Jani::Runtime::TryAllocateNewWorker(
     return true;
 }
 
-//
-//
-//
-
 bool Jani::Runtime::OnWorkerLogMessage(
     RuntimeWorkerReference& _worker_instance,
     WorkerId        _worker_id,
@@ -881,6 +850,9 @@ bool Jani::Runtime::OnWorkerAddEntity(
     EntityId                _entity_id,
     EntityPayload           _entity_payload)
 {
+    // Theoretically this below isn't necessary because now we can keep track of entities that
+    // are layer-orphans, they will be assigned to a worker as soon as one gets available
+    /*
     // Quick check if there are layers available for all requested components
     for (auto requested_component_payload : _entity_payload.component_payloads)
     {
@@ -889,11 +861,13 @@ bool Jani::Runtime::OnWorkerAddEntity(
             return false;
         }
     }
+    */
 
     // Create the new entity on the database
     auto entity = m_database.AddEntity(_worker_id, _entity_id, _entity_payload); // Do not move since it will be used below
     if (!entity)
     {
+        JaniWarning("Runtime -> OnWorkerAddEntity() failed for worker {} with entity id {}", _worker_id, _entity_id);
         return false;
     }
 
@@ -927,12 +901,12 @@ bool Jani::Runtime::OnWorkerAddEntity(
         auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
-            m_world_controller->RemoveEntity(*entity.value());
+            // If there is no worker available, we just need to ignore this component addition
+            // A worker will receive this component as soon as one gets available on the world
+            // controller
 
-            // Remove the entity since the entire operation failed
-            m_database.RemoveEntity(_worker_id, _entity_id);
-
-            return false;
+            JaniTrace("Runtime -> OnWorkerAddEntity() Tried to call GetWorkerForLayer({}) on the current entity cell but no worker is available (worker requester {})", layer_id, _worker_id);
+            continue;
         }
 
         Message::WorkerAddComponentRequest add_component_request;
@@ -947,10 +921,9 @@ bool Jani::Runtime::OnWorkerAddEntity(
             RequestType::WorkerAddComponent,
             add_component_request))
         {
-            // Remove the entity since the entire operation failed
-            m_database.RemoveEntity(_worker_id, _entity_id);
+            JaniError("Runtime -> OnWorkerAddEntity() request to add a component to worker {} failed for entity {}, this could potentially cause future issues", _worker_id, _entity_id);
 
-            return false;
+            continue;
         }
     }
     
@@ -964,6 +937,7 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
 {
     if (!m_database.RemoveEntity(_worker_id, _entity_id))
     {
+        JaniWarning("Runtime -> OnWorkerRemoveEntity() failed for worker {} with entity id {}", _worker_id, _entity_id);
         return false;
     }
 
@@ -1003,11 +977,15 @@ bool Jani::Runtime::OnWorkerAddComponent(
 {
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
+    // Theoretically this below isn't necessary because now we can keep track of entities that
+    // are layer-orphans, they will be assigned to a worker as soon as one gets available
+    /*
     // Quick check if there is a layer available to this component
     if (!IsLayerForComponentAvailable(_component_id))
     {
         return false;
     }
+    */
 
     // Register this component on the database for the given entity
     auto entity = m_database.AddComponent(
@@ -1018,6 +996,7 @@ bool Jani::Runtime::OnWorkerAddComponent(
         _component_payload); // Do not move since it will be used below
     if (!entity)
     {
+        JaniWarning("Runtime -> OnWorkerAddComponent() failed to add the component on the database for worker {} with entity id {}", _worker_id, _entity_id);
         return false;
     }
 
@@ -1026,32 +1005,34 @@ bool Jani::Runtime::OnWorkerAddComponent(
         auto worker      = entity.value()->GetWorldCellInfo().GetWorkerForLayer(layer_id);
         if (!worker)
         {
-            m_database.RemoveComponent(
-                _worker_id, 
-                _entity_id, 
-                layer_id, 
-                _component_id);
-            return false;
+            // If there is no worker available, we don't need to worry about a worker receiving
+            // the request to add the component since there is no worker available for this layer
+            // A worker will receive this component as soon as one gets available on the world
+            // controller
+
+            JaniTrace("Runtime -> OnWorkerAddComponent() Tried to call GetWorkerForLayer({}) on the current entity cell but no worker is available (worker requester {})", layer_id, _worker_id);
         }
-
-        Message::WorkerAddComponentRequest add_component_request;
-        add_component_request.entity_id         = _entity_id;
-        add_component_request.component_id      = _component_id;
-        add_component_request.component_payload = std::move(_component_payload); // Safe to move, this is the last usage
-
-        // Send a message to this worker to acknowledge him about receiving the component/entity
-        if (!m_request_manager->MakeRequest(
-            *m_worker_connections,
-            worker.value()->GetConnectionClientHash(),
-            RequestType::WorkerAddComponent,
-            add_component_request))
+        else
         {
-            m_database.RemoveComponent(
-                _worker_id,
-                _entity_id,
-                layer_id, 
-                _component_id);
-            return false;
+            Message::WorkerAddComponentRequest add_component_request;
+            add_component_request.entity_id         = _entity_id;
+            add_component_request.component_id      = _component_id;
+            add_component_request.component_payload = std::move(_component_payload); // Safe to move, this is the last usage
+
+            // Send a message to this worker to acknowledge him about receiving the component/entity
+            if (!m_request_manager->MakeRequest(
+                *m_worker_connections,
+                worker.value()->GetConnectionClientHash(),
+                RequestType::WorkerAddComponent,
+                add_component_request))
+            {
+                m_database.RemoveComponent(
+                    _worker_id,
+                    _entity_id,
+                    layer_id, 
+                    _component_id);
+                return false;
+            }
         }
     }
 
@@ -1080,6 +1061,7 @@ bool Jani::Runtime::OnWorkerRemoveComponent(
         _component_id);
     if (!entity)
     {
+        JaniWarning("Runtime -> OnWorkerRemoveComponent() failed to remove the component on the database for worker {} with entity id {}", _worker_id, _entity_id);
         return false;
     }
 
@@ -1096,10 +1078,13 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
 {
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
+    // TODO: Change this to accept a global variable that enabled deep validation
+    if (true)
     {
         auto entity = m_database.GetEntityById(_entity_id);
         if (!entity)
         {
+            JaniWarning("Runtime -> OnWorkerComponentUpdate() no entity exist with id {} (worker requester {})", _entity_id, _worker_id);
             return false;
         }
 
@@ -1107,6 +1092,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
         auto cell_worker = cell_info.GetWorkerForLayer(layer_id);
         if (!cell_worker)
         {
+            JaniTrace("Runtime -> OnWorkerComponentUpdate() no worker owner is available on layer {} for entity id {} (worker requester {})", layer_id, _entity_id, _worker_id);
             return false;
         }
 
@@ -1128,6 +1114,7 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
         _entity_world_position);
     if (!entity)
     {
+        JaniWarning("Runtime -> OnWorkerComponentUpdate() no worker owner is available on layer {} for entity id {} (worker requester {})", layer_id, _entity_id, _worker_id);
         return false;
     }
 
@@ -1150,13 +1137,16 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
     auto entity = m_database.GetEntityByIdMutable(_entity_id);
     if (!entity)
     {
+        JaniWarning("Runtime -> OnWorkerComponentInterestQueryUpdate() no entity exist with id {} (worker requester {})", _entity_id, _worker_id);
         return false;
     }
 
-    auto& cell_info  = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
-    auto cell_worker = cell_info.GetWorkerForLayer(m_layer_config.GetLayerIdForComponent(_component_id));
+    LayerId layer_id    = m_layer_config.GetLayerIdForComponent(_component_id);
+    auto&   cell_info   = m_world_controller->GetWorldCellInfo(entity.value()->GetWorldCellCoordinates());
+    auto    cell_worker = cell_info.GetWorkerForLayer(layer_id);
     if (!cell_worker)
     {
+        JaniTrace("Runtime -> OnWorkerComponentInterestQueryUpdate() no worker owner is available on layer {} for entity id {} (worker requester {})", layer_id, _entity_id, _worker_id);
         return false;
     }
 

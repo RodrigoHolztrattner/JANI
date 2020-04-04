@@ -401,10 +401,10 @@ namespace Jani
                     // Check if this client should be disconnected
                     if (time_elapsed_for_timeout_ms > m_timeout_ms * 8)
                     {
+                        std::cout << "Connection -> Deleting obsolete client connection with hash " << std::to_string(client_info.hash) << " because of a timeout of " << std::to_string(time_elapsed_for_timeout_ms) << "ms" << std::endl;
+
                         ikcp_release(client_info.kcp_instance);
                         m_server_clients.erase(client_iter++);
-
-                        std::cout << "Connection -> Deleting obsolete client connection" << std::endl;
                     }
                     else
                     {
@@ -845,7 +845,7 @@ namespace Jani
         bool        m_is_valid            = false;
         bool        m_is_waiting_for_ping = false;
 
-        uint32_t    m_timeout_ms     = 500;
+        uint32_t    m_timeout_ms     = 1500;
         uint32_t    m_ping_window_ms = 100;
 
         std::chrono::time_point<std::chrono::steady_clock> m_initial_timestamp             = std::chrono::steady_clock::now();

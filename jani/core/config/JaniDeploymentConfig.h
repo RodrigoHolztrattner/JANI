@@ -73,9 +73,46 @@ public: // MAIN METHODS //
     */
     bool UsesCentralizedWorldOrigin() const;
 
+    /*
+    * Return the runtime ip
+    */
+    const std::string& GetRuntimeIp() const;
+
+    /*
+    * Return the client worker listen port used by the runtime
+    */
+    uint32_t GetClientWorkerListenPort() const;
+
+    /*
+    * Return the server worker listen port used by the runtime
+    */
+    uint32_t GetServerWorkerListenPort() const;
+
+    /*
+    * Return the inspector listen port used by the runtime
+    */
+    uint32_t GetInspectorListenPort() const;
+
+    /*
+    * Return the number of threads that should be used in the runtime thread pool 
+    * Special cases:
+    * 
+    *       0 = only the main thread
+    *      -1 = up to the maximum number of cores
+    *
+    */
+    uint32_t GetThreadPoolSize() const;
+
 ////////////////////////
 private: // VARIABLES //
 ////////////////////////
+
+    std::string m_runtime_ip;
+    uint32_t    m_client_worker_listen_port = 0;
+    uint32_t    m_server_worker_listen_port = 0;
+    uint32_t    m_inspector_listen_port     = 0;
+
+    int32_t m_thread_pool_size = 0;
 
     bool     m_is_valid                      = false;
     bool     m_uses_centralized_world_origin = true;
