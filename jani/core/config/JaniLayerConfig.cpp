@@ -61,6 +61,20 @@ bool Jani::LayerConfig::Initialize(const std::string& _config_file_path)
             layer_info.maximum_workers = layer["maximum_workers"].get<uint32_t>();
         }
 
+        if (layer.find("permissions") != layer.end())
+        {
+            for (auto& permission : layer["permissions"])
+            {
+                if      (permission == "can_log")              layer_info.layer_permissions << LayerPermissionBits::CanLog;
+                else if (permission == "can_add_entity")       layer_info.layer_permissions << LayerPermissionBits::CanAddEntity;
+                else if (permission == "can_remove_entity")    layer_info.layer_permissions << LayerPermissionBits::CanRemoveEntity;
+                else if (permission == "can_add_component")    layer_info.layer_permissions << LayerPermissionBits::CanAddComponent;
+                else if (permission == "can_remove_component") layer_info.layer_permissions << LayerPermissionBits::CanRemoveComponent;
+                else if (permission == "can_update_component") layer_info.layer_permissions << LayerPermissionBits::CanUpdateComponent;
+                else if (permission == "can_update_interest")  layer_info.layer_permissions << LayerPermissionBits::CanUpdateInterest;
+            }
+        }
+
         LayerId layer_id = layer_info.unique_id;
         m_layers.insert({ layer_id, std::move(layer_info) });
     }

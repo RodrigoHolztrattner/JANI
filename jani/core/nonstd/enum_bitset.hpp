@@ -16,6 +16,9 @@ public:
     explicit enum_bitset(EnumType _enum_value) : m_bitset(static_cast<EnumBitsType>(_enum_value))
     {
     }
+    enum_bitset(const EnumType& _enum_value) : m_bitset(static_cast<EnumBitsType>(_enum_value))
+    {
+    }
 
     bool operator ==(EnumBitsType _bits) const
     {
@@ -39,13 +42,25 @@ public:
         return !(*this == _bits);
     }
 
-    enum_bitset operator <<(EnumType _enum)
+    enum_bitset& operator = (const EnumType& _enum_value)
+    {
+        m_bitset = static_cast<EnumBitsType>(_enum_value);
+        return *this;
+    }
+
+    enum_bitset& operator <<(EnumType _enum)
     {
         m_bitset = m_bitset | static_cast<EnumBitsType>(_enum);
         return *this;
     }
 
-    enum_bitset operator <<(EnumBitsType _bits)
+    enum_bitset& operator <<(EnumBitsType _bits)
+    {
+        m_bitset = m_bitset | _bits;
+        return *this;
+    }
+
+    enum_bitset& operator |=(EnumBitsType _bits)
     {
         m_bitset = m_bitset | _bits;
         return *this;

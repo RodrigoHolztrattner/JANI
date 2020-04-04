@@ -342,6 +342,14 @@ void Jani::Runtime::Update()
                             {
                                 return;
                             }
+                            
+                            if (!m_trust_server_workers
+                                && !(m_layer_config.GetLayerInfo(cell_worker.value()->GetLayerId()).layer_permissions & LayerPermissionBits::CanReceiveQueryResults))
+                            {
+                                // There is no need to log this occurrence since it's ok for a worker to not be able to receive
+                                // component queries even if they were set by a previous worker owner
+                                return;
+                            }
 
                             nonstd::transient_vector<std::pair<ComponentMask, nonstd::transient_vector<const ComponentPayload*>>> query_results;
 
@@ -819,11 +827,18 @@ bool Jani::Runtime::TryAllocateNewWorker(
 
 bool Jani::Runtime::OnWorkerLogMessage(
     RuntimeWorkerReference& _worker_instance,
-    WorkerId        _worker_id,
-    WorkerLogLevel  _log_level,
-    std::string     _log_title,
-    std::string     _log_message)
+    WorkerId                _worker_id,
+    WorkerLogLevel          _log_level,
+    std::string             _log_title,
+    std::string             _log_message)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanLog))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerLogMessage() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     switch (_log_level)
     {
         case WorkerLogLevel::Trace: Jani::MessageLog().Trace("Worker {} -> {}: {}", _worker_id, _log_title, _log_message); break;
@@ -862,6 +877,13 @@ bool Jani::Runtime::OnWorkerAddEntity(
         }
     }
     */
+
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanAddEntity))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerAddEntity() without having permission, ignoring request", _worker_id);
+        return false;
+    }
 
     // Create the new entity on the database
     auto entity = m_database.AddEntity(_worker_id, _entity_id, _entity_payload); // Do not move since it will be used below
@@ -935,6 +957,13 @@ bool Jani::Runtime::OnWorkerRemoveEntity(
     WorkerId        _worker_id,
     EntityId        _entity_id)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanRemoveEntity))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerRemoveEntity() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     if (!m_database.RemoveEntity(_worker_id, _entity_id))
     {
         JaniWarning("Runtime -> OnWorkerRemoveEntity() failed for worker {} with entity id {}", _worker_id, _entity_id);
@@ -975,6 +1004,13 @@ bool Jani::Runtime::OnWorkerAddComponent(
     ComponentId             _component_id,
     ComponentPayload        _component_payload)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanAddComponent))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerAddComponent() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     // Theoretically this below isn't necessary because now we can keep track of entities that
@@ -1045,6 +1081,13 @@ bool Jani::Runtime::OnWorkerRemoveComponent(
     EntityId        _entity_id,
     ComponentId     _component_id)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanRemoveComponent))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerRemoveComponent() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     // Get the worker owner for this component
@@ -1076,6 +1119,13 @@ bool Jani::Runtime::OnWorkerComponentUpdate(
     ComponentPayload             _component_payload,
     std::optional<WorldPosition> _entity_world_position)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanUpdateComponent))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerComponentUpdate() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     LayerId layer_id = m_layer_config.GetLayerIdForComponent(_component_id);
 
     // TODO: Change this to accept a global variable that enabled deep validation
@@ -1134,6 +1184,13 @@ bool Jani::Runtime::OnWorkerComponentInterestQueryUpdate(
     ComponentId                 _component_id,
     std::vector<ComponentQuery> _component_queries)
 {
+    if (!m_trust_server_workers
+        && !(m_layer_config.GetLayerInfo(_worker_instance.GetLayerId()).layer_permissions & LayerPermissionBits::CanUpdateInterest))
+    {
+        JaniWarning("Runtime -> worker {} called OnWorkerComponentInterestQueryUpdate() without having permission, ignoring request", _worker_id);
+        return false;
+    }
+
     auto entity = m_database.GetEntityByIdMutable(_entity_id);
     if (!entity)
     {

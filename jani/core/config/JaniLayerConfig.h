@@ -31,6 +31,7 @@ class LayerConfig
         uint32_t                 maximum_entities_per_worker = std::numeric_limits<uint32_t>::max();
         uint32_t                 maximum_workers             = std::numeric_limits<uint32_t>::max();
         std::set<ComponentId>    components;
+        LayerPermissionFlags     layer_permissions           = LayerPermissionBits::None;
     };
 
     struct ComponentAttributeInfo

@@ -416,6 +416,8 @@ private: // VARIABLES //
     const LayerConfig&         m_layer_config;
     const WorkerSpawnerConfig& m_worker_spawner_config;
 
+    bool m_trust_server_workers = false;
+
     std::unique_ptr<RuntimeWorldController> m_world_controller;
 
     std::unique_ptr<WorkerPool> m_thread_pool;
