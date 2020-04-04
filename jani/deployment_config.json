@@ -1,4 +1,9 @@
 {
+    "runtime_ip": "127.0.0.1", 
+    "client_worker_listen_port": 8080, 
+    "server_worker_listen_port": 13051,
+    "inspector_listen_port": 14051,
+    "thread_pool_size": 7,
     "uses_centralized_world_origin": true, 
     "maximum_world_length": 32768, 
     "worker_length": 32
