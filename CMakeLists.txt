@@ -18,6 +18,7 @@ set(INSPECTOR_PROJECT_NAME "jani_inspector")
 project(${INSPECTOR_PROJECT_NAME} VERSION 1.0.0 DESCRIPTION "blob")
 
 add_definitions("-DCPP_SRC_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\"")
+add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING)
 
 ############
 # INCLUDES #

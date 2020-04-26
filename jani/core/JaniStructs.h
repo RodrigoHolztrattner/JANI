@@ -93,7 +93,8 @@ namespace Jani
             return glm::vec2(x, y);
         }
 
-        int32_t x, y;
+        int32_t x = 0;
+        int32_t y = 0;
     };
 
     struct WorldPositionHasher

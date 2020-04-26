@@ -30,6 +30,10 @@ namespace Jani
     class LayerConfig;
     class WorkerSpawnerConfig;
 
+    class Region;
+    class RegionSaver;
+    class RegionLoader;
+
     using WorldCellCoordinates           = WorldPosition;
     using WorldCellCoordinatesHasher     = WorldPositionHasher;
     using WorldCellCoordinatesComparator = WorldPositionComparator;
