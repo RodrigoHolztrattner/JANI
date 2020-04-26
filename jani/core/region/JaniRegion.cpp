@@ -19,7 +19,7 @@ Jani::Region::~Region()
 {
 }
 
-std::optional<Jani::Region::EntityId> Jani::Region::InsertEntityPayload(Jani::EntityPayload&& _payload, std::vector<uint8_t> _custom_payload)
+std::optional<Jani::Region::EntityId> Jani::Region::InsertEntityPayload(Jani::EntityPayload&& _payload, std::vector<int8_t> _custom_payload)
 {
     auto current_entity_region_id = m_available_entity_id++;
 

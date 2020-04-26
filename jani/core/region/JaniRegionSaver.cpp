@@ -13,7 +13,7 @@ Jani::RegionSaver::~RegionSaver()
 {
 }
 
-bool Jani::RegionSaver::SaveRegion(Jani::Region&& _region)
+bool Jani::RegionSaver::SaveRegion(Jani::Region& _region)
 {
     if (_region.GetMaximumWorldLength() != m_maximum_world_length || !_region.IsValid())
     {

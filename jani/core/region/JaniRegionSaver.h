@@ -35,7 +35,7 @@ public: // MAIN METHODS //
     /*
     *
     */
-    bool SaveRegion(Jani::Region&& _region);
+    bool SaveRegion(Jani::Region& _region);
 
 ////////////////////////
 private: // VARIABLES //

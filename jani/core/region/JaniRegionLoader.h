@@ -36,7 +36,7 @@ public: // MAIN METHODS //
     /*
     *
     */
-    std::optional<Jani::Region> LoadRegion(Jani::WorldCellCoordinates _cell_coordinates);
+    std::unique_ptr<Jani::Region> LoadRegion(Jani::WorldCellCoordinates _cell_coordinates);
 
 ////////////////////////
 private: // VARIABLES //

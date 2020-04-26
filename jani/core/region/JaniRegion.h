@@ -8,6 +8,12 @@
 //////////////
 #include "../JaniInternal.h"
 
+#include <vector>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <map>
+
 ///////////////
 // NAMESPACE //
 ///////////////
@@ -32,9 +38,11 @@ private:
 
     struct EntityData
     {
-        EntityId             entity_region_id = std::numeric_limits<EntityId>::max();
-        Jani::EntityPayload  entity_payload;
-        std::vector<uint8_t> entity_custom_payload;
+        Serializable();
+
+        EntityId            entity_region_id = std::numeric_limits<EntityId>::max();
+        Jani::EntityPayload entity_payload;
+        std::vector<int8_t> entity_custom_payload;
     };
 
 //////////////////////////
@@ -52,7 +60,7 @@ public: // MAIN METHODS //
     /*
     *
     */
-    std::optional<EntityId> InsertEntityPayload(Jani::EntityPayload&& _payload, std::vector<uint8_t> _custom_payload = std::vector<uint8_t>());
+    std::optional<EntityId> InsertEntityPayload(Jani::EntityPayload&& _payload, std::vector<int8_t> _custom_payload = std::vector<int8_t>());
 
     /*
     *
@@ -67,7 +75,7 @@ public: // MAIN METHODS //
     /*
     *
     */
-    const std::vector<std::unique_ptr<EntityData>>& GetEntityPayloads() const;
+    const std::vector<std::unique_ptr<Region::EntityData>>& GetEntityPayloads() const;
 
     /*
     *

@@ -12,32 +12,32 @@ Jani::RegionLoader::~RegionLoader()
 {
 }
 
-std::optional<Jani::Region> Jani::RegionLoader::LoadRegion(Jani::WorldCellCoordinates _cell_coordinates)
+std::unique_ptr<Jani::Region> Jani::RegionLoader::LoadRegion(Jani::WorldCellCoordinates _cell_coordinates)
 {
     std::ifstream os(Jani::Region::ComposeRegionName(_cell_coordinates) + ".jr", std::ios::binary);
 
     if (!os.is_open() || !os.good())
     {
-        return std::nullopt;
+        return nullptr;
     }
 
-    Jani::Region out_region;
+    std::unique_ptr<Jani::Region> out_region = std::make_unique<Jani::Region>();
     {
         cereal::BinaryInputArchive archive(os);
 
         try
         {
-            archive(out_region);
+            archive(*out_region);
         }
         catch (...)
         {
-            return std::nullopt;
+            return nullptr;
         }
     }
 
-    if (out_region.GetMaximumWorldLength() != m_maximum_world_length || !out_region.IsValid())
+    if (out_region->GetMaximumWorldLength() != m_maximum_world_length || !out_region->IsValid())
     {
-        return std::nullopt;
+        return nullptr;
     }
 
     return std::move(out_region);
