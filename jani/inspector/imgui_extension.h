@@ -136,7 +136,7 @@ IMGUI_API static void EndCollapsingHeaderColored(ImVec4 _background_color = ImGu
     float height_padding = ImGui::GetStyle().ItemSpacing.y;
     ImVec2 group_size = ImGui::GetItemRectSize();
     ImVec2 initial_pos = ImGui::GetCursorScreenPos() - ImVec2(0.0f, group_size.y + height_padding * 3.0f + 2.0f);
-    ImVec2 final_pos = ImVec2(ImGui::GetContentRegionMaxScreen().x - width_padding, ImGui::GetCursorScreenPos().y);
+    ImVec2 final_pos = ImVec2(ImGui::GetContentRegionMaxAbs().x - width_padding, ImGui::GetCursorScreenPos().y);
 
     ImGui::GetWindowDrawList()->ChannelsSetCurrent(0);
     ImGui::GetWindowDrawList()->AddRectFilled(initial_pos, final_pos, ImColor(_background_color), 5.0f, ImDrawCornerFlags_Bot);

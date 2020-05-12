@@ -224,7 +224,7 @@ void Jani::Inspector::MapWindow::Draw(
         }
     }
 
-    if (ImGui::IsMouseClicked(0) && ImGui::IsMouseHoveringWindow())
+    if (ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered())
     {
         m_is_scrolling = true;
     }
@@ -239,7 +239,7 @@ void Jani::Inspector::MapWindow::Draw(
         m_pure_scroll = m_pure_scroll + ImGui::GetIO().MouseDelta / m_zoom_level;
     }
 
-    if (ImGui::GetIO().MouseWheel && ImGui::IsMouseHoveringWindow())
+    if (ImGui::GetIO().MouseWheel && ImGui::IsWindowHovered())
     {
         m_zoom_level += ImGui::GetIO().MouseWheel / 10.0f;
         m_zoom_level = std::max(2.0f, m_zoom_level);

@@ -72,7 +72,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/RodrigoHolztrattner/imgui
-  GIT_TAG        origin/docking
+  GIT_TAG        origin/docking-2020-05-12
 )
 
 # Magic enum

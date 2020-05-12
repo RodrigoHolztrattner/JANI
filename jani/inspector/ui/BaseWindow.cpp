@@ -199,7 +199,7 @@ void Jani::Inspector::BaseWindow::DrawTitleBar(bool _edit_mode, std::optional<Wi
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     if (ImGui::BeginChild("Title Bar", ImVec2(ImGui::GetWindowSize().x, m_header_height), false, ImGuiWindowFlags_NoDecoration))
     {
-        if (ImGui::IsMouseClicked(0) && ImGui::IsMouseHoveringWindow())
+        if (ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered())
         {
             m_is_moving = true;
         }
@@ -324,7 +324,7 @@ void Jani::Inspector::BaseWindow::DrawTitleBar(bool _edit_mode, std::optional<Wi
 
 void Jani::Inspector::BaseWindow::ProcessResize()
 {
-    if (ImGui::IsMouseClicked(0) && ImGui::IsMouseHoveringWindow())
+    if (ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered())
     {
         float resize_bar_length = 10.0f;
 
