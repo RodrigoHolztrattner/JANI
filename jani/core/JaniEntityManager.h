@@ -9,28 +9,31 @@
 #include "JaniConfig.h"
 #include "JaniWorker.h" // Necessary since we use templated functions
 
+#include <optional>
+#include <type_traits>
+
 ///////////////
 // NAMESPACE //
 ///////////////
 
 #define DeclareTemplateIntrospectionMethod(Method) \
-template<typename T> \
+template<typename C> \
 struct has_##Method##_method \
 { \
 private: \
-    typedef std::true_type yes; \
-    typedef std::false_type no; \
+    typedef char yes_type[1]; \
+    typedef char no_type[2]; \
  \
-    template<typename U> static auto test(int) -> decltype(sizeof(&std::declval<T>().##Method) > 0, yes()); \
+    template <typename C> static yes_type& test(decltype(&C::##Method)); \
  \
-    template<typename> static no test(...); \
+    template <typename C> static no_type& test(...); \
  \
 public: \
  \
-    static constexpr bool value = std::is_same<decltype(test<T>(0)), yes>::value; \
+    enum { value = sizeof(test<C>(0)) == sizeof(yes_type) }; \
 };
 
-#define TemplateMethodExistent(T, Method) typename std::enable_if<has_##Method##_method<ComponentClass>::value>::type* = nullptr
+#define TemplateMethodExistent(T, Method)   typename std::enable_if<has_##Method##_method<ComponentClass>::value>::type* = nullptr
 #define TemplateMethodInexistent(T, Method) typename std::enable_if<!has_##Method##_method<ComponentClass>::value>::type* = nullptr
 
 DeclareTemplateIntrospectionMethod(serialize);
@@ -67,6 +70,10 @@ private:
         OnComponentSerializeFunction     serialize_component_function;
         OnComponentWorldPositionFunction component_world_position_function;
     };
+
+public:
+
+    using LocalEntityId = decltype(std::declval<entityx::Entity::Id>().index());
 
 //////////////////////////
 public: // CONSTRUCTORS //
@@ -190,8 +197,7 @@ public: // MAIN METHODS //
     * This function in particular requires the component to be a POD type
     */
     template <typename ComponentClass,
-        TemplateMethodInexistent(ComponentClass, serialize)/*, 
-        typename std::enable_if<std::is_pod<ComponentClass>::value, void>::type*/>
+        TemplateMethodInexistent(ComponentClass, serialize)>
         bool RegisterComponent(ComponentId _component_id)
     {
         if (_component_id >= MaximumEntityComponents)
@@ -322,7 +328,7 @@ public: // MAIN METHODS //
     * Returns if the local entity creation was successfully
     */
     template <class... Components>
-    bool CreateLocalEntity(Components&&... _components)
+    std::optional<LocalEntityId> CreateLocalEntity(Components&&... _components)
     {
         // TODO: Check permissions
 
@@ -345,8 +351,15 @@ public: // MAIN METHODS //
 
         [](...) {}((new_entityx.assign<Components>(_components), 0)...);
 
-        return true;
+        return new_entityx_index;
     }
+
+    /*
+    * Returns a local entity with the given identifier
+    * Cannot use a const version because the returned entity uses internally this manager on its
+    * member functions
+    */
+    std::optional<Entity> GetLocalEntityFromId(LocalEntityId _local_entity_id);
 
     /*
     * Destroy an entity, be it a local or server-wide entity
@@ -376,6 +389,8 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool AddComponent(const Entity& _entity, ComponentClass&& _component)
     {
+        // TODO: check if the component is owned, if not just add it directly to the entityx object
+
         auto entity_info = GetEntityInfoMutable(_entity);
         if (entity_info)
         {

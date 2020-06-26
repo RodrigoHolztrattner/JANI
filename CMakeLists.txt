@@ -19,6 +19,8 @@ project(${INSPECTOR_PROJECT_NAME} VERSION 1.0.0 DESCRIPTION "blob")
 
 add_definitions("-DCPP_SRC_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\"")
 
+add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING)
+
 ############
 # INCLUDES #
 ############
@@ -71,7 +73,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   imgui
   GIT_REPOSITORY https://github.com/RodrigoHolztrattner/imgui
-  GIT_TAG        origin/docking
+  GIT_TAG        origin/docking-2020-05-12
 )
 
 # Magic enum

@@ -144,6 +144,13 @@ public: // MAIN METHODS //
         uint32_t    _server_port);
 
     /*
+    * Create this worker without any server connection
+    * If this initialization is chosen, you cannot rely on any connection
+    * dependent function as it will lead to undefined behavior
+    */
+    bool InitializeWorkerOffline();
+
+    /*
     * Returns if this worker is connected to the game server
     */
     bool IsConnected() const;

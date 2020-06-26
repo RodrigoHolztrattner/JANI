@@ -23,7 +23,8 @@
 #include <cereal/archives/binary.hpp>
 #include "span.hpp"
 
-#include <ikcp.h>
+#include <ikcp.h> 
+#undef INLINE
 
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>

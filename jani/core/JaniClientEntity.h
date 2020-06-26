@@ -9,6 +9,8 @@
 #include "JaniConfig.h"
 #include "JaniEntityManager.h"
 
+#include <entityx/entityx.h>
+
 ///////////////
 // NAMESPACE //
 ///////////////
@@ -22,6 +24,8 @@ JaniNamespaceBegin(Jani)
 class ClientEntity
 {
     friend EntityManager;
+
+    using EntityId = decltype(std::declval<entityx::Entity::Id>().index());
 
 //////////////////////////
 public: // CONSTRUCTORS //
@@ -41,7 +45,7 @@ public: // MAIN METHODS //
     * Returns the local id associated with this entity, if it's valid
     * This index does not represents the server-wide entity id
     */
-    std::optional<uint32_t> GetLocalId() const // The type must match the one returned by id().index() from entityx
+    std::optional<EntityId> GetLocalId() const
     {
         return m_local_id;
     }
@@ -166,7 +170,7 @@ private: // VARIABLES //
 ////////////////////////
 
     std::reference_wrapper<EntityManager> m_entity_manager;
-    std::optional<uint32_t>               m_local_id; // The type must match the one returned by id().index() from entityx
+    std::optional<EntityId>               m_local_id;
 };
 
 // Jani

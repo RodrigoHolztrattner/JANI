@@ -199,6 +199,18 @@ bool Jani::EntityManager::DestroyEntity(const Entity& _entity)
     return false;
 }
 
+std::optional<Jani::Entity> Jani::EntityManager::GetLocalEntityFromId(LocalEntityId _local_entity_id)
+{
+    if (_local_entity_id < m_entity_infos.size() 
+        && m_entity_infos[_local_entity_id].has_value()
+        && m_entity_infos[_local_entity_id]->is_pure_local)
+    {
+        return Jani::Entity(const_cast<EntityManager&>(*this), _local_entity_id);
+    }
+
+    return std::nullopt;
+}
+
 bool Jani::EntityManager::UpdateInterestQuery(
     const Entity&                _entity,
     ComponentId                   _target_component_id,

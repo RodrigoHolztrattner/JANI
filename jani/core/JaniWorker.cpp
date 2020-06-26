@@ -30,6 +30,11 @@ bool Jani::Worker::InitializeWorker(
     return true;
 }
 
+bool Jani::Worker::InitializeWorkerOffline()
+{
+    return true;
+}
+
 bool Jani::Worker::IsConnected() const
 {
     if (!m_bridge_connection)

@@ -38,7 +38,8 @@
 #include "span.hpp"
 #include "bitset_iter.h"
 
-#include <ikcp.h>
+#include <ikcp.h> 
+#undef INLINE
 
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
@@ -78,7 +79,7 @@
 #define JaniNamespaceEnd(name)                    }
 
 // Set all members from the current struct/class as serializable
-#define Serializable()                                                      \
+#define JaniSerializable()                                                  \
 template <class Archive>                                                    \
 void serialize(Archive& ar)                                                 \
 {                                                                           \
@@ -113,7 +114,7 @@ using                 ComponentMask           = std::bitset<MaximumEntityCompone
 
 struct WorldPosition
 {
-    Serializable();
+    JaniSerializable();
 
     bool operator==(const WorldPosition& rhs)
     {
@@ -175,14 +176,14 @@ using WorldCellCoordinatesComparator = WorldPositionComparator;
 
 struct WorldArea
 {
-    Serializable();
+    JaniSerializable();
 
     uint32_t width, height;
 };
 
 struct WorldRect
 {
-    Serializable();
+    JaniSerializable();
 
     uint32_t ManhattanDistanceFromPosition(WorldPosition _position) const
     {
@@ -325,7 +326,7 @@ struct WorkerRequestResult
 
 struct ComponentPayload
 {
-    Serializable();
+    JaniSerializable();
 
     template <typename PayloadType>
     void SetPayload(const PayloadType& _payload)
@@ -348,7 +349,7 @@ struct ComponentPayload
 
 struct EntityPayload
 {
-    Serializable();
+    JaniSerializable();
 
     std::vector<ComponentPayload> component_payloads;
 };
@@ -1058,7 +1059,7 @@ private:
 
 struct ComponentQueryInstruction
 {   
-    Serializable();
+    JaniSerializable();
 
     std::optional<ComponentMask> component_constraints;
     std::optional<WorldArea>     area_constraint;
@@ -1118,7 +1119,7 @@ struct ComponentQueryInstruction
 
 struct ComponentQuery
 {
-    Serializable();
+    JaniSerializable();
 
     friend Runtime;
 
@@ -1229,7 +1230,7 @@ JaniNamespaceBegin(Message)
 
 struct RuntimeClientAuthenticationRequest
 {
-    Serializable();
+    JaniSerializable();
 
     char     ip[16];
     uint32_t port;
@@ -1241,14 +1242,14 @@ struct RuntimeClientAuthenticationRequest
 
 struct RuntimeClientAuthenticationResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool succeed = false;
 };
 
 struct RuntimeAuthenticationRequest
 {
-    Serializable();
+    JaniSerializable();
 
     char     ip[16];
     uint32_t port;
@@ -1259,7 +1260,7 @@ struct RuntimeAuthenticationRequest
 
 struct RuntimeAuthenticationResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool     succeed              = false;
     bool     use_spatial_area     = false;
@@ -1268,7 +1269,7 @@ struct RuntimeAuthenticationResponse
 
 struct WorkerSpawnRequest
 {
-    Serializable();
+    JaniSerializable();
 
     std::string runtime_ip;
     uint32_t    runtime_worker_connection_port = 0;
@@ -1277,7 +1278,7 @@ struct WorkerSpawnRequest
 
 struct WorkerSpawnResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool succeed = false;
 };
@@ -1285,7 +1286,7 @@ struct WorkerSpawnResponse
 // RuntimeLogMessage
 struct RuntimeLogMessageRequest
 {
-    Serializable();
+    JaniSerializable();
 
     WorkerLogLevel log_level;
     std::string    log_title;
@@ -1295,7 +1296,7 @@ struct RuntimeLogMessageRequest
 // RuntimeReserveEntityIdRange
 struct RuntimeReserveEntityIdRangeRequest
 {
-    Serializable();
+    JaniSerializable();
 
     uint32_t total_ids;
 };
@@ -1303,7 +1304,7 @@ struct RuntimeReserveEntityIdRangeRequest
 // RuntimeReserveEntityIdRange
 struct RuntimeReserveEntityIdRangeResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool succeed      = false;
     EntityId id_begin = std::numeric_limits<EntityId>::max();
@@ -1313,7 +1314,7 @@ struct RuntimeReserveEntityIdRangeResponse
 // RuntimeAddEntity
 struct RuntimeAddEntityRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId                     entity_id;
     EntityPayload                entity_payload;
@@ -1323,7 +1324,7 @@ struct RuntimeAddEntityRequest
 // RuntimeRemoveEntity
 struct RuntimeRemoveEntityRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId entity_id;
 };
@@ -1331,7 +1332,7 @@ struct RuntimeRemoveEntityRequest
 // RuntimeAddComponent
 struct RuntimeAddComponentRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId         entity_id;
     ComponentId      component_id;
@@ -1341,7 +1342,7 @@ struct RuntimeAddComponentRequest
 // RuntimeRemoveComponent
 struct RuntimeRemoveComponentRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId    entity_id;
     ComponentId component_id;
@@ -1350,7 +1351,7 @@ struct RuntimeRemoveComponentRequest
 // RuntimeComponentUpdate
 struct RuntimeComponentUpdateRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId                     entity_id;
     ComponentId                  component_id;
@@ -1361,7 +1362,7 @@ struct RuntimeComponentUpdateRequest
 // RuntimeComponentInterestQueryUpdate
 struct RuntimeComponentInterestQueryUpdateRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId                    entity_id;
     ComponentId                 component_id;
@@ -1371,7 +1372,7 @@ struct RuntimeComponentInterestQueryUpdateRequest
 // RuntimeComponentInterestQuery
 struct RuntimeComponentInterestQueryRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId    entity_id;
     ComponentId component_id;
@@ -1380,7 +1381,7 @@ struct RuntimeComponentInterestQueryRequest
 // RuntimeComponentInterestQuery
 struct RuntimeComponentInterestQueryResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool                          succeed = false;
     ComponentMask                 entity_component_mask;
@@ -1390,7 +1391,7 @@ struct RuntimeComponentInterestQueryResponse
 // RuntimeInspectorQuery
 struct RuntimeInspectorQueryRequest
 {
-    Serializable();
+    JaniSerializable();
 
     uint64_t       window_id = std::numeric_limits<uint64_t>::max();
     WorldPosition  query_center_location;
@@ -1400,7 +1401,7 @@ struct RuntimeInspectorQueryRequest
 // RuntimeInspectorQuery
 struct RuntimeInspectorQueryResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool                          succeed   = false;
     uint64_t                      window_id = std::numeric_limits<uint64_t>::max();
@@ -1412,7 +1413,7 @@ struct RuntimeInspectorQueryResponse
 
 struct RuntimeComponentQueryResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool                          succeed = false;
     std::vector<ComponentPayload> component_payloads;
@@ -1421,7 +1422,7 @@ struct RuntimeComponentQueryResponse
 // RuntimeWorkerReportAcknowledge
 struct RuntimeWorkerReportAcknowledgeRequest
 {
-    Serializable();
+    JaniSerializable();
 
     uint64_t total_data_sent_per_second     = 0;
     uint64_t total_data_received_per_second = 0;
@@ -1429,7 +1430,7 @@ struct RuntimeWorkerReportAcknowledgeRequest
 
 struct RuntimeDefaultResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool succeed = false;
 };
@@ -1437,7 +1438,7 @@ struct RuntimeDefaultResponse
 // WorkerLayerAuthorityGain
 struct WorkerLayerAuthorityGainRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId entity_id = std::numeric_limits<EntityId>::max();
 };
@@ -1445,7 +1446,7 @@ struct WorkerLayerAuthorityGainRequest
 // WorkerLayerAuthorityLost
 struct WorkerLayerAuthorityLostRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId entity_id = std::numeric_limits<EntityId>::max();
 };
@@ -1453,7 +1454,7 @@ struct WorkerLayerAuthorityLostRequest
 // WorkerAddComponent
 struct WorkerAddComponentRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId         entity_id    = std::numeric_limits<EntityId>::max();
     ComponentId      component_id = std::numeric_limits<ComponentId>::max();
@@ -1463,7 +1464,7 @@ struct WorkerAddComponentRequest
 // WorkerRemoveComponent
 struct WorkerRemoveComponentRequest
 {
-    Serializable();
+    JaniSerializable();
 
     EntityId    entity_id    = std::numeric_limits<EntityId>::max();
     ComponentId component_id = std::numeric_limits<ComponentId>::max();
@@ -1471,7 +1472,7 @@ struct WorkerRemoveComponentRequest
 
 struct WorkerDefaultResponse
 {
-    Serializable();
+    JaniSerializable();
 
     bool succeed = false;
 };
@@ -1479,7 +1480,7 @@ struct WorkerDefaultResponse
 // RuntimeGetEntitiesInfo
 struct RuntimeGetEntitiesInfoRequest
 {
-    Serializable();
+    JaniSerializable();
 
     bool dummy = false;
 };
@@ -1489,7 +1490,7 @@ struct RuntimeGetEntitiesInfoResponse
 {
     using EntityInfo = std::tuple<EntityId, WorldPosition, WorkerId, std::bitset<MaximumEntityComponents>>;
 
-    Serializable();
+    JaniSerializable();
 
     bool                    succeed = false;
     std::vector<EntityInfo> entities_infos;
@@ -1498,7 +1499,7 @@ struct RuntimeGetEntitiesInfoResponse
 // RuntimeGetCellsInfos
 struct RuntimeGetCellsInfosRequest
 {
-    Serializable();
+    JaniSerializable();
 
     bool dummy = false;
 };
@@ -1508,7 +1509,7 @@ struct RuntimeGetCellsInfosResponse
 {
     using CellInfo = std::tuple<WorkerId, LayerId, WorldRect, WorldCellCoordinates, uint32_t>;
 
-    Serializable();
+    JaniSerializable();
 
     bool                  succeed = false;
     std::vector<CellInfo> cells_infos;
@@ -1517,7 +1518,7 @@ struct RuntimeGetCellsInfosResponse
 // RuntimeGetWorkersInfos
 struct RuntimeGetWorkersInfosRequest
 {
-    Serializable();
+    JaniSerializable();
 
     bool dummy = false;
 };
@@ -1527,7 +1528,7 @@ struct RuntimeGetWorkersInfosResponse
 {
     using WorkerInfo = std::tuple<WorkerId, uint32_t, LayerId, uint64_t, uint64_t, uint64_t, uint64_t>;
 
-    Serializable();
+    JaniSerializable();
 
     bool                    succeed = false;
     std::vector<WorkerInfo> workers_infos;
