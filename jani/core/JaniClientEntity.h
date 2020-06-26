@@ -25,8 +25,6 @@ class ClientEntity
 {
     friend EntityManager;
 
-    using EntityId = decltype(std::declval<entityx::Entity::Id>().index());
-
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
@@ -45,7 +43,7 @@ public: // MAIN METHODS //
     * Returns the local id associated with this entity, if it's valid
     * This index does not represents the server-wide entity id
     */
-    std::optional<EntityId> GetLocalId() const
+    std::optional<LocalEntityId> GetLocalId() const
     {
         return m_local_id;
     }
@@ -170,7 +168,7 @@ private: // VARIABLES //
 ////////////////////////
 
     std::reference_wrapper<EntityManager> m_entity_manager;
-    std::optional<EntityId>               m_local_id;
+    std::optional<LocalEntityId>          m_local_id;
 };
 
 // Jani

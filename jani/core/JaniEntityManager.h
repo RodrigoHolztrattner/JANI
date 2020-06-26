@@ -71,10 +71,6 @@ private:
         OnComponentWorldPositionFunction component_world_position_function;
     };
 
-public:
-
-    using LocalEntityId = decltype(std::declval<entityx::Entity::Id>().index());
-
 //////////////////////////
 public: // CONSTRUCTORS //
 //////////////////////////
