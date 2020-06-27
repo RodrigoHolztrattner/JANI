@@ -125,6 +125,31 @@ namespace Jani
     };
 }
 
+#define JaniTrace(fmt, ...)                                                                         \
+{                                                                                                   \
+    {Jani::MessageLog().Trace(fmt, ##__VA_ARGS__);}                                                 \
+}
+
+#define JaniInfo(fmt, ...)                                                                          \
+{                                                                                                   \
+    {Jani::MessageLog().Info(fmt, ##__VA_ARGS__);}                                                  \
+}
+
+#define JaniWarning(fmt, ...)                                                                       \
+{                                                                                                   \
+    {Jani::MessageLog().Warning(fmt, ##__VA_ARGS__);}                                               \
+}
+
+#define JaniError(fmt, ...)                                                                         \
+{                                                                                                   \
+    {Jani::MessageLog().Error(fmt, ##__VA_ARGS__);}                                                 \
+}
+
+#define JaniCritical(fmt, ...)                                                                      \
+{                                                                                                   \
+    {Jani::MessageLog().Critical(fmt, ##__VA_ARGS__);}                                              \
+}
+
 #define JaniLogOnce(fmt, ...)                                                                       \
 {                                                                                                   \
     static std::once_flag once_flag;                                                                \
@@ -147,6 +172,16 @@ namespace Jani
 {                                                                                                   \
     static std::once_flag once_flag;                                                                \
     std::call_once(once_flag, []() { Jani::MessageLog().Critical(fmt, ##__VA_ARGS__); });           \
+}
+
+#define JaniTraceIfTrue(expression, fmt, ...)                                                       \
+{                                                                                                   \
+    {if((expression)) Jani::MessageLog().Trace(fmt, ##__VA_ARGS__);}                                \
+}
+
+#define JaniTraceOnFail(expression, fmt, ...)                                                       \
+{                                                                                                   \
+    {if(!(expression)) Jani::MessageLog().Trace(fmt, ##__VA_ARGS__);}                               \
 }
 
 #define JaniLogIfTrue(expression, fmt, ...)                                                         \

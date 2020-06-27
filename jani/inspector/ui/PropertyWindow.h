@@ -6,7 +6,7 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 #include "BaseWindow.h"
 #include "..\InspectorCommon.h"
 

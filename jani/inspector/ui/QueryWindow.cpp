@@ -5,6 +5,7 @@
 #include "..\InspectorManager.h"
 #include "imgui.h"
 #include "..\imgui_extension.h"
+#include "nonstd/bitset_iter.h"
 
 Jani::Inspector::QueryWindow::QueryWindow(InspectorManager& _inspector_manager) : BaseWindow(_inspector_manager, "Query Editor")
 {

@@ -5,8 +5,17 @@
             "id": 0, 
             "user_layer": false, 
             "use_spatial_area": true, 
-            "maximum_entities_per_worker": 20, 
-            "maximum_workers": -1
+            "maximum_entities_per_worker": 40, 
+            "maximum_workers": -1, 
+            "permissions": [
+                "can_log", 
+                "can_add_entity", 
+                "can_remove_entity", 
+                "can_add_component", 
+                "can_remove_component", 
+                "can_update_component", 
+                "can_update_interest"
+            ]
         }, 
         {
             "name": "brain",
@@ -14,7 +23,16 @@
             "user_layer": false, 
             "use_spatial_area": false, 
             "maximum_entities_per_worker": -1, 
-            "maximum_workers": 1
+            "maximum_workers": 1, 
+            "permissions": [
+                "can_log", 
+                "can_add_entity", 
+                "can_remove_entity", 
+                "can_add_component", 
+                "can_remove_component", 
+                "can_update_component", 
+                "can_update_interest"
+            ]
         }
     ], 
     "components": [

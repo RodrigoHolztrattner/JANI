@@ -1,10 +1,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Filename: main.cpp
 ////////////////////////////////////////////////////////////////////////////////
-#include "JaniConfig.h"
-#include "JaniWorker.h"
-#include "JaniEntityManager.h"
-#include "JaniClientEntity.h"
+#include "JaniInternal.h"
+#include "worker/JaniWorker.h"
+#include "worker/JaniEntityManager.h"
+#include "worker/JaniClientEntity.h"
 
 LONG WINAPI MyUnhandledExceptionFilter(PEXCEPTION_POINTERS exception)
 {
@@ -73,6 +73,22 @@ int main(int _argc, char* _argv[])
     entity_manager->RegisterComponent<PositionComponent>(0);
     entity_manager->RegisterComponent<NpcComponent>(1);
 
+    entity_manager->RegisterOnEntityCreatedCallback(
+        [&entity_manager](Jani::Entity _entity) -> void
+        {
+            Jani::ComponentQuery component_query;
+            auto* query_instruction = component_query
+                .QueryComponent(entity_manager->GetRegisteredComponentId<PositionComponent>())
+                .WithFrequency(Jani::QueryUpdateFrequency::Max)
+                .Begin();
+
+            auto and_query = query_instruction->And();
+            and_query.first->EntitiesInRadius(30.0f);
+            and_query.second->RequireComponent(entity_manager->GetRegisteredComponentId<PositionComponent>());
+
+            _entity.UpdateInterestQuery<PositionComponent>(std::move(component_query));
+        });
+
     if (!worker->InitializeWorker(runtime_ip, runtime_listen_port))
     {
         Jani::MessageLog().Critical("Worker -> Unable to initialize worker");
@@ -81,7 +97,7 @@ int main(int _argc, char* _argv[])
     bool authenticated = false;
 
     worker->RequestAuthentication().OnResponse(
-        [&](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
+        [&authenticated](const Jani::Message::RuntimeAuthenticationResponse& _response, bool _timeout)
         {
             if (!_response.succeed)
             {
@@ -127,7 +143,7 @@ int main(int _argc, char* _argv[])
         else
         {
             entity_manager->ForEach<PositionComponent>(
-                [&](Jani::Entity entity, PositionComponent& _position)
+                [](Jani::Entity _entity, PositionComponent& _position, float _time_elapsed)
                 {
                     auto RandomFloat = [](float _from, float _to) -> float
                     {
@@ -137,13 +153,13 @@ int main(int _argc, char* _argv[])
                         return _from + r;
                     };
 
-                    auto RandomVec2 = [&](float _from, float _to) -> glm::vec2
+                    auto RandomVec2 = [RandomFloat](float _from, float _to) -> glm::vec2
                     {
                         return glm::vec2(RandomFloat(_from, _to), RandomFloat(_from, _to));
                     };
 
                     float world_bounds = 100.0f;
-                    _position.time_to_move -= time_elapsed;
+                    _position.time_to_move -= _time_elapsed;
                     if (_position.time_to_move < 0 && !_position.is_moving)
                     {
                         _position.is_moving = true;
@@ -152,7 +168,7 @@ int main(int _argc, char* _argv[])
 
                     if (_position.is_moving)
                     {
-                        _position.position -= glm::normalize(_position.position - _position.target_position) * _position.speed * time_elapsed;
+                        _position.position -= glm::normalize(_position.position - _position.target_position) * _position.speed * _time_elapsed;
                         if (glm::distance(_position.position, _position.target_position) < 10.0f)
                         {
                             _position.is_moving = false;
@@ -160,8 +176,8 @@ int main(int _argc, char* _argv[])
                         }
                     }
 
-                    entity_manager->AcknowledgeComponentUpdate<PositionComponent>(entity);
-                });
+                    _entity.AcknowledgeComponentUpdate<PositionComponent>();
+                }, time_elapsed);
         }
 
         worker->Update(wait_time_ms);

@@ -18,6 +18,7 @@ set(INSPECTOR_PROJECT_NAME "jani_inspector")
 project(${INSPECTOR_PROJECT_NAME} VERSION 1.0.0 DESCRIPTION "blob")
 
 add_definitions("-DCPP_SRC_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\"")
+add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING)
 
 add_compile_definitions(_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING)
 
@@ -124,6 +125,13 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/gabime/spdlog
 )
 
+# jobxx (Simple task and job scheduling library)
+FetchContent_Declare(
+  jobxx
+  GIT_REPOSITORY https://github.com/RodrigoHolztrattner/jobxx
+  GIT_TAG        origin/develop
+)
+
 # docopt (beautiful command-line interfaces)
 #FetchContent_Declare(
 #  docopt
@@ -215,6 +223,13 @@ if(NOT spdlog_POPULATED)
   add_subdirectory(${spdlog_SOURCE_DIR} ${spdlog_BINARY_DIR})
 endif()
 
+FetchContent_GetProperties(jobxx)
+if(NOT jobxx_POPULATED)
+  PrintFetchMessage("jobxx")
+  FetchContent_Populate(jobxx)
+  add_subdirectory(${jobxx_SOURCE_DIR} ${jobxx_BINARY_DIR})
+endif()
+
 #FetchContent_GetProperties(docopt)
 #if(NOT docopt_POPULATED)
 #  PrintFetchMessage("docopt")
@@ -277,7 +292,8 @@ ${cereal_SOURCE_DIR}/include
 ${entityx_SOURCE_DIR}
 ${glfw_SOURCE_DIR}/include
 ${glm_SOURCE_DIR}
-${spdlog_SOURCE_DIR}/include)
+${spdlog_SOURCE_DIR}/include
+${jobxx_SOURCE_DIR}/include)
 
 ###########
 # LIBRARY #
@@ -290,6 +306,7 @@ add_library(${LIB_PROJECT_NAME} STATIC ${JANI_CORE_FILES} ${JANI_LIB_FILES})
 target_include_directories(${LIB_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${LIB_PROJECT_NAME} kcp)
 target_link_libraries(${LIB_PROJECT_NAME} entityx)
+# target_link_libraries(${LIB_PROJECT_NAME} jobxx)
 
 install(TARGETS ${LIB_PROJECT_NAME}
   ARCHIVE DESTINATION lib
@@ -315,6 +332,7 @@ add_executable(${WORKER_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_FILES})
 target_include_directories(${WORKER_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${WORKER_PROJECT_NAME} kcp)
 target_link_libraries(${WORKER_PROJECT_NAME} entityx)
+target_link_libraries(${WORKER_PROJECT_NAME} jobxx)
 
 target_link_libraries(${WORKER_PROJECT_NAME} "Ws2_32.lib")
 target_link_libraries(${WORKER_PROJECT_NAME} "Ws2_32.dll")
@@ -340,6 +358,7 @@ add_executable(${RUNTIME_WORKER_SPAWNER_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_F
 target_include_directories(${RUNTIME_WORKER_SPAWNER_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} kcp)
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} entityx)
+target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} jobxx)
 
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} "Ws2_32.lib")
 target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} "Ws2_32.dll")
@@ -365,6 +384,7 @@ add_executable(${RUNTIME_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_RUNTIME_FILES})
 target_include_directories(${RUNTIME_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${RUNTIME_PROJECT_NAME} kcp)
 target_link_libraries(${RUNTIME_PROJECT_NAME} entityx)
+target_link_libraries(${RUNTIME_PROJECT_NAME} jobxx)
 
 target_link_libraries(${RUNTIME_PROJECT_NAME} "Ws2_32.lib")
 target_link_libraries(${RUNTIME_PROJECT_NAME} "Ws2_32.dll")
@@ -390,6 +410,7 @@ add_executable(${INSPECTOR_PROJECT_NAME} ${JANI_CORE_FILES} ${JANI_WORKER_FILES}
 target_include_directories(${INSPECTOR_PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRS})
 target_link_libraries(${INSPECTOR_PROJECT_NAME} kcp)
 target_link_libraries(${INSPECTOR_PROJECT_NAME} entityx)
+target_link_libraries(${INSPECTOR_PROJECT_NAME} jobxx)
 
 target_link_libraries(${INSPECTOR_PROJECT_NAME} "Ws2_32.lib")
 target_link_libraries(${INSPECTOR_PROJECT_NAME} "Ws2_32.dll")

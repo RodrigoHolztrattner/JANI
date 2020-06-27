@@ -6,7 +6,7 @@
 //////////////
 // INCLUDES //
 //////////////
-#include "JaniConfig.h"
+#include "JaniInternal.h"
 
 ///////////////
 // NAMESPACE //
@@ -84,7 +84,6 @@ struct EntityInfo
 {
     EntityId                             id             = std::numeric_limits<EntityId>::max();
     WorldPosition                        world_position;
-    WorkerId                             worker_id      = std::numeric_limits<WorkerId>::max();
     std::bitset<MaximumEntityComponents> component_mask;
     std::chrono::time_point<std::chrono::steady_clock> last_update_received_timestamp = std::chrono::steady_clock::now();
 };

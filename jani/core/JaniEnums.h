@@ -4,117 +4,78 @@
 #pragma once
 
 #include <cstdint>
+#include "nonstd/enum_bitset.hpp"
 
 namespace Jani
 {
-
-template <typename EnumType, typename EnumBitsType = uint32_t>
-class enum_bitset
-{
-public:
-
-    enum_bitset()  = default;
-    ~enum_bitset() = default;
-
-    explicit enum_bitset(EnumType _enum_value) : m_bitset(static_cast<EnumBitsType>(_enum_value))
+    enum class ComponentAttributeType
     {
-    }
+        boolean,
+        int32,
+        int64,
+        int32u,
+        int64u,
+        float32,
+        float64,
+        string
+    };
 
-    bool operator ==(EnumBitsType _bits) const
+    enum class WorkerLogLevel
     {
-        return m_bitset == static_cast<EnumBitsType>(_bits);
-    }
+        Trace,
+        Info,
+        Warning,
+        Error,
+        Critical
+    };
 
-    template <typename OtherEnumType, typename OtherEnumBitsType>
-    bool operator ==(const enum_bitset<OtherEnumType, OtherEnumBitsType>& _bits) const
+    enum class WorkerType
     {
-        return m_bitset == _bits.get_raw();
-    }
+        Dummy,
+        Server, 
+        Client
+    };
 
-    bool operator !=(EnumBitsType _bits) const
+    enum class LayerPermissionBits
     {
-        return !(*this == _bits);
-    }
+        None                    = 0,
+        CanLog                  = 1 << 0,
+        CanReserveEntityId      = 1 << 1,
+        CanAddEntity            = 1 << 2,
+        CanRemoveEntity         = 1 << 3,
+        CanAddComponent         = 1 << 4,
+        CanRemoveComponent      = 1 << 5,
+        CanUpdateComponent      = 1 << 6,
+        CanUpdateInterest       = 1 << 7, 
+        CanReceiveQueryResults  = 1 << 8,
+    };
 
-    template <typename OtherEnumType, typename OtherEnumBitsType>
-    bool operator !=(const enum_bitset<OtherEnumType, OtherEnumBitsType>& _bits) const
+    using LayerPermissionFlags = nonstd::enum_bitset<LayerPermissionBits>;
+
+    enum class EntityFlagBits
     {
-        return !(*this == _bits);
-    }
+        None                 = 0,
+        IsIncludedOnSnapshot = 1 << 0, 
+        IsCellLocked         = 1 << 1, 
+        IsPlayerControlable  = 1 << 2, 
+    };
 
-    enum_bitset operator <<(EnumType _enum)
+    using EntityFlags = nonstd::enum_bitset<EntityFlagBits>;
+
+    enum class QueryUpdateFrequency
     {
-        m_bitset = m_bitset | static_cast<EnumBitsType>(_enum);
-        return *this;
-    }
-
-    enum_bitset operator <<(EnumBitsType _bits)
-    {
-        m_bitset = m_bitset | _bits;
-        return *this;
-    }
-
-    bool operator &(EnumType _bits) const
-    {
-        return m_bitset & static_cast<EnumBitsType>(_bits);
-    }
-
-    operator EnumType() const
-    {
-        return static_cast<EnumType>(m_bitset);
-    }
-
-    EnumBitsType get_raw() const
-    {
-        return m_bitset;
-    }
-
-private:
-
-    EnumBitsType m_bitset = 0;
-};
-
-
-enum class ComponentAttributeType
-{
-    boolean, 
-    int32, 
-    int64, 
-    int32u, 
-    int64u, 
-    float32, 
-    float64,
-    string
-};
-
-enum class WorkerLogLevel
-{
-    Trace,
-    Info,
-    Warning,
-    Error,
-    Critical
-};
-
-enum class LayerPermissions : uint64_t
-{
-    Log             = 1 << 0, 
-    ReserveEntityId = 1 << 1,
-    AddEntity       = 1 << 2, 
-    RemoveEntity    = 1 << 3,
-    AddComponent    = 1 << 4,
-    RemoveComponent = 1 << 5,
-    UpdateComponent = 1 << 6,
-    UpdateInterest  = 1 << 7
-};
-
-enum class LayerLoadBalanceStrategyBits
-{
-    None           = 0,
-    MaximumWorkers = 1 << 0, 
-    SpatialArea    = 1 << 1
-};
-
-using LayerLoadBalanceStrategyTypeFlags = enum_bitset<LayerLoadBalanceStrategyBits>;
-
-} // Jani
+        _50    = 50, 
+        _40    = 40,
+        _30    = 30,
+        _20    = 20, 
+        _10    = 10, 
+        _5     = 5,
+        _1     = 1,
+        Low    = _5,
+        Medium = _10, 
+        High   = _40,
+        Min    = _1, 
+        Max    = _50, 
+        Count  = 7
+    };
+}
