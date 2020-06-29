@@ -314,9 +314,10 @@ install(TARGETS ${LIB_PROJECT_NAME}
   PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   COMPONENT library)
 
+# Request C++ 20
 set_target_properties(${LIB_PROJECT_NAME} PROPERTIES
-  CXX_STANDARD 17
-	CXX_STANDARD_REQUIRED ON)    
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON)  
 	
 ##########
 # WORKER #
@@ -339,10 +340,10 @@ target_link_libraries(${WORKER_PROJECT_NAME} "Ws2_32.dll")
 
 target_include_directories(${WORKER_PROJECT_NAME} PUBLIC ${PROJECT_MAIN_PATH}/core)
 
-# Request C++ 17
+# Request C++ 20
 set_target_properties(${WORKER_PROJECT_NAME} PROPERTIES
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED ON)     
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON)    
 
 ##################
 # WORKER SPAWNER #
@@ -365,10 +366,10 @@ target_link_libraries(${RUNTIME_WORKER_SPAWNER_NAME} "Ws2_32.dll")
 
 target_include_directories(${RUNTIME_WORKER_SPAWNER_NAME} PUBLIC ${PROJECT_MAIN_PATH}/core)
 
-# Request C++ 17
+# Request C++ 20
 set_target_properties(${RUNTIME_WORKER_SPAWNER_NAME} PROPERTIES
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED ON)  
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON)
 
 ###########
 # RUNTIME #
@@ -391,10 +392,10 @@ target_link_libraries(${RUNTIME_PROJECT_NAME} "Ws2_32.dll")
 
 target_include_directories(${RUNTIME_PROJECT_NAME} PUBLIC ${PROJECT_MAIN_PATH}/core)
 
-# Request C++ 17
+# Request C++ 20
 set_target_properties(${RUNTIME_PROJECT_NAME} PROPERTIES
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED ON)   
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON)
 
 #############
 # INSPECTOR #
@@ -420,7 +421,7 @@ target_link_libraries(${INSPECTOR_PROJECT_NAME} imgui)
 
 target_include_directories(${INSPECTOR_PROJECT_NAME} PUBLIC ${PROJECT_MAIN_PATH}/core)
 
-# Request C++ 17
+# Request C++ 20
 set_target_properties(${INSPECTOR_PROJECT_NAME} PROPERTIES
-  CXX_STANDARD 17
-  CXX_STANDARD_REQUIRED ON)   
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON)

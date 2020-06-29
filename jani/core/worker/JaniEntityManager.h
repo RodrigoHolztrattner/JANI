@@ -11,33 +11,32 @@
 
 #include <optional>
 #include <type_traits>
+#include <concepts>
 
 ///////////////
 // NAMESPACE //
 ///////////////
 
-#define DeclareTemplateIntrospectionMethod(Method) \
-template<typename C> \
-struct has_##Method##_method \
-{ \
-private: \
-    typedef char yes_type[1]; \
-    typedef char no_type[2]; \
- \
-    template <typename C> static yes_type& test(decltype(&C::##Method)); \
- \
-    template <typename C> static no_type& test(...); \
- \
-public: \
- \
-    enum { value = sizeof(test<C>(0)) == sizeof(yes_type) }; \
-};
+template<typename T, class Archive>
+concept has_deserialize_with_version_function = requires (T t, Archive & a, std::uint32_t const version) { t.template CEREAL_LOAD_FUNCTION_NAME<Archive>(a, version); };
 
-#define TemplateMethodExistent(T, Method)   typename std::enable_if<has_##Method##_method<ComponentClass>::value>::type* = nullptr
-#define TemplateMethodInexistent(T, Method) typename std::enable_if<!has_##Method##_method<ComponentClass>::value>::type* = nullptr
+template<typename T, class Archive>
+concept has_serialize_with_version_function = requires (T t, Archive & a, std::uint32_t const version) { t.template CEREAL_SAVE_FUNCTION_NAME<Archive>(a, version); };
 
-DeclareTemplateIntrospectionMethod(serialize);
-DeclareTemplateIntrospectionMethod(GetEntityWorldPosition);
+template<typename T>
+concept has_get_entity_world_position = requires { T::GetEntityWorldPosition; };
+
+template<typename T, class InputArchive, class OutputArchive>
+concept ValidSerializableComponent = has_deserialize_with_version_function<T, InputArchive> && has_serialize_with_version_function<T, OutputArchive>;
+
+template<typename T, class InputArchive, class OutputArchive>
+concept InvalidSerializableComponent = !has_deserialize_with_version_function<T, InputArchive> || !has_serialize_with_version_function<T, OutputArchive>;
+
+template<typename T>
+concept ComponentWithWorldPositionGetter = has_get_entity_world_position<T>;
+
+template<typename T>
+concept ComponentWithoutWorldPositionGetter = !has_get_entity_world_position<T>;
 
 // Jani
 JaniNamespaceBegin(Jani)
@@ -112,8 +111,10 @@ public: // MAIN METHODS //
     *
     * This function in particular requires that the component have a serialize() function
     */
-    template <typename ComponentClass,
-        TemplateMethodExistent(ComponentClass, serialize)>
+    template <typename ComponentClass, 
+        typename InputArchive                                                     = cereal::BinaryInputArchive,
+        typename OutputArchive                                                    = cereal::BinaryOutputArchive,
+        ValidSerializableComponent<InputArchive, OutputArchive> SerializableCheck = ComponentClass>
     bool RegisterComponent(ComponentId _component_id)
     {
         if (_component_id >= MaximumEntityComponents)
@@ -136,7 +137,7 @@ public: // MAIN METHODS //
 
             try
             {
-                cereal::BinaryInputArchive archive(stream);
+                InputArchive archive(stream);
                 archive(raw_component);
             }
             catch (...)
@@ -180,7 +181,7 @@ public: // MAIN METHODS //
 
             try
             {
-                cereal::BinaryOutputArchive archive(stream);
+                OutputArchive archive(stream);
                 archive(*component_handle);
             }
             catch (...)
@@ -234,7 +235,9 @@ public: // MAIN METHODS //
     * This function in particular requires the component to be a POD type
     */
     template <typename ComponentClass,
-        TemplateMethodInexistent(ComponentClass, serialize)>
+        typename InputArchive                                                       = cereal::BinaryInputArchive,
+        typename OutputArchive                                                      = cereal::BinaryOutputArchive,
+        InvalidSerializableComponent<InputArchive, OutputArchive> SerializableCheck = ComponentClass>
         bool RegisterComponent(ComponentId _component_id)
     {
         if (_component_id >= MaximumEntityComponents)
@@ -691,8 +694,7 @@ public: // ITERATORS //
 
 private:
 
-    template <typename ComponentClass,
-        TemplateMethodExistent(ComponentClass, GetEntityWorldPosition)>
+    template <typename ComponentClass, ComponentWithWorldPositionGetter WorldPositionCheck = ComponentClass>
         void CheckComponentWorldPosition(ComponentId _component_id, ComponentOperators& _component_operators)
     {
         _component_operators.component_world_position_function = [](entityx::Entity& _entity) -> WorldPosition
@@ -704,8 +706,7 @@ private:
         m_total_components_with_world_position++;
     }
 
-    template <typename ComponentClass,
-        TemplateMethodInexistent(ComponentClass, GetEntityWorldPosition)>
+    template <typename ComponentClass, ComponentWithoutWorldPositionGetter WorldPositionCheck = ComponentClass>
         void CheckComponentWorldPosition(ComponentId _component_id, ComponentOperators& _component_operators)
     {
         /* do nothing */
@@ -808,7 +809,3 @@ private: // VARIABLES //
 
 // Jani
 JaniNamespaceEnd(Jani)
-
-#undef DeclareTemplateIntrospectionMethod 
-#undef TemplateMethodExistent 
-#undef TemplateMethodInexistent
