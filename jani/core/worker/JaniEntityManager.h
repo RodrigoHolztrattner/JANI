@@ -533,7 +533,7 @@ public: // MAIN METHODS //
     *
     * Returns if the local entity creation was successfully
     */
-    bool CreateLocalEntity(std::span<ComponentPayload> _components)
+    std::optional<LocalEntityId> CreateLocalEntity(std::span<ComponentPayload> _components)
     {
         auto ValidateComponents = [&]() -> bool
         {
@@ -564,7 +564,7 @@ public: // MAIN METHODS //
         // TODO: Maybe add this check between #ifdef for increased performance on release builds?
         if (!ValidateComponents())
         {
-            return false;
+            return std::nullopt;
         }
 
         // TODO: Check permissions
