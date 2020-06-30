@@ -61,7 +61,8 @@ private:
     using OnComponentUpdateFunction        = std::function<bool(entityx::Entity&, const ComponentPayload&)>;
     using OnComponentRemoveFunction        = std::function<bool(entityx::Entity&)>;
     using OnComponentSerializeFunction     = std::function<bool(entityx::Entity&, ComponentPayload&)>;
-    using OnComponentWorldPositionFunction = std::function<WorldPosition(entityx::Entity&)>;
+    using OnComponentWorldPositionFunction = std::function<WorldPosition(const ComponentPayload&)>;
+    using OnEntityWorldPositionFunction    = std::function<WorldPosition(entityx::Entity&)>;
 
     struct ComponentOperators
     {
@@ -69,6 +70,7 @@ private:
         OnComponentRemoveFunction        remove_component_function;
         OnComponentSerializeFunction     serialize_component_function;
         OnComponentWorldPositionFunction component_world_position_function;
+        OnEntityWorldPositionFunction    entity_world_position_function;
     };
 
 public:
@@ -207,7 +209,7 @@ public: // MAIN METHODS //
         if (_component_id.has_value())
         {
             // Check if this component provide an entity world position retrieve method
-            CheckComponentWorldPosition(_component_id, component_operators);
+            CheckComponentWorldPosition<ComponentClass>(_component_id.value(), component_operators);
 
             m_hash_to_component_id.insert({ component_class_hash, _component_id.value() });
             m_component_id_to_hash[_component_id.value()] = component_class_hash;
@@ -324,7 +326,7 @@ public: // MAIN METHODS //
         if (_component_id.has_value())
         {
             // Check if this component provide an entity world position retrieve method
-            CheckComponentWorldPosition(_component_id, component_operators);
+            CheckComponentWorldPosition<ComponentClass>(_component_id.value(), component_operators);
 
             m_hash_to_component_id.insert({ component_class_hash, _component_id.value() });
             m_component_id_to_hash[_component_id.value()] = component_class_hash;
@@ -398,26 +400,86 @@ public: // MAIN METHODS //
     * duty to create or deny the request and usually, if well configured, failing cases are extremely
     * rare>
     */
-    bool CreateEntity(std::span<ComponentPayload> _components, std::optional<WorldPosition> _entity_world_position = std::nullopt)
+    bool CreateEntity(std::span<ComponentPayload> _components)
     {
-        // TODO: Check permissions
-
-        EntityPayload entity_payload;
-
-        auto new_entity_id = RetrieveNextAvailableEntityId();
-        if (!new_entity_id)
+        auto ValidateComponents = [&]() -> bool
         {
-            MessageLog().Error("EntityManager -> Failed to request new entity because: Out of entity ids. Too many entities were create in a small amount of time and/or not enough spare entity ids were provided on the worker creation");
+            for (auto& component_payload : _components)
+            {
+                if (!component_payload.component_hash.has_value())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components doesn't have a valid component_hash, all components added via the current function must provide a valid hash_id");
+                    return false;
+                }
+
+                if (component_payload.component_id == InvalidComponentId && m_hash_to_component_id.find(component_payload.component_hash.has_value()) != m_hash_to_component_id.end())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components have their id registered but it wasn't set in the component payload");
+                    return false;
+                }
+
+                if (m_component_operators.find(component_payload.component_hash.value()) == m_component_operators.end())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components wasn't registered");
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        // TODO: Maybe add this check between #ifdef for increased performance on release builds?
+        if (!ValidateComponents())
+        {
             return false;
         }
+
+        // TODO: Check permissions
+
+        EntityPayload                entity_payload;
+        std::optional<WorldPosition> entity_world_position = std::nullopt;
 
         entity_payload.component_payloads.reserve(_components.size());
         for (auto& component_payload : _components)
         {
-            entity_payload.component_payloads.push_back(component_payload);
+            // Verify if we have a way to extract the entity position from this component
+            auto component_operators_iter = m_component_operators.find(component_payload.component_hash.value());
+            if (component_operators_iter != m_component_operators.end() && component_operators_iter->second.component_world_position_function)
+            {
+                entity_world_position = component_operators_iter->second.component_world_position_function(component_payload);
+            }
+
+            // Only add this component to the entity payload if it was registered as a replicable one
+            if (m_hash_to_component_id.find(component_payload.component_hash.value()) != m_hash_to_component_id.end())
+            {
+                entity_payload.component_payloads.push_back(component_payload);
+            }
+            else
+            {
+                // Theoretically we should add this component to an entityx entity instance but this isn't supported yet
+                // Currently we do not support adding non-replicable components to non-local entities, this might be solved
+                // by creating a local view (timed) of this entity on request, like the ones created when querying data from
+                // the server
+                // For now we do not do anything here, not sure if returning an error would be the ideal solution, but this
+                // should really be supported soon!
+            }
         }
 
-        m_worker.RequestAddEntity(new_entity_id.value(), std::move(entity_payload), _entity_world_position);
+        // Only proceed with a server request if there is at least one replicable component
+        if (entity_payload.component_payloads.size() > 0)
+        {
+            auto new_entity_id = RetrieveNextAvailableEntityId();
+            if (!new_entity_id)
+            {
+                MessageLog().Error("EntityManager -> Failed to request new entity because: Out of entity ids. Too many entities were create in a small amount of time and/or not enough spare entity ids were provided on the worker creation");
+                return false;
+            }
+
+            if (!m_worker.RequestAddEntity(new_entity_id.value(), std::move(entity_payload), entity_world_position))
+            {
+                return false;
+            }
+        }
 
         return true;
     }
@@ -471,9 +533,40 @@ public: // MAIN METHODS //
     *
     * Returns if the local entity creation was successfully
     */
-    /*
-    bool CreateEntity(std::span<ComponentPayload> _components, std::optional<WorldPosition> _entity_world_position = std::nullopt)
+    bool CreateLocalEntity(std::span<ComponentPayload> _components)
     {
+        auto ValidateComponents = [&]() -> bool
+        {
+            for (auto& component_payload : _components)
+            {
+                if (!component_payload.component_hash.has_value())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components doesn't have a valid component_hash, all components added via the current function must provide a valid hash_id");
+                    return false;
+                }
+
+                if (component_payload.component_id == InvalidComponentId && m_hash_to_component_id.find(component_payload.component_hash.has_value()) != m_hash_to_component_id.end())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components have their id registered but it wasn't set in the component payload");
+                    return false;
+                }
+
+                if (m_component_operators.find(component_payload.component_hash.value()) == m_component_operators.end())
+                {
+                    MessageLog().Error("EntityManager -> Failed to request new entity because: At least one of the provided components wasn't registered");
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        // TODO: Maybe add this check between #ifdef for increased performance on release builds?
+        if (!ValidateComponents())
+        {
+            return false;
+        }
+
         // TODO: Check permissions
 
         auto new_entityx = m_ecs_manager.entities.create();
@@ -493,11 +586,18 @@ public: // MAIN METHODS //
 
         m_entity_infos[new_entityx_index] = std::move(new_entity_info);
 
-        [](...) {}((new_entityx.assign<Components>(_components), 0)...);
+        for (auto& component_payload : _components)
+        {
+            // Verify if we have a way to extract the entity position from this component
+            auto component_operators_iter = m_component_operators.find(component_payload.component_hash.value());
+            if (component_operators_iter != m_component_operators.end() && component_operators_iter->second.update_component_function)
+            {
+                component_operators_iter->second.update_component_function(new_entityx, component_payload);
+            }
+        }
 
         return new_entityx_index;
     }
-    */
 
     /*
     * Returns a local entity with the given identifier
@@ -802,10 +902,43 @@ private:
     template <typename ComponentClass, ComponentWithWorldPositionGetter WorldPositionCheck = ComponentClass>
         void CheckComponentWorldPosition(ComponentId _component_id, ComponentOperators& _component_operators)
     {
-        _component_operators.component_world_position_function = [](entityx::Entity& _entity) -> WorldPosition
+        _component_operators.component_world_position_function = [&](const ComponentPayload& _component_payload) -> WorldPosition
         {
-            // TODO: Check if the entity has the component?
-            return _entity.component<ComponentClass>()->GetEntityWorldPosition();
+            if (_component_payload.component_hash.has_value())
+            {
+                auto component_operators_iter = m_component_operators.find(_component_payload.component_hash.value());
+                if (component_operators_iter != m_component_operators.end())
+                {
+                    entityx::EntityX temp_entity_manager;
+
+                    auto& component_operators = component_operators_iter->second;
+                    auto temp_entity          = temp_entity_manager.entities.create();
+
+                    if (component_operators.update_component_function(temp_entity, _component_payload))
+                    {
+                        if (temp_entity.has_component<ComponentClass>())
+                        {
+                            return temp_entity.component<ComponentClass>()->GetEntityWorldPosition();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                MessageLog().Error("EntityManager -> Attempting to retrieve an entity position from a component, but the component payload doesn't have a valid component_hash attribute");
+            }
+            
+            return WorldPosition();
+        };
+
+        _component_operators.entity_world_position_function = [](entityx::Entity& _entity) -> WorldPosition
+        {
+            if (_entity.has_component<ComponentClass>())
+            {
+                return _entity.component<ComponentClass>()->GetEntityWorldPosition();
+            }
+
+            return WorldPosition();   
         };
 
         m_total_components_with_world_position++;
@@ -844,12 +977,12 @@ private:
         }
 
         auto component_operator_iter = m_component_operators.find(component_class_hash);
-        if (component_operator_iter != m_component_operators.end() && component_operator_iter->second.component_world_position_function)
+        if (component_operator_iter != m_component_operators.end() && component_operator_iter->second.entity_world_position_function)
         {
             auto entity_iter = m_server_id_to_local.find(_entity_id);
             if (entity_iter != m_server_id_to_local.end())
             {
-                _entity_world_position = component_operator_iter->second.component_world_position_function(entity_iter->second);
+                _entity_world_position = component_operator_iter->second.entity_world_position_function(entity_iter->second);
             }
         }
 

@@ -165,9 +165,10 @@ namespace Jani
             return *reinterpret_cast<const PayloadType*>(component_data.data());
         }
 
-        EntityId            entity_owner = InvalidEntityId;
-        ComponentId         component_id = InvalidComponentId;
-        std::vector<int8_t> component_data;
+        EntityId                     entity_owner   = InvalidEntityId;
+        ComponentId                  component_id   = InvalidComponentId;
+        std::optional<ComponentHash> component_hash = std::nullopt;
+        std::vector<int8_t>          component_data;
     };
 
     struct EntityPayload

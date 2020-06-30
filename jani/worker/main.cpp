@@ -51,7 +51,7 @@ int main(int _argc, char* _argv[])
 
         bool is_moving = false;
 
-        Jani::WorldPosition GetEntityWorldPosition()
+        Jani::WorldPosition GetEntityWorldPosition() const
         {
             return Jani::WorldPosition({ static_cast<int32_t>(position.x), static_cast<int32_t>(position.y) });
         }

@@ -49,7 +49,7 @@ namespace Jani
 
     using WorkerId      = uint64_t;
     using ComponentId   = uint64_t;
-    using ComponentHash = ctti::detail::hash_t;
+    using ComponentHash = uint64_t; // fixed at uint64_t for propper serialization, value should be the same as ctti::detail::hash_t;
     using EntityId      = uint64_t;
     using LocalEntityId = decltype(std::declval<entityx::Entity::Id>().index());
 
