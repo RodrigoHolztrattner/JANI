@@ -30,7 +30,7 @@ std::optional<Jani::Region::EntityId> Jani::Region::InsertEntityPayload(Jani::En
 
     m_entity_datas.push_back(std::move(entity_data));
 
-    m_entity_id_index_map.insert({ current_entity_region_id, m_entity_datas.size() - 1 });
+    m_entity_id_index_map.insert({ current_entity_region_id, static_cast<uint32_t>(m_entity_datas.size() - 1) });
 
     return current_entity_region_id;
 }

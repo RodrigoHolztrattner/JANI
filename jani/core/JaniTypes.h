@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <bitset>
 #include <entityx/entityx.h>
+#include <ctti/detail/hash.hpp>
 
 /////////////
 // DEFINES //
@@ -48,12 +49,14 @@ namespace Jani
 
     using WorkerId      = uint64_t;
     using ComponentId   = uint64_t;
+    using ComponentHash = ctti::detail::hash_t;
     using EntityId      = uint64_t;
     using LocalEntityId = decltype(std::declval<entityx::Entity::Id>().index());
 
-    static WorkerId    InvalidWorkerId    = std::numeric_limits<WorkerId>::max();
-    static ComponentId InvalidComponentId = std::numeric_limits<WorkerId>::max();
-    static EntityId    InvalidEntityId    = std::numeric_limits<WorkerId>::max();
+    static WorkerId      InvalidWorkerId      = std::numeric_limits<WorkerId>::max();
+    static ComponentId   InvalidComponentId   = std::numeric_limits<ComponentId>::max();
+    static ComponentHash InvalidComponentHash = std::numeric_limits<ComponentHash>::max();
+    static EntityId      InvalidEntityId      = std::numeric_limits<EntityId>::max();
 
     static const uint32_t MaximumLayers           = 32;
     static const uint32_t MaximumEntityComponents = 64;

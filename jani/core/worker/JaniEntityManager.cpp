@@ -9,23 +9,29 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
     _worker.RegisterOnComponentUpdateCallback(
         [&](EntityId _entity_id, Jani::ComponentId _component_id, const Jani::ComponentPayload& _component_payload)
         {
+            auto component_hash_iter = m_component_id_to_hash[_component_id];
+            if (!component_hash_iter)
+            {
+                MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component id isn't registered, component id: {}", _component_id);
+                return;
+            }
+
+            auto component_hash = component_hash_iter.value();
+
             // Check if this entity is registered
             auto entity_iter = m_server_id_to_local.find(_entity_id);
             if (entity_iter != m_server_id_to_local.end())
             {
-                if (_component_id >= m_component_operators.size())
+                auto component_operators_iter = m_component_operators.find(component_hash);
+                if (component_operators_iter == m_component_operators.end())
                 {
-                    MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component id is out of range, component id: {}", _component_id);
+                    MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component hash doesn't have operators registered, perhaps you forgot to register them for this component? Component hash: {}", component_hash);
                     return;
                 }
 
-                if (!m_component_operators[_component_id].has_value())
-                {
-                    MessageLog().Error("EntityManager -> Trying to update an entity component but the provided component id isn't registered, component id: {}", _component_id);
-                    return;
-                }
+                auto& component_operators = component_operators_iter->second;
 
-                if (!m_component_operators[_component_id].value().update_component_function(entity_iter->second, _component_payload))
+                if (!component_operators.update_component_function(entity_iter->second, _component_payload))
                 {
                     MessageLog().Error("EntityManager -> Trying to update an entity component but the update operation failed, component id: {}", _component_id);
                     return;
@@ -41,23 +47,29 @@ Jani::EntityManager::EntityManager(Worker& _worker) : m_worker(_worker)
     _worker.RegisterOnComponentRemoveCallback(
         [&](EntityId _entity_id, Jani::ComponentId _component_id)
         {
+            auto component_hash_iter = m_component_id_to_hash[_component_id];
+            if (!component_hash_iter)
+            {
+                MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component id isn't registered, component id: {}", _component_id);
+                return;
+            }
+
+            auto component_hash = component_hash_iter.value();
+
             // Check if this entity is registered
             auto entity_iter = m_server_id_to_local.find(_entity_id);
             if (entity_iter != m_server_id_to_local.end())
             {
-                if (_component_id >= m_component_operators.size())
+                auto component_operators_iter = m_component_operators.find(component_hash);
+                if (component_operators_iter == m_component_operators.end())
                 {
-                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component id is out of range, component id: {}", _component_id);
+                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component hash doesn't have operators registered, perhaps you forgot to register them for this component? Component hash: {}", component_hash);
                     return;
                 }
 
-                if (!m_component_operators[_component_id].has_value())
-                {
-                    MessageLog().Error("EntityManager -> Trying to remove an entity component but the provided component id isn't registered, component id: {}", _component_id);
-                    return;
-                }
+                auto& component_operators = component_operators_iter->second;
 
-                if (!m_component_operators[_component_id].value().remove_component_function(entity_iter->second))
+                if (!component_operators.remove_component_function(entity_iter->second))
                 {
                     MessageLog().Error("EntityManager -> Trying to remove an entity component but the remove operation failed, component id: {}", _component_id);
                     return;

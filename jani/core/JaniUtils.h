@@ -9,6 +9,8 @@
 #include "JaniTypes.h"
 #include "JaniLog.h"
 
+#include <ctti/type_id.hpp>
+#include <ctti/detailed_nameof.hpp>
 #include <nlohmann/json.hpp>
 #include <cstdint>
 #include <string>
@@ -18,6 +20,18 @@
 namespace Jani
 {
     std::string pretty_bytes(uint64_t _bytes);
+
+    template <typename ComponentClass>
+    constexpr ComponentHash GetHashFromComponentClass()
+    {
+        return ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+    }
+
+    template <typename ComponentClass>
+    constexpr std::string GetNameFromComponentClass()
+    {
+        return ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().cppstring();
+    }
 
     class ElapsedTimeLogger
     {

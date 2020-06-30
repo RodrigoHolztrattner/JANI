@@ -12,6 +12,7 @@
 #include <optional>
 #include <type_traits>
 #include <concepts>
+#include <span>
 
 ///////////////
 // NAMESPACE //
@@ -103,11 +104,9 @@ public: // MAIN METHODS //
     }
 
     /*
-    * Register and assign a component class to its server component id
+    * Register a component
     *
-    * This function should be called for each component that is registered on the server, this
-    * will allow these components to be packed and/or unpacked whenever their data must be sent
-    * or received
+    * Optionally accepts a component ID if this component should be replicated
     *
     * This function in particular requires that the component have a serialize() function
     */
@@ -115,15 +114,26 @@ public: // MAIN METHODS //
         typename InputArchive                                                     = cereal::BinaryInputArchive,
         typename OutputArchive                                                    = cereal::BinaryOutputArchive,
         ValidSerializableComponent<InputArchive, OutputArchive> SerializableCheck = ComponentClass>
-    bool RegisterComponent(ComponentId _component_id)
+    bool RegisterComponent(std::optional<ComponentId> _component_id = std::nullopt)
     {
-        if (_component_id >= MaximumEntityComponents)
-        {
-            MessageLog().Error("EntityManager -> Trying to register a component but the id provided is out of range: {}", _component_id);
-            return false;
-        }
+        auto component_class_hash = GetHashFromComponentClass<ComponentClass>();
 
-        JaniWarnOnFail(m_component_id_to_hash[_component_id] == std::nullopt && m_component_operators[_component_id] == std::nullopt, "EntityManager -> Registering component that was already registered, id: {}", _component_id);
+        if (_component_id)
+        {
+            auto component_id = _component_id.value();
+
+            if (component_id >= MaximumEntityComponents)
+            {
+                MessageLog().Error("EntityManager -> Trying to register a component but the id provided is out of range: {}", component_id);
+                return false;
+            }
+
+            JaniWarnOnFail(m_component_id_to_hash[component_id] == std::nullopt, "EntityManager -> Registering component that was already registered, id: {}", component_id);
+        }
+        else
+        {
+            JaniWarnOnFail(m_component_operators.find(component_class_hash) == m_component_operators.end(), "EntityManager -> Registering component that was already registered, hash: {}", component_class_hash)
+        }
 
         ComponentOperators component_operators;
 
@@ -194,13 +204,16 @@ public: // MAIN METHODS //
             return true;
         };
 
-        // Check if this component provide an entity world position retrieve method
-        CheckComponentWorldPosition(_component_id, component_operators);
+        if (_component_id.has_value())
+        {
+            // Check if this component provide an entity world position retrieve method
+            CheckComponentWorldPosition(_component_id, component_operators);
 
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
-        m_hash_to_component_id.insert({ component_type_hash, _component_id });
-        m_component_id_to_hash[_component_id] = component_type_hash;
-        m_component_operators[_component_id]  = std::move(component_operators);
+            m_hash_to_component_id.insert({ component_class_hash, _component_id.value() });
+            m_component_id_to_hash[_component_id.value()] = component_class_hash;
+        }
+
+        m_component_operators[component_class_hash]  = std::move(component_operators);
 
         return true;
     }
@@ -214,39 +227,49 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     ComponentId GetRegisteredComponentId()
     {
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
-        auto component_iter = m_hash_to_component_id.find(component_type_hash);
+        auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
+        auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
             return component_iter->second;
         }
 
-        MessageLog().Error("EntityManager -> Calling GetRegisteredComponentId() with an unregistered component: {}", ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().cppstring());
+        MessageLog().Error("EntityManager -> Calling GetRegisteredComponentId() with an unregistered component: {}", GetNameFromComponentClass<ComponentClass>());
         return std::numeric_limits<ComponentId>::max();
     }
 
     /*
-    * Register and assign a component class to its server component id
+    * Register a component
     *
-    * This function should be called for each component that is registered on the server, this
-    * will allow these components to be packed and/or unpacked whenever their data must be sent
-    * or received
+    * Optionally accepts a component ID if this component should be replicated
     *
-    * This function in particular requires the component to be a POD type
+    * This function in particular requires the component to be memcopyable via
+    * an std::memcpy function
     */
     template <typename ComponentClass,
         typename InputArchive                                                       = cereal::BinaryInputArchive,
         typename OutputArchive                                                      = cereal::BinaryOutputArchive,
         InvalidSerializableComponent<InputArchive, OutputArchive> SerializableCheck = ComponentClass>
-        bool RegisterComponent(ComponentId _component_id)
+        bool RegisterComponent(std::optional<ComponentId> _component_id = std::nullopt)
     {
-        if (_component_id >= MaximumEntityComponents)
-        {
-            MessageLog().Error("EntityManager -> Trying to register a component but the id provided is out of range: {}", _component_id);
-            return false;
-        }
+        auto component_class_hash = GetHashFromComponentClass<ComponentClass>();
 
-        JaniWarnOnFail(m_component_id_to_hash[_component_id] == std::nullopt && m_component_operators[_component_id] == std::nullopt, "EntityManager -> Registering component that was already registered, id: {}", _component_id);
+        if (_component_id)
+        {
+            auto component_id = _component_id.value();
+
+            if (component_id >= MaximumEntityComponents)
+            {
+                MessageLog().Error("EntityManager -> Trying to register a component but the id provided is out of range: {}", component_id);
+                return false;
+            }
+
+            JaniWarnOnFail(m_component_id_to_hash[component_id] == std::nullopt, "EntityManager -> Registering component that was already registered, id: {}", component_id);
+        }
+        else
+        {
+            JaniWarnOnFail(m_component_operators.find(component_class_hash) == m_component_operators.end(), "EntityManager -> Registering component that was already registered, hash: {}", component_class_hash)
+        }
 
         ComponentOperators component_operators;
 
@@ -298,15 +321,16 @@ public: // MAIN METHODS //
             return true;
         };
 
-        // Check if this component provide an entity world position retrieve method
-        CheckComponentWorldPosition<ComponentClass>(_component_id, component_operators);
+        if (_component_id.has_value())
+        {
+            // Check if this component provide an entity world position retrieve method
+            CheckComponentWorldPosition(_component_id, component_operators);
 
-        auto name = ctti::nameof<ComponentClass>();
-        
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
-        m_hash_to_component_id.insert({ component_type_hash, _component_id });
-        m_component_id_to_hash[_component_id] = component_type_hash;
-        m_component_operators[_component_id]  = std::move(component_operators);
+            m_hash_to_component_id.insert({ component_class_hash, _component_id.value() });
+            m_component_id_to_hash[_component_id.value()] = component_class_hash;
+        }
+
+        m_component_operators[component_class_hash] = std::move(component_operators);
 
         return true;
     }
@@ -357,6 +381,48 @@ public: // MAIN METHODS //
     }
 
     /*
+    * Create a server-wide entity
+    *
+    * This action will generate an entity creation request on the runtime, the success of the request
+    * depends on the current worker having enough permission to complete the operation
+    * The position component is optional, std::nullopt can be passes if no position is intended
+    * Each component parameter type must have been previously registered in this manager, this is
+    * required in order to map the local components with the data that the server has, failing to do
+    * it will result in the component not being included in the payload
+    *
+    * This function does not return the entity/future reference because there is no guarantee that
+    * the entity will be owned by the current worker, if some visual representation is required, it's
+    * advised to create a local entity that will hold that information/components
+    *
+    * <receiving a future answer from this request doesn't seems to be necessary, it's the server
+    * duty to create or deny the request and usually, if well configured, failing cases are extremely
+    * rare>
+    */
+    bool CreateEntity(std::span<ComponentPayload> _components, std::optional<WorldPosition> _entity_world_position = std::nullopt)
+    {
+        // TODO: Check permissions
+
+        EntityPayload entity_payload;
+
+        auto new_entity_id = RetrieveNextAvailableEntityId();
+        if (!new_entity_id)
+        {
+            MessageLog().Error("EntityManager -> Failed to request new entity because: Out of entity ids. Too many entities were create in a small amount of time and/or not enough spare entity ids were provided on the worker creation");
+            return false;
+        }
+
+        entity_payload.component_payloads.reserve(_components.size());
+        for (auto& component_payload : _components)
+        {
+            entity_payload.component_payloads.push_back(component_payload);
+        }
+
+        m_worker.RequestAddEntity(new_entity_id.value(), std::move(entity_payload), _entity_world_position);
+
+        return true;
+    }
+
+    /*
     * Create a local entity
     *
     * This function will create a local entity that is NOT synchronized with the server and only exist
@@ -393,6 +459,45 @@ public: // MAIN METHODS //
 
         return new_entityx_index;
     }
+
+    /*
+    * Create a local entity
+    *
+    * This function will create a local entity that is NOT synchronized with the server and only exist
+    * on the current worker view space
+    * This entity can be used normally as if it was a replicated entity, all operations inside this manager
+    * work as expected, just instead relying on a server request they will apply the request directly, if
+    * possible
+    *
+    * Returns if the local entity creation was successfully
+    */
+    /*
+    bool CreateEntity(std::span<ComponentPayload> _components, std::optional<WorldPosition> _entity_world_position = std::nullopt)
+    {
+        // TODO: Check permissions
+
+        auto new_entityx = m_ecs_manager.entities.create();
+        auto new_entityx_index = new_entityx.id().index();
+
+        if (new_entityx_index >= m_entity_infos.size())
+        {
+            MessageLog().Info("EntityManager -> Expanding the maximum entity infos vector to support up to {} entities", new_entityx_index + 1);
+            m_entity_infos.resize(new_entityx_index + 1);
+        }
+
+        JaniCriticalOnFail(!m_entity_infos[new_entityx_index].has_value(), "EntityManager -> CreateLocalEntity() is trying to use an index that is already on use!");
+
+        EntityInfo new_entity_info;
+        new_entity_info.entityx = new_entityx;
+        new_entity_info.is_pure_local = true;
+
+        m_entity_infos[new_entityx_index] = std::move(new_entity_info);
+
+        [](...) {}((new_entityx.assign<Components>(_components), 0)...);
+
+        return new_entityx_index;
+    }
+    */
 
     /*
     * Returns a local entity with the given identifier
@@ -443,7 +548,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+                auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -494,7 +599,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+                auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -541,7 +646,7 @@ public: // MAIN METHODS //
             {
                 // TODO: Check permissions
 
-                auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+                auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
@@ -587,7 +692,7 @@ public: // MAIN METHODS //
             && entity_info.value()->entityx.has_component<ComponentClass>())
         {
             auto entity_index        = entity_info.value()->entityx.id().index();
-            auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+            auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
             auto component_iter      = m_hash_to_component_id.find(component_type_hash);
             if (component_iter == m_hash_to_component_id.end())
             {
@@ -614,7 +719,7 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool UpdateInterestQuery(const Entity& _entity, ComponentQuery _query)
     {
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
         auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
@@ -630,7 +735,7 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool UpdateInterestQuery(const Entity& _entity, std::vector<ComponentQuery>&& _queries) // TODO: Use span?!
     {
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
         auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
@@ -654,7 +759,7 @@ public: // MAIN METHODS //
     template <class ComponentClass>
     bool ClearInterestQuery(const Entity& _entity)
     {
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
         auto component_iter      = m_hash_to_component_id.find(component_type_hash);
         if (component_iter != m_hash_to_component_id.end())
         {
@@ -729,21 +834,22 @@ private:
     template <typename ComponentClass>
     bool ExtractPayloadFromComponent(EntityId _entity_id, ComponentClass&& _component, ComponentPayload& _component_payload, std::optional<WorldPosition>& _entity_world_position)
     {
-        auto component_class_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_class_hash = GetHashFromComponentClass<ComponentClass>();
 
         auto iter = m_hash_to_component_id.find(component_class_hash);
         if (iter == m_hash_to_component_id.end())
         {
-            MessageLog().Error("EntityManager -> Trying to transform a component data into payload but the component isn't registered, the component needs to be registered or a local entity must be used instead, component class was {}", ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().cppstring());
+            MessageLog().Error("EntityManager -> Trying to transform a component data into payload but the component isn't registered, the component needs to be registered or a local entity must be used instead, component class was {}", GetNameFromComponentClass<ComponentClass>());
             return false;
         }
 
-        if (m_component_operators[iter->second].has_value() && m_component_operators[iter->second].value().component_world_position_function)
+        auto component_operator_iter = m_component_operators.find(component_class_hash);
+        if (component_operator_iter != m_component_operators.end() && component_operator_iter->second.component_world_position_function)
         {
             auto entity_iter = m_server_id_to_local.find(_entity_id);
             if (entity_iter != m_server_id_to_local.end())
             {
-                _entity_world_position = m_component_operators[iter->second].value().component_world_position_function(entity_iter->second);
+                _entity_world_position = component_operator_iter->second.component_world_position_function(entity_iter->second);
             }
         }
 
@@ -770,7 +876,7 @@ private:
     template<typename ComponentClass>
     bool IsComponentOwned() const
     {
-        auto component_type_hash = ctti::detailed_nameof<std::remove_reference<ComponentClass>::type>().name().hash();
+        auto component_type_hash = GetHashFromComponentClass<ComponentClass>();
         auto component_id_iter = m_hash_to_component_id.find(component_type_hash);
         if (component_id_iter != m_hash_to_component_id.end())
         {
@@ -792,9 +898,9 @@ private: // VARIABLES //
 
     bool m_apply_before_server_acknowledge = false;
 
-    std::unordered_map<ctti::detail::hash_t, ComponentId>                    m_hash_to_component_id;
-    std::array<std::optional<ctti::detail::hash_t>, MaximumEntityComponents> m_component_id_to_hash;
-    std::array<std::optional<ComponentOperators>, MaximumEntityComponents>   m_component_operators;
+    std::unordered_map<ComponentHash, ComponentId>                    m_hash_to_component_id;
+    std::array<std::optional<ComponentHash>, MaximumEntityComponents> m_component_id_to_hash;
+    std::unordered_map<ComponentHash, ComponentOperators>             m_component_operators;
 
     entityx::EntityX m_ecs_manager;
 
