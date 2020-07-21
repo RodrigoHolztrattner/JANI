@@ -144,7 +144,10 @@ public: // MAIN METHODS //
         {
             ComponentClass raw_component;
 
-            StreamVectorWrap<char> data_buffer(nonstd::span<char>(_component_payload.component_data.data(), _component_payload.component_data.data() + _component_payload.component_data.size()));
+            // TODO: This need some rework
+            const char* data_ptr = reinterpret_cast<const char*>(_component_payload.component_data.data());
+            auto sp              = nonstd::span<char>(const_cast<char*>(data_ptr), _component_payload.component_data.size());
+            StreamVectorWrap<char> data_buffer(sp);
             std::istream           stream(&data_buffer);
 
             try
@@ -185,8 +188,12 @@ public: // MAIN METHODS //
                 return false;
             }
 
-            std::array<char, 512>  temp_buffer;
-            StreamVectorWrap<char> data_buffer(nonstd::span<char>(temp_buffer.data(), temp_buffer.data() + temp_buffer.size()));
+            std::array<char, 512> temp_buffer;
+
+            // TODO: This need some rework
+            char* data_ptr = temp_buffer.data();
+            auto sp        = nonstd::span<char>(data_ptr, temp_buffer.size());
+            StreamVectorWrap<char> data_buffer(sp);
             std::ostream           stream(&data_buffer);
 
             auto component_handle = _entity.component<ComponentClass>();
