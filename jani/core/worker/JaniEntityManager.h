@@ -628,6 +628,24 @@ public: // MAIN METHODS //
     bool DestroyEntity(const Entity& _entity);
 
     /*
+    * Checks if an entity has the given component
+    *
+    * This only checks the local view of this entity, it doesn't say anything about it being owned by this 
+    * manager
+    */
+    template <class ComponentClass>
+    bool HasComponent(const Entity& _entity) const
+    {
+        auto entity_info = GetEntityInfo(_entity);
+        if (entity_info)
+        {
+            return entity_info.value()->entityx.has_component<ComponentClass>();
+        }
+
+        return false;
+    }
+
+    /*
     * Adds a component to an entity
     *
     * If the given entity is a local one, after this function return you will be able to query
