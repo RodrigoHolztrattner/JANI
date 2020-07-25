@@ -646,6 +646,44 @@ public: // MAIN METHODS //
     }
 
     /*
+    * Return a component from an entity, if available
+    *
+    * This only checks the local view of this entity
+    */
+    template <class ComponentClass>
+    std::optional<const ComponentClass*> GetComponent(const Entity& _entity) const
+    {
+        auto entity_info = GetEntityInfo(_entity);
+        if (entity_info)
+        {
+            auto& entityx_entity = const_cast<entityx::Entity&>(entity_info.value()->entityx);
+            if (entityx_entity.component<ComponentClass>().valid())
+            {
+                return entityx_entity.component<ComponentClass>().get();
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    /*
+    * Return a component from an entity, if available
+    *
+    * This only checks the local view of this entity
+    */
+    template <class ComponentClass>
+    std::optional<ComponentClass*> GetComponentMutable(Entity& _entity)
+    {
+        auto entity_info = GetEntityInfoMutable(_entity);
+        if (entity_info && entity_info.value()->entityx.component<ComponentClass>().valid())
+        {
+            return entity_info.value()->entityx.component<ComponentClass>().get();
+        }
+
+        return std::nullopt;
+    }
+
+    /*
     * Adds a component to an entity
     *
     * If the given entity is a local one, after this function return you will be able to query
