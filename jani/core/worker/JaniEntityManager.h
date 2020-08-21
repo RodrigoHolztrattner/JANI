@@ -715,8 +715,9 @@ public: // MAIN METHODS //
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
-                    ComponentPayload component_payload;
-                    if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), std::move(_component), component_payload))
+                    ComponentPayload             component_payload;
+                    std::optional<WorldPosition> entity_world_position;
+                    if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), std::move(_component), component_payload, entity_world_position))
                     {
                         m_worker.RequestAddComponent(
                             entity_info.value()->server_entity_id.value(), 
@@ -813,9 +814,10 @@ public: // MAIN METHODS //
                 auto component_iter      = m_hash_to_component_id.find(component_type_hash);
                 if (component_iter != m_hash_to_component_id.end())
                 {
-                    ComponentClass   raw_component(std::forward<Args>(_args) ...);
-                    ComponentPayload component_payload;
-                    if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), std::move(raw_component), component_payload))
+                    ComponentClass               raw_component(std::forward<Args>(_args) ...);
+                    ComponentPayload             component_payload;
+                    std::optional<WorldPosition> entity_world_position;
+                    if (ExtractPayloadFromComponent(entity_info.value()->server_entity_id.value(), std::move(raw_component), component_payload, entity_world_position))
                     {
                         m_worker.RequestUpdateComponent(
                             entity_info.value()->server_entity_id.value(),
