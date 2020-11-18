@@ -18,7 +18,6 @@
 #include <map>
 #include <mutex>
 #include <entityx/entityx.h>
-#include <boost/pfr.hpp>
 #include <magic_enum.hpp>
 #include <ctti/type_id.hpp>
 #include <ctti/static_value.hpp>

@@ -83,19 +83,5 @@
 #define JaniNamespaceBegin(name)                  namespace name {
 #define JaniNamespaceEnd(name)                    }
 
-// Set all members from the current struct/class as serializable
-#define JaniSerializable()                                                  \
-template <class Archive>                                                    \
-void serialize(Archive& ar)                                                 \
-{                                                                           \
-    boost::pfr::for_each_field(*this, [&ar](auto& field, std::size_t idx)   \
-    {                                                                       \
-        ar(field);                                                          \
-    });                                                                     \
-}
-
-#define DISABLE_COPY(class_name) class_name(const class_name&) = delete;\
-                                 class_name& operator=(const class_name&) = delete
-
 #undef max
 #undef min

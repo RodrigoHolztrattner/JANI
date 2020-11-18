@@ -16,7 +16,6 @@
 #include <jobxx/queue.h>
 #include <jobxx/job.h>
 
-#include <boost/pfr.hpp>
 #include <entityx/entityx.h>
 #include <cereal/types/vector.hpp>
 #include <cereal/types/bitset.hpp>
@@ -58,7 +57,11 @@ namespace Jani
 
     struct WorldPosition
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(x, y);
+        }
 
         bool operator==(const WorldPosition& rhs)
         {
@@ -117,14 +120,22 @@ namespace Jani
 
     struct WorldArea
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(width, height);
+        }
 
         uint32_t width, height;
     };
 
     struct WorldRect
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(x, y, width, height);
+        }
 
         uint32_t ManhattanDistanceFromPosition(WorldPosition _position) const
         {
@@ -149,7 +160,11 @@ namespace Jani
 
     struct ComponentPayload
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(entity_owner, component_id, component_hash, component_data);
+        }
 
         template <typename PayloadType>
         void SetPayload(const PayloadType& _payload)
@@ -173,7 +188,11 @@ namespace Jani
 
     struct EntityPayload
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(component_payloads);
+        }
 
         std::vector<ComponentPayload> component_payloads;
     };
@@ -432,28 +451,6 @@ namespace Jani
             int a;
         };
 
-        template <class _T>
-        inline Hasher& struct_visit(const _T& _struct)
-        {
-            boost::pfr::for_each_field(_struct, [&](auto& _field, std::size_t _idx)
-                                       {
-                                           this->operator()(_field);
-                                       });
-
-            return *this;
-        }
-
-        template <class _T>
-        inline Hasher& struct_visit_flat(const _T& _struct)
-        {
-            boost::pfr::flat_for_each_field(_struct, [&](auto& _field, std::size_t _idx)
-                                            {
-                                                this->operator()(_field);
-                                            });
-
-            return *this;
-        }
-
         static Hash default_value()
         {
             return 0xcbf29ce484222325ull;
@@ -574,7 +571,16 @@ namespace Jani
 
     struct ComponentQueryInstruction
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(component_constraints, 
+                area_constraint, 
+                box_constraint, 
+                radius_constraint, 
+                and_constraint,
+                or_constraint);
+        }
 
         std::optional<ComponentMask> component_constraints;
         std::optional<WorldArea>     area_constraint;
@@ -634,7 +640,13 @@ namespace Jani
 
     struct ComponentQuery
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(component_mask,
+                root_query,
+                frequency);
+        }
 
         friend Runtime;
 
@@ -744,7 +756,16 @@ namespace Jani
 
         struct RuntimeClientAuthenticationRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(ip,
+                    port,
+                    layer_name,
+                    user_unique_id,
+                    access_token,
+                    authentication_token);
+            }
 
             char     ip[16];
             uint32_t port;
@@ -756,14 +777,26 @@ namespace Jani
 
         struct RuntimeClientAuthenticationResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed);
+            }
 
             bool succeed = false;
         };
 
         struct RuntimeAuthenticationRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(ip,
+                    port,
+                    layer_id,
+                    access_token,
+                    worker_authentication);
+            }
 
             char     ip[16];
             uint32_t port;
@@ -774,7 +807,13 @@ namespace Jani
 
         struct RuntimeAuthenticationResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed,
+                    use_spatial_area,
+                    maximum_entity_limit);
+            }
 
             bool     succeed = false;
             bool     use_spatial_area = false;
@@ -783,7 +822,13 @@ namespace Jani
 
         struct WorkerSpawnRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(runtime_ip,
+                    runtime_worker_connection_port,
+                    layer_id);
+            }
 
             std::string runtime_ip;
             uint32_t    runtime_worker_connection_port = 0;
@@ -792,7 +837,11 @@ namespace Jani
 
         struct WorkerSpawnResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed);
+            }
 
             bool succeed = false;
         };
@@ -800,7 +849,13 @@ namespace Jani
         // RuntimeLogMessage
         struct RuntimeLogMessageRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(log_level,
+                    log_title,
+                    log_message);
+            }
 
             WorkerLogLevel log_level;
             std::string    log_title;
@@ -810,7 +865,11 @@ namespace Jani
         // RuntimeReserveEntityIdRange
         struct RuntimeReserveEntityIdRangeRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(total_ids);
+            }
 
             uint32_t total_ids;
         };
@@ -818,17 +877,29 @@ namespace Jani
         // RuntimeReserveEntityIdRange
         struct RuntimeReserveEntityIdRangeResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed,
+                    id_begin,
+                    id_end);
+            }
 
-            bool succeed = false;
+            bool     succeed  = false;
             EntityId id_begin = std::numeric_limits<EntityId>::max();
-            EntityId id_end = std::numeric_limits<EntityId>::max();
+            EntityId id_end   = std::numeric_limits<EntityId>::max();
         };
 
         // RuntimeAddEntity
         struct RuntimeAddEntityRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id,
+                    entity_payload,
+                    entity_world_position);
+            }
 
             EntityId                     entity_id;
             EntityPayload                entity_payload;
@@ -838,7 +909,11 @@ namespace Jani
         // RuntimeRemoveEntity
         struct RuntimeRemoveEntityRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id);
+            }
 
             EntityId entity_id;
         };
@@ -846,7 +921,13 @@ namespace Jani
         // RuntimeAddComponent
         struct RuntimeAddComponentRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id,
+                    component_id,
+                    component_payload);
+            }
 
             EntityId         entity_id;
             ComponentId      component_id;
@@ -856,7 +937,12 @@ namespace Jani
         // RuntimeRemoveComponent
         struct RuntimeRemoveComponentRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id,
+                    component_id);
+            }
 
             EntityId    entity_id;
             ComponentId component_id;
@@ -865,7 +951,14 @@ namespace Jani
         // RuntimeComponentUpdate
         struct RuntimeComponentUpdateRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id,
+                    component_id,
+                    component_payload,
+                    entity_world_position);
+            }
 
             EntityId                     entity_id;
             ComponentId                  component_id;
@@ -876,7 +969,11 @@ namespace Jani
         // RuntimeComponentInterestQueryUpdate
         struct RuntimeComponentInterestQueryUpdateRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id, component_id, queries);
+            }
 
             EntityId                    entity_id;
             ComponentId                 component_id;
@@ -886,7 +983,11 @@ namespace Jani
         // RuntimeComponentInterestQuery
         struct RuntimeComponentInterestQueryRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id, component_id);
+            }
 
             EntityId    entity_id;
             ComponentId component_id;
@@ -895,7 +996,11 @@ namespace Jani
         // RuntimeComponentInterestQuery
         struct RuntimeComponentInterestQueryResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed, entity_component_mask, components_payloads);
+            }
 
             bool                          succeed = false;
             ComponentMask                 entity_component_mask;
@@ -905,7 +1010,11 @@ namespace Jani
         // RuntimeInspectorQuery
         struct RuntimeInspectorQueryRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(window_id, query_center_location, query);
+            }
 
             uint64_t       window_id = std::numeric_limits<uint64_t>::max();
             WorldPosition  query_center_location;
@@ -915,7 +1024,16 @@ namespace Jani
         // RuntimeInspectorQuery
         struct RuntimeInspectorQueryResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed,
+                    window_id,
+                    entity_id,
+                    entity_component_mask,
+                    entity_world_position,
+                    components_payloads);
+            }
 
             bool                          succeed = false;
             uint64_t                      window_id = std::numeric_limits<uint64_t>::max();
@@ -927,7 +1045,11 @@ namespace Jani
 
         struct RuntimeComponentQueryResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed, component_payloads);
+            }
 
             bool                          succeed = false;
             std::vector<ComponentPayload> component_payloads;
@@ -936,7 +1058,11 @@ namespace Jani
         // RuntimeWorkerReportAcknowledge
         struct RuntimeWorkerReportAcknowledgeRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(total_data_sent_per_second, total_data_received_per_second);
+            }
 
             uint64_t total_data_sent_per_second = 0;
             uint64_t total_data_received_per_second = 0;
@@ -944,7 +1070,11 @@ namespace Jani
 
         struct RuntimeDefaultResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed);
+            }
 
             bool succeed = false;
         };
@@ -952,7 +1082,11 @@ namespace Jani
         // WorkerLayerAuthorityGain
         struct WorkerLayerAuthorityGainRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id);
+            }
 
             EntityId entity_id = std::numeric_limits<EntityId>::max();
         };
@@ -960,7 +1094,11 @@ namespace Jani
         // WorkerLayerAuthorityLost
         struct WorkerLayerAuthorityLostRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id);
+            }
 
             EntityId entity_id = std::numeric_limits<EntityId>::max();
         };
@@ -968,9 +1106,15 @@ namespace Jani
         // WorkerAddComponent
         struct WorkerAddComponentRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id,
+                    component_id,
+                    component_payload);
+            }
 
-            EntityId         entity_id = std::numeric_limits<EntityId>::max();
+            EntityId         entity_id    = std::numeric_limits<EntityId>::max();
             ComponentId      component_id = std::numeric_limits<ComponentId>::max();
             ComponentPayload component_payload;
         };
@@ -978,7 +1122,11 @@ namespace Jani
         // WorkerRemoveComponent
         struct WorkerRemoveComponentRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(entity_id, component_id);
+            }
 
             EntityId    entity_id = std::numeric_limits<EntityId>::max();
             ComponentId component_id = std::numeric_limits<ComponentId>::max();
@@ -986,7 +1134,11 @@ namespace Jani
 
         struct WorkerDefaultResponse
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed);
+            }
 
             bool succeed = false;
         };
@@ -994,7 +1146,11 @@ namespace Jani
         // RuntimeGetEntitiesInfo
         struct RuntimeGetEntitiesInfoRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(dummy);
+            }
 
             bool dummy = false;
         };
@@ -1004,7 +1160,11 @@ namespace Jani
         {
             using EntityInfo = std::tuple<EntityId, WorldPosition, std::bitset<MaximumEntityComponents>>;
 
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed, entities_infos);
+            }
 
             bool                    succeed = false;
             std::vector<EntityInfo> entities_infos;
@@ -1013,7 +1173,11 @@ namespace Jani
         // RuntimeGetCellsInfos
         struct RuntimeGetCellsInfosRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(layer_id);
+            }
 
             LayerId layer_id = std::numeric_limits<LayerId>::max();
         };
@@ -1023,7 +1187,11 @@ namespace Jani
         {
             using CellInfo = std::tuple<WorkerId, LayerId, WorldRect, WorldCellCoordinates, uint32_t>;
 
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed, cells_infos);
+            }
 
             bool                  succeed = false;
             std::vector<CellInfo> cells_infos;
@@ -1032,7 +1200,11 @@ namespace Jani
         // RuntimeGetWorkersInfos
         struct RuntimeGetWorkersInfosRequest
         {
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(dummy);
+            }
 
             bool dummy = false;
         };
@@ -1042,7 +1214,11 @@ namespace Jani
         {
             using WorkerInfo = std::tuple<WorkerId, uint32_t, LayerId, uint64_t, uint64_t, uint64_t, uint64_t>;
 
-            JaniSerializable();
+            template <class Archive>
+            void serialize(Archive& ar)
+            {
+                ar(succeed, workers_infos);
+            }
 
             bool                    succeed = false;
             std::vector<WorkerInfo> workers_infos;
@@ -1082,7 +1258,7 @@ namespace Jani
 
     class ServerEntity
     {
-        DISABLE_COPY(ServerEntity);
+        JANI_DISABLE_COPY(ServerEntity);
 
     public:
 

@@ -83,12 +83,6 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/Neargye/magic_enum
 )
 
-# Magic get
-FetchContent_Declare(
-  magic_get
-  GIT_REPOSITORY https://github.com/RodrigoHolztrattner/magic_get.git
-)
-
 # Range V3
 FetchContent_Declare(
   range_v3
@@ -175,12 +169,6 @@ FetchContent_GetProperties(magic_enum)
 if(NOT magic_enum_POPULATED)
   PrintFetchMessage("magic_enum")
   FetchContent_Populate(magic_enum)
-endif()
-
-FetchContent_GetProperties(magic_get)
-if(NOT magic_get_POPULATED)
-  PrintFetchMessage("magic_get")
-  FetchContent_Populate(magic_get)
 endif()
 
 FetchContent_GetProperties(range_v3)
@@ -286,7 +274,6 @@ ${json_SOURCE_DIR}/single_include
 ${concurrentqueue_SOURCE_DIR}
 ${imgui_SOURCE_DIR}
 ${magic_enum_SOURCE_DIR}/include
-${magic_get_SOURCE_DIR}/include
 ${range_v3_SOURCE_DIR}/include
 ${cereal_SOURCE_DIR}/include
 ${entityx_SOURCE_DIR}

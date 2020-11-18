@@ -39,7 +39,13 @@ private:
 
     struct EntityData
     {
-        JaniSerializable();
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(entity_region_id,
+                entity_payload,
+                entity_custom_payload);
+        }
 
         EntityId            entity_region_id = std::numeric_limits<EntityId>::max();
         Jani::EntityPayload entity_payload;
