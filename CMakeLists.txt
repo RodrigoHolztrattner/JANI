@@ -123,6 +123,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   spdlog
   GIT_REPOSITORY https://github.com/gabime/spdlog
+  GIT_TAG        origin/v1.x
 )
 
 # jobxx (Simple task and job scheduling library)
